@@ -1,6 +1,7 @@
 import os
 import datetime
 import xml.etree.ElementTree as ET
+from .safe_xml import parse_vrt_xml
 import shutil
 import time
 import json
@@ -266,7 +267,7 @@ class BuildVrtAndGpkgTask(QgsTask):
         """VRTのXMLから登録されているTIFリストを高速に抽出する"""
         tifs = set()
         try:
-            tree = ET.parse(vrt_path)
+            tree = parse_vrt_xml(vrt_path)
             root = tree.getroot()
             for src in root.findall(".//SourceFilename"):
                 if src.text:
@@ -280,7 +281,7 @@ class BuildVrtAndGpkgTask(QgsTask):
 
     def _fast_update_vrt(self, existing_vrt_path, target_vrt_path, tifs_to_add, tifs_to_delete):
         """GDALを迂回し、XMLマージでVRTを超高速に差分更新する"""
-        tree = ET.parse(existing_vrt_path)
+        tree = parse_vrt_xml(existing_vrt_path)
         root = tree.getroot()
         
         gt_elem = root.find("GeoTransform")
@@ -319,7 +320,7 @@ class BuildVrtAndGpkgTask(QgsTask):
             ds.FlushCache()
             ds = None
             
-            diff_tree = ET.parse(diff_vrt_path)
+            diff_tree = parse_vrt_xml(diff_vrt_path)
             diff_root = diff_tree.getroot()
             diff_gt_elem = diff_root.find("GeoTransform")
             diff_gt = [float(x) for x in diff_gt_elem.text.strip().split(',')]
@@ -518,7 +519,7 @@ class BuildVrtAndGpkgTask(QgsTask):
     def _parse_vrt_xml(self, vrt_path, target_tifs_norm):
         features_data = []
         try:
-            tree = ET.parse(vrt_path)
+            tree = parse_vrt_xml(vrt_path)
             root = tree.getroot()
 
             gt_elem = root.find("GeoTransform")
@@ -635,3 +636,5 @@ class BuildVrtAndGpkgTask(QgsTask):
 
     def finished(self, result):
         self.signals.completed.emit(self.success, self.error_msg, self.temp_vrt, self.temp_gpkg, self.timing)
+
+

@@ -1,6 +1,7 @@
 import os
 import json
 import xml.etree.ElementTree as ET
+from .safe_xml import parse_vrt_xml
 import time
 import shutil
 from qgis.PyQt.QtWidgets import (
@@ -30,9 +31,9 @@ class OrthoManagerDockWidget(QDockWidget):
     GROUP_CRS_PROPERTY = "OrthoManager/group_crs_authid"
 
     def __init__(self, iface, parent=None):
-        super().__init__("OrthoManager v3.4", parent)
+        super().__init__("OrthoManager v3.4.1", parent)
         self.iface = iface
-        self.setWindowTitle("OrthoManager v3.4")
+        self.setWindowTitle("OrthoManager v3.4.1")
         self.setFeatures(
             QDockWidget.DockWidgetFeature.DockWidgetClosable
             | QDockWidget.DockWidgetFeature.DockWidgetMovable
@@ -1292,7 +1293,7 @@ class OrthoManagerDockWidget(QDockWidget):
             return 0
 
         remove_keys = {self._path_key(p) for p in (paths_to_remove or [])}
-        tree = ET.parse(vrt_path)
+        tree = parse_vrt_xml(vrt_path)
         root = tree.getroot()
         removed_count = 0
 
@@ -2040,6 +2041,8 @@ class OrthoManagerDockWidget(QDockWidget):
     def _on_overlay_renderer_changed(self, overlay_layer, qml_path):
         try: overlay_layer.saveNamedStyle(qml_path)
         except: pass
+
+
 
 
 

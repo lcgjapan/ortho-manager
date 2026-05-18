@@ -5,6 +5,7 @@ import concurrent.futures
 import multiprocessing
 import threading
 import xml.etree.ElementTree as ET
+from .safe_xml import parse_vrt_xml
 from qgis.PyQt.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QFileDialog, QMessageBox, QGroupBox, QLineEdit, QComboBox, 
@@ -1436,7 +1437,7 @@ class ExportTabWidget(QWidget):
     def _vrt_source_paths(self, vrt_path):
         paths = []
         try:
-            root = ET.parse(vrt_path).getroot()
+            root = parse_vrt_xml(vrt_path).getroot()
             base_dir = os.path.dirname(vrt_path)
             for node in root.findall(".//SourceFilename"):
                 text = (node.text or "").strip()
@@ -2085,4 +2086,6 @@ class ExportTabWidget(QWidget):
                 self.main_ui._set_status(f"✅ 書き出し完了: {success_count} 件成功 ({time_str})")
                 self._hide_export_progress_dialog()
                 QMessageBox.information(self, "完了", msg)
+
+
 
