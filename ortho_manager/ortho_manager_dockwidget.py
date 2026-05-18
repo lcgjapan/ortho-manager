@@ -30,9 +30,9 @@ class OrthoManagerDockWidget(QDockWidget):
     GROUP_CRS_PROPERTY = "OrthoManager/group_crs_authid"
 
     def __init__(self, iface, parent=None):
-        super().__init__("OrthoManager v3.3", parent)
+        super().__init__("OrthoManager v3.4", parent)
         self.iface = iface
-        self.setWindowTitle("OrthoManager v3.3")
+        self.setWindowTitle("OrthoManager v3.4")
         self.setFeatures(
             QDockWidget.DockWidgetFeature.DockWidgetClosable
             | QDockWidget.DockWidgetFeature.DockWidgetMovable
@@ -2040,6 +2040,7 @@ class OrthoManagerDockWidget(QDockWidget):
     def _on_overlay_renderer_changed(self, overlay_layer, qml_path):
         try: overlay_layer.saveNamedStyle(qml_path)
         except: pass
+
 
 
 

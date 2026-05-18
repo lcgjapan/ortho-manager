@@ -290,12 +290,22 @@ class VrtTabWidget(QWidget):
         btn_del.setFixedWidth(50)
         btn_del.clicked.connect(self._delete_vrt)
         btn_del.setStyleSheet(self._btn_style("#e74c3c"))
+        btn_organize = QPushButton("レイヤ整理")
+        btn_organize.setFixedWidth(78)
+        btn_organize.clicked.connect(self._organize_vrt_layers)
+        btn_organize.setStyleSheet(self._btn_style("#7f8c8d"))
         vrt_btn_row.addWidget(btn_new)
         vrt_btn_row.addWidget(self.btn_rename)
         vrt_btn_row.addWidget(btn_load)
         vrt_btn_row.addWidget(btn_del)
         vrt_btn_row.addStretch()
         grp_vrt_layout.addLayout(vrt_btn_row)
+
+        vrt_btn_row2 = QHBoxLayout()
+        vrt_btn_row2.setSpacing(4)
+        vrt_btn_row2.addWidget(btn_organize)
+        vrt_btn_row2.addStretch()
+        grp_vrt_layout.addLayout(vrt_btn_row2)
 
         layout.addWidget(grp_vrt)
 
@@ -341,10 +351,13 @@ class VrtTabWidget(QWidget):
         grp_scale_layout.addLayout(scale_row2)
 
         manual_row = QHBoxLayout()
-        manual_row.setSpacing(6)
-        manual_label = QLabel("手動1:")
-        manual_label.setFixedWidth(48)
-        manual_row.addWidget(manual_label)
+        manual_row.setSpacing(2)
+        manual_prefix_label = QLabel("手動  ")
+        manual_prefix_label.setFixedWidth(44)
+        manual_scale_label = QLabel("1:")
+        manual_scale_label.setFixedWidth(14)
+        manual_row.addWidget(manual_prefix_label)
+        manual_row.addWidget(manual_scale_label)
         self.scale_manual_edit = QLineEdit()
         self.scale_manual_edit.setFixedWidth(72)
         btn_manual_apply = QPushButton("適用")
@@ -925,6 +938,122 @@ class VrtTabWidget(QWidget):
             self.main_ui._set_status("🗑 リストをクリアし、VRTの中身を空にしました")
 
     # --- 縮尺設定 ---
+    def _layer_tree_nodes_for_layer(self, layer_id):
+        nodes = []
+        root = QgsProject.instance().layerTreeRoot()
+
+        def collect(parent):
+            for child in list(parent.children()):
+                if isinstance(child, QgsLayerTreeLayer):
+                    try:
+                        if child.layerId() == layer_id:
+                            nodes.append(child)
+                    except Exception:
+                        pass
+                elif hasattr(child, "children"):
+                    collect(child)
+
+        collect(root)
+        return nodes
+
+    def _ensure_vrt_group(self, name):
+        root = QgsProject.instance().layerTreeRoot()
+        group = self.main_ui._find_vrt_group(name)
+        display_name = self.main_ui.format_vrt_display_name(name)
+        if group is None:
+            insert_index = self.main_ui._vrt_group_insert_index(name)
+            if insert_index is None:
+                insert_index = 0
+            insert_index = max(0, min(insert_index, len(root.children())))
+            group = root.insertGroup(insert_index, display_name)
+        if group.name() != display_name:
+            group.setName(display_name)
+        group.setExpanded(False)
+        return group
+
+    def _move_layer_to_vrt_group(self, layer, group, index):
+        if layer is None or group is None:
+            return False
+        if QgsProject.instance().mapLayer(layer.id()) is None:
+            QgsProject.instance().addMapLayer(layer, False)
+        nodes = self._layer_tree_nodes_for_layer(layer.id())
+        group_nodes = [node for node in nodes if node.parent() == group]
+        if group_nodes:
+            keep_node = group_nodes[0]
+            for node in list(nodes):
+                if node is keep_node:
+                    continue
+                parent = node.parent()
+                if parent is not None:
+                    try:
+                        parent.removeChildNode(node)
+                    except Exception:
+                        pass
+            return True
+        if nodes:
+            source_node = nodes[0]
+            source_parent = source_node.parent()
+            try:
+                clone = source_node.clone()
+                index = max(0, min(index, len(group.children())))
+                group.insertChildNode(index, clone)
+                for node in list(nodes):
+                    parent = node.parent()
+                    if parent is not None:
+                        try:
+                            parent.removeChildNode(node)
+                        except Exception:
+                            pass
+                return True
+            except Exception as exc:
+                QgsMessageLog.logMessage(f"VRTレイヤ整理エラー: {layer.name()}: {exc}", "OrthoManager", Qgis.MessageLevel.Warning)
+                return False
+        try:
+            index = max(0, min(index, len(group.children())))
+            group.insertLayer(index, layer)
+            return True
+        except Exception as exc:
+            QgsMessageLog.logMessage(f"VRTレイヤ整理エラー: {layer.name()}: {exc}", "OrthoManager", Qgis.MessageLevel.Warning)
+            return False
+
+    def _organize_vrt_layers(self):
+        name = self.main_ui.current_vrt_name
+        if not name:
+            QMessageBox.warning(self, "警告", "VRTが選択されていません。")
+            return
+        vrt_layer = self.main_ui._get_vrt_layer(name)
+        overlay_layer = self.main_ui._get_overlay_layer(name)
+        if not vrt_layer and not overlay_layer:
+            QMessageBox.information(self, "情報", "整理できるVRTレイヤがありません。")
+            return
+        group = self._ensure_vrt_group(name)
+        allowed_ids = {layer.id() for layer in (overlay_layer, vrt_layer) if layer}
+        removed_extra = 0
+        root = QgsProject.instance().layerTreeRoot()
+        for child in list(group.children()):
+            if isinstance(child, QgsLayerTreeLayer) and child.layerId() not in allowed_ids:
+                try:
+                    clone = child.clone()
+                    insert_index = len(root.children())
+                    try:
+                        insert_index = root.children().index(group) + 1
+                    except Exception:
+                        pass
+                    root.insertChildNode(insert_index, clone)
+                    group.removeChildNode(child)
+                    removed_extra += 1
+                except Exception as exc:
+                    QgsMessageLog.logMessage(f"VRTレイヤ整理: 余計なレイヤの移動失敗: {exc}", "OrthoManager", Qgis.MessageLevel.Warning)
+        index = 0
+        moved = 0
+        if overlay_layer and self._move_layer_to_vrt_group(overlay_layer, group, index):
+            moved += 1
+            index += 1
+        if vrt_layer and self._move_layer_to_vrt_group(vrt_layer, group, index):
+            moved += 1
+        self.main_ui.iface.layerTreeView().refreshLayerSymbology(None)
+        self.main_ui.iface.mapCanvas().refresh()
+        self.main_ui._set_status(f"✅ レイヤ整理: {self.main_ui.strip_vrt_display_prefix(name)} (戻し{moved}件 / 外出し{removed_extra}件)")
     def _apply_scale_preset(self, scale_value):
         name = self.main_ui.current_vrt_name
         if not name: return
@@ -1168,6 +1297,13 @@ class VrtTabWidget(QWidget):
             "OrthoManager",
             Qgis.MessageLevel.Info,
         )
+
+
+
+
+
+
+
 
 
 

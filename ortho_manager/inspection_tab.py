@@ -4,12 +4,13 @@ import re
 import sqlite3
 
 from qgis.PyQt.QtCore import QObject, Qt, QDateTime, QEvent, QRect, QTimer
-from qgis.PyQt.QtGui import QColor, QCursor, QFont, QPainter, QPen, QPixmap
+from qgis.PyQt.QtGui import QColor, QCursor, QFont, QPainter, QPen, QPixmap, QKeySequence, QShortcut
 from qgis.PyQt.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QPushButton, QLabel,
     QFileDialog, QMessageBox, QGroupBox, QCheckBox, QComboBox, QDialog,
     QDialogButtonBox, QScrollArea, QInputDialog, QColorDialog, QMenu,
-    QWidgetAction, QSizePolicy, QRubberBand, QButtonGroup, QTextEdit, QApplication, QLineEdit
+    QWidgetAction, QSizePolicy, QRubberBand, QButtonGroup, QTextEdit, QApplication, QLineEdit,
+    QKeySequenceEdit
 )
 from qgis.core import (
     QgsProject, QgsVectorLayer, QgsFeature, QgsGeometry, QgsPointXY,
@@ -55,6 +56,24 @@ DGN_LEGACY_EXPORT_PER_LAYER = "dgn_legacy_per_layer"
 CONTEXT_ACTION_ORDER_KEY = "OrthoManager/inspection/context_action_order"
 CONTEXT_ACTION_BUTTON_WIDTH = 48
 CONTEXT_ACTION_DEFAULT_ORDER = ["pan", "select", "layer_change", "delete", "edit", "move", "merge"]
+INSPECTION_SHORTCUTS_KEY_PREFIX = "OrthoManager/inspection/shortcuts/"
+INSPECTION_DELETE_CONFIRM_KEY = "OrthoManager/inspection/delete_confirm"
+INSPECTION_SHORTCUT_DEFINITIONS = [
+    ("pan", "パン", ""),
+    ("select", "選択", ""),
+    ("layer_change", "移層", ""),
+    ("delete", "削除", "Del"),
+    ("edit", "編集", ""),
+    ("move", "移動", ""),
+    ("merge", "統合", ""),
+    ("continuous", "連続", ""),
+    ("shape_polygon", "多角", ""),
+    ("shape_rectangle", "矩形", ""),
+    ("shape_ellipse", "楕円", ""),
+    ("shape_circle", "正円", ""),
+    ("shape_line", "ライン", ""),
+    ("shape_point", "点", ""),
+]
 
 
 ROUND_ITEMS = {
@@ -672,27 +691,28 @@ class InspectionMapTool(QgsMapTool):
                 self.tab.edit_memo_at(event.mapPoint())
 
     def keyPressEvent(self, event):
-        if self.tab.operation_mode != "create":
-            super().keyPressEvent(event)
-            return
         key = event.key()
-        if key == Qt.Key.Key_Escape:
-            if self._has_capture_state():
-                self._clear_rubber_band()
-                self.tab.set_status("作成をキャンセルしました")
-                event.accept()
-                return
-        elif key == Qt.Key.Key_Backspace:
-            if self.shape_start_point:
-                self._clear_rubber_band()
-                self.tab.set_status("作成開始前に戻しました")
-                event.accept()
-                return
-            if self._remove_last_capture_point():
-                message = "1つ前の点に戻しました" if self.points else "作成開始前に戻しました"
-                self.tab.set_status(message)
-                event.accept()
-                return
+        if self.tab.operation_mode == "create":
+            if key == Qt.Key.Key_Escape:
+                if self._has_capture_state():
+                    self._clear_rubber_band()
+                    self.tab.set_status("作成をキャンセルしました")
+                    event.accept()
+                    return
+            elif key == Qt.Key.Key_Backspace:
+                if self.shape_start_point:
+                    self._clear_rubber_band()
+                    self.tab.set_status("作成開始前に戻しました")
+                    event.accept()
+                    return
+                if self._remove_last_capture_point():
+                    message = "1つ前の点に戻しました" if self.points else "作成開始前に戻しました"
+                    self.tab.set_status(message)
+                    event.accept()
+                    return
+        if self.tab.handle_shortcut_key(event):
+            event.accept()
+            return
         super().keyPressEvent(event)
 
     def _finish_capture(self):
@@ -854,6 +874,61 @@ class MemoDialog(QDialog):
     def text(self):
         return self.text_edit.toPlainText()
 
+class InspectionShortcutDialog(QDialog):
+    def __init__(self, tab, parent=None):
+        super().__init__(parent)
+        self.tab = tab
+        self.editors = {}
+        self.setWindowTitle("検査ショートカット設定")
+        self.resize(420, 460)
+        layout = QVBoxLayout(self)
+        layout.addWidget(QLabel("検査ONでOrthoManagerの検査マップ操作中だけ有効です。"))
+        grid = QGridLayout()
+        grid.setColumnStretch(1, 1)
+        row = 0
+        shortcuts = tab.inspection_shortcuts()
+        for key, label, default_value in INSPECTION_SHORTCUT_DEFINITIONS:
+            grid.addWidget(QLabel(label), row, 0)
+            editor = QKeySequenceEdit()
+            current = shortcuts.get(key, default_value) or ""
+            if current:
+                editor.setKeySequence(QKeySequence(current))
+            editor.setToolTip("空欄にすると未設定になります。")
+            clear_btn = QPushButton("クリア")
+            clear_btn.setFixedWidth(56)
+            clear_btn.clicked.connect(lambda _=False, e=editor: e.clear())
+            grid.addWidget(editor, row, 1)
+            grid.addWidget(clear_btn, row, 2)
+            self.editors[key] = editor
+            row += 1
+        layout.addLayout(grid)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel | QDialogButtonBox.StandardButton.RestoreDefaults
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        buttons.button(QDialogButtonBox.StandardButton.RestoreDefaults).clicked.connect(self.restore_defaults)
+        layout.addWidget(buttons)
+
+    def restore_defaults(self):
+        for key, _label, default_value in INSPECTION_SHORTCUT_DEFINITIONS:
+            self.editors[key].setKeySequence(QKeySequence(default_value or ""))
+
+    def values(self):
+        result = {}
+        used = {}
+        for key, label, _default_value in INSPECTION_SHORTCUT_DEFINITIONS:
+            text = self.editors[key].keySequence().toString(QKeySequence.SequenceFormat.PortableText).strip()
+            if not text:
+                result[key] = ""
+                continue
+            norm = self.tab.normalize_shortcut_text(text)
+            if norm in used:
+                QMessageBox.warning(self, "ショートカット重複", f"「{used[norm]}」と「{label}」に同じキーが設定されています。")
+                return None
+            used[norm] = label
+            result[key] = text
+        return result
 
 class VectorImportOptionsDialog(QDialog):
     def __init__(self, paths, parent=None):
@@ -1100,13 +1175,20 @@ class InspectionTabWidget(QWidget):
         self.btn_edit.clicked.connect(self.start_edit)
         self.btn_merge = QPushButton("統合")
         self.btn_merge.clicked.connect(self.start_merge)
-        for button in (self.btn_select, self.btn_delete, self.btn_edit, self.btn_merge):
+        self.btn_shortcut_settings = QPushButton("ショートカット設定")
+        self.btn_shortcut_settings.clicked.connect(self.open_inspection_shortcut_dialog)
+        self.chk_delete_confirm = QCheckBox("削除確認")
+        self.chk_delete_confirm.setChecked(self.delete_confirm_enabled())
+        self.chk_delete_confirm.toggled.connect(self.set_delete_confirm_enabled)
+        for button in (self.btn_select, self.btn_delete, self.btn_edit, self.btn_merge, self.btn_shortcut_settings):
             button.setMinimumWidth(0)
             button.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
         action_layout.addWidget(self.btn_select, 0, 0)
         action_layout.addWidget(self.btn_delete, 0, 1)
         action_layout.addWidget(self.btn_edit, 1, 0)
         action_layout.addWidget(self.btn_merge, 1, 1)
+        action_layout.addWidget(self.btn_shortcut_settings, 2, 0, 1, 2)
+        action_layout.addWidget(self.chk_delete_confirm, 3, 0, 1, 2)
         layout.addWidget(action_box)
 
         maintenance_box = QGroupBox("レイヤ管理")
@@ -1163,6 +1245,8 @@ class InspectionTabWidget(QWidget):
         maintenance_layout.addWidget(self.btn_organize_layers, 3, 2)
         layout.addWidget(maintenance_box)
         layout.addStretch()
+        self.inspection_qshortcuts = []
+        self.refresh_inspection_qshortcuts()
         self.refresh_ui()
 
     def set_status(self, text):
@@ -2824,32 +2908,35 @@ class InspectionTabWidget(QWidget):
         return removed
 
     def delete_current_inspection_type(self):
+        is_free = self.is_free_inspection()
+        root_group_name = FREE_INSPECTION_GROUP if is_free else INSPECTION_GROUP
+        title = "自由式検査削除" if is_free else "オルソ検査削除"
         layers = self.current_inspection_layers()
-        if not layers:
-            QMessageBox.information(self, "検査削除", "削除できる検査レイヤがありません。")
+        root = QgsProject.instance().layerTreeRoot()
+        group_exists = root.findGroup(root_group_name) is not None
+        if not layers and not group_exists:
+            QMessageBox.information(self, title, "削除できる検査グループまたは検査レイヤがありません。")
             return
-        if self.is_free_inspection():
-            title = "自由式検査削除"
+        if is_free:
             message = (
                 "自由式検査グループ内の全レイヤをGPKGから完全削除します。\n"
+                "空の自由式検査グループだけがある場合は、グループだけ削除します。\n"
                 "削除した地物は元に戻せません。\n"
                 "削除後は自由式検査で新しいレイヤを追加できます。\n\n"
                 "続行しますか？"
             )
-            root_group_name = FREE_INSPECTION_GROUP
         else:
-            title = "オルソ検査削除"
             message = (
                 "オルソ検査グループ内の全検査回・全レイヤをGPKGから完全削除します。\n"
+                "空のオルソ検査グループだけがある場合は、グループだけ削除します。\n"
                 "削除した地物は元に戻せません。\n"
                 "削除後は新規検査で1回目から作成し直せます。\n\n"
                 "続行しますか？"
             )
-            root_group_name = INSPECTION_GROUP
         if QMessageBox.question(self, title, message) != QMessageBox.StandardButton.Yes:
             return
-        failed = self.delete_layers_physically(layers)
-        if self.is_free_inspection():
+        failed = self.delete_layers_physically(layers) if layers else []
+        if is_free:
             self.free_groups.clear()
         self.remove_direct_group(root_group_name)
         self.refresh_ui()
@@ -2857,7 +2944,6 @@ class InspectionTabWidget(QWidget):
             QMessageBox.warning(self, title, "一部のGPKGレイヤ削除に失敗しました。\nQGIS再起動後に再実行してください。\n" + "\n".join(failed))
         else:
             self.set_status(f"✅ {title}: {len(layers)} レイヤ")
-
     def delete_ortho_round(self):
         rounds = sorted(self.standard_rounds())
         if not rounds:
@@ -3933,8 +4019,10 @@ class InspectionTabWidget(QWidget):
         self.btn_rename_group.setEnabled(False)
         self.btn_delete_free_group.setEnabled(False)
         self.btn_delete_round.setEnabled(not self.is_free_inspection() and bool(existing_rounds))
-        self.btn_delete_inspection_type.setText("自由式削除" if self.is_free_inspection() else "オルソ削除")
-        self.btn_delete_inspection_type.setEnabled(bool(self.current_inspection_layers()))
+        self.btn_delete_inspection_type.setText("自由式削除" if self.is_free_inspection() else "ｵﾙｿ検査削除")
+        root_group_name = FREE_INSPECTION_GROUP if self.is_free_inspection() else INSPECTION_GROUP
+        root_group_exists = QgsProject.instance().layerTreeRoot().findGroup(root_group_name) is not None
+        self.btn_delete_inspection_type.setEnabled(bool(self.current_inspection_layers()) or root_group_exists)
         self.btn_delete_manual.setEnabled(has_manual_layers)
         self.btn_clean_empty.setEnabled(has_layers)
         self.btn_organize_layers.setEnabled(has_layers)
@@ -4330,6 +4418,199 @@ class InspectionTabWidget(QWidget):
         menu.exec(global_pos)
         return
 
+    def delete_confirm_enabled(self):
+        try:
+            value = QgsSettings().value(INSPECTION_DELETE_CONFIRM_KEY, True)
+        except Exception:
+            return True
+        if isinstance(value, bool):
+            return value
+        return str(value).strip().lower() not in ("0", "false", "no", "off", "")
+
+    def set_delete_confirm_enabled(self, enabled):
+        try:
+            QgsSettings().setValue(INSPECTION_DELETE_CONFIRM_KEY, bool(enabled))
+        except Exception:
+            pass
+
+    def confirm_delete_if_needed(self, title, message):
+        if not self.delete_confirm_enabled():
+            return True
+        return QMessageBox.question(self, title, message) == QMessageBox.StandardButton.Yes
+    def inspection_shortcut_defaults(self):
+        return {key: default_value for key, _label, default_value in INSPECTION_SHORTCUT_DEFINITIONS}
+
+    def normalize_shortcut_text(self, text):
+        text = str(text or "").strip()
+        if "," in text:
+            text = text.split(",", 1)[0].strip()
+        replacements = {
+            "Delete": "Del",
+            "Del.": "Del",
+            "Return": "Enter",
+            "PgUp": "PageUp",
+            "PgDown": "PageDown",
+        }
+        for old, new in replacements.items():
+            text = text.replace(old, new)
+        return text.replace(" ", "").lower()
+
+    def inspection_shortcuts(self):
+        settings = QgsSettings()
+        shortcuts = self.inspection_shortcut_defaults()
+        for key in shortcuts:
+            try:
+                value = settings.value(INSPECTION_SHORTCUTS_KEY_PREFIX + key, shortcuts[key])
+            except Exception:
+                value = shortcuts[key]
+            shortcuts[key] = str(value or "").strip()
+        return shortcuts
+
+    def save_inspection_shortcuts(self, shortcuts):
+        settings = QgsSettings()
+        for key, _label, default_value in INSPECTION_SHORTCUT_DEFINITIONS:
+            try:
+                settings.setValue(INSPECTION_SHORTCUTS_KEY_PREFIX + key, shortcuts.get(key, default_value) or "")
+            except Exception:
+                pass
+
+    def open_inspection_shortcut_dialog(self):
+        dialog = InspectionShortcutDialog(self, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        values = dialog.values()
+        if values is None:
+            return
+        self.save_inspection_shortcuts(values)
+        self.refresh_inspection_qshortcuts()
+        self.set_status("✅ 検査ショートカットを保存しました")
+
+    def shortcut_focus_allows_run(self):
+        widget = QApplication.focusWidget()
+        if isinstance(widget, (QLineEdit, QTextEdit, QKeySequenceEdit)):
+            return False
+        return True
+
+    def refresh_inspection_qshortcuts(self):
+        for shortcut in getattr(self, "inspection_qshortcuts", []):
+            try:
+                shortcut.setEnabled(False)
+                shortcut.deleteLater()
+            except Exception:
+                pass
+        self.inspection_qshortcuts = []
+        for key, value in self.inspection_shortcuts().items():
+            if not value:
+                continue
+            sequence = QKeySequence(value)
+            if sequence.isEmpty():
+                continue
+            shortcut = QShortcut(sequence, self)
+            shortcut.setContext(Qt.ShortcutContext.ApplicationShortcut)
+            shortcut.activated.connect(lambda k=key: self.run_qshortcut(k))
+            self.inspection_qshortcuts.append(shortcut)
+
+    def run_qshortcut(self, key):
+        if not self.inspection_enabled or not self.shortcut_focus_allows_run():
+            return False
+        return self.run_inspection_shortcut(key)
+    def shortcut_text_from_event(self, event):
+        key = event.key()
+        modifier_keys = {
+            Qt.Key.Key_Shift,
+            Qt.Key.Key_Control,
+            Qt.Key.Key_Alt,
+            Qt.Key.Key_Meta,
+        }
+        if key in modifier_keys:
+            return ""
+        key_text = ""
+        try:
+            typed = event.text()
+        except Exception:
+            typed = ""
+        if typed and typed.strip() and not (event.modifiers() & Qt.KeyboardModifier.ControlModifier):
+            key_text = typed.strip().upper()
+        if not key_text:
+            key_text = QKeySequence(key).toString(QKeySequence.SequenceFormat.PortableText).strip()
+        if not key_text:
+            return ""
+        modifiers = event.modifiers()
+        parts = []
+        if modifiers & Qt.KeyboardModifier.ControlModifier:
+            parts.append("Ctrl")
+        if modifiers & Qt.KeyboardModifier.AltModifier:
+            parts.append("Alt")
+        if modifiers & Qt.KeyboardModifier.ShiftModifier:
+            parts.append("Shift")
+        if modifiers & Qt.KeyboardModifier.MetaModifier:
+            parts.append("Meta")
+        parts.append(key_text)
+        return "+".join(parts)
+
+    def handle_shortcut_key(self, event):
+        if not self.inspection_enabled:
+            return False
+        event_text = self.shortcut_text_from_event(event)
+        if not event_text:
+            return False
+        event_norm = self.normalize_shortcut_text(event_text)
+        for key, value in self.inspection_shortcuts().items():
+            if value and self.normalize_shortcut_text(value) == event_norm:
+                return self.run_inspection_shortcut(key)
+        return False
+
+    def run_inspection_shortcut(self, key):
+        actions = {
+            "pan": self.switch_to_pan,
+            "select": self.start_select,
+            "layer_change": self.start_layer_change,
+            "delete": self.start_delete,
+            "edit": self.start_edit,
+            "move": self.start_move,
+            "merge": self.start_merge,
+        }
+        if key in actions:
+            actions[key]()
+            return True
+        if key == "continuous":
+            self.set_continuous_capture(not self.continuous_capture_enabled)
+            state = "ON" if self.continuous_capture_enabled else "OFF"
+            self.set_status(f"連続: {state}")
+            return True
+        shape_map = {
+            "shape_polygon": ("polygon", "polygon", "多角"),
+            "shape_rectangle": ("polygon", "rectangle", "矩形"),
+            "shape_ellipse": ("polygon", "ellipse", "楕円"),
+            "shape_circle": ("polygon", "circle", "正円"),
+            "shape_line": ("line", None, "ライン"),
+            "shape_point": ("point", None, "点"),
+        }
+        if key in shape_map:
+            geom_key, shape, label = shape_map[key]
+            return self.activate_shape_shortcut(geom_key, shape, label)
+        return False
+
+    def activate_shape_shortcut(self, geom_key, shape, label):
+        layer = self.active_layer()
+        if not layer:
+            self.set_status("検査項目を選択してください")
+            return True
+        layer_geom = self.layer_geom_type_key(layer)
+        if layer_geom != geom_key:
+            layer_label = GEOM_TYPE_LABELS.get(layer_geom, "不明")
+            target_label = GEOM_TYPE_LABELS.get(geom_key, label)
+            self.set_status(f"この検査項目は{layer_label}です。{target_label}入力には切り替えられません")
+            return True
+        self.finish_edit_for_mode_switch()
+        self.active_geom_type = geom_key
+        if shape:
+            self.active_capture_shape = shape
+        self.operation_mode = "create"
+        self.iface.setActiveLayer(layer)
+        self.ensure_map_tool()
+        self.set_status(f"検査入力: {self.layer_base_name(layer)} / {label}")
+        return True
     def context_action_definitions(self):
         return {
             "pan": ("パン", self.switch_to_pan, "パンモードへ戻る"),
@@ -5660,7 +5941,7 @@ class InspectionTabWidget(QWidget):
         if not layer:
             self.set_status("削除対象が見つかりません")
             return
-        if QMessageBox.question(self, "検査図形を削除", "選択した検査図形を削除しますか？") != QMessageBox.StandardButton.Yes:
+        if not self.confirm_delete_if_needed("検査図形を削除", "選択した検査図形を削除しますか？"):
             return
         self._delete_features(layer, [feature.id()])
         self.operation_mode = "create"
@@ -5971,8 +6252,8 @@ class InspectionTabWidget(QWidget):
         targets = self.selected_vector_targets()
         if not targets:
             return False
-        count = sum(len(ids) for _l, ids in targets)
-        if QMessageBox.question(self, "地物を削除", f"選択中の {count} 件を削除しますか？") != QMessageBox.StandardButton.Yes:
+        count = sum(len(ids) for _layer, ids in targets)
+        if not self.confirm_delete_if_needed("地物を削除", f"選択中の {count} 件を削除しますか？"):
             return True
         for layer, ids in targets:
             self._delete_features(layer, ids)
@@ -7215,3 +7496,13 @@ class InspectionTabWidget(QWidget):
         except Exception:
             pass
         self.map_tool = None
+
+
+
+
+
+
+
+
+
+
