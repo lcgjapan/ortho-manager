@@ -1,0 +1,24 @@
+[general]
+name=OrthoManager
+qgisMinimumVersion=3.40
+qgisMaximumVersion=4.99
+description=Orthophoto inspection and export support tool
+version=3.3
+author=lcgjapan
+email=91273604+lcgjapan@users.noreply.github.com
+about=QGIS plugin for orthophoto inspection, VRT management, inspection vector editing, and orthophoto export workflows.
+tracker=https://github.com/lcgjapan/ortho-manager/issues
+repository=https://github.com/lcgjapan/ortho-manager
+tags=raster,orthophoto,vrt,inspection,quality,export
+homepage=https://github.com/lcgjapan/ortho-manager
+category=Raster
+icon=icon.png
+experimental=False
+deprecated=False
+
+
+
+
+
+
+
