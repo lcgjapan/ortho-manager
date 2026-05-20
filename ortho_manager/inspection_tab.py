@@ -21,6 +21,7 @@ from qgis.core import (
     QgsLayerTreeLayer
 )
 from qgis.gui import QgsMapTool, QgsRubberBand, QgsVertexMarker, QgsSnapIndicator
+from .i18n import tr
 try:
     from qgis.gui import QgsProjectionSelectionDialog
 except Exception:
@@ -1091,6 +1092,7 @@ class InspectionTabWidget(QWidget):
         self._original_digitizing_line_width = None
         self._original_digitizing_line_width_had_key = False
         self._build_ui()
+        self.refresh_texts()
 
     def _btn_style(self, color, active=False):
         border = "2px solid #222" if active else "1px solid #bdc3c7"
@@ -1105,10 +1107,10 @@ class InspectionTabWidget(QWidget):
         layout.setSpacing(6)
         layout.setContentsMargins(4, 4, 4, 4)
 
-        top = QGroupBox("検査管理")
-        top_layout = QVBoxLayout(top)
+        self.top_group = QGroupBox()
+        top_layout = QVBoxLayout(self.top_group)
         path_row = QHBoxLayout()
-        self.path_label = QLabel("検査GPKG: 未作成")
+        self.path_label = QLabel()
         self.path_label.setWordWrap(False)
         self.path_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
         path_row.addWidget(self.path_label)
@@ -1117,8 +1119,8 @@ class InspectionTabWidget(QWidget):
         type_row = QHBoxLayout()
         self.inspection_type_buttons = QButtonGroup(self)
         self.inspection_type_buttons.setExclusive(True)
-        self.btn_type_ortho = QPushButton("オルソ検査")
-        self.btn_type_free = QPushButton("自由式検査")
+        self.btn_type_ortho = QPushButton()
+        self.btn_type_free = QPushButton()
         for button, inspection_type in (
             (self.btn_type_ortho, INSPECTION_TYPE_ORTHO),
             (self.btn_type_free, INSPECTION_TYPE_FREE),
@@ -1132,13 +1134,13 @@ class InspectionTabWidget(QWidget):
         top_layout.addLayout(type_row)
 
         row = QGridLayout()
-        self.btn_new = QPushButton("新規検査")
+        self.btn_new = QPushButton()
         self.btn_new.clicked.connect(self.create_new_inspection)
-        self.btn_load = QPushButton("検査読込")
+        self.btn_load = QPushButton()
         self.btn_load.clicked.connect(self.load_inspection_file)
-        self.btn_export = QPushButton("検査書出")
+        self.btn_export = QPushButton()
         self.btn_export.clicked.connect(self.export_inspection)
-        self.btn_on = QPushButton("検査ON")
+        self.btn_on = QPushButton()
         self.btn_on.setCheckable(True)
         self.btn_on.toggled.connect(self.toggle_inspection)
         for button in (self.btn_new, self.btn_load, self.btn_export, self.btn_on):
@@ -1149,35 +1151,35 @@ class InspectionTabWidget(QWidget):
         row.addWidget(self.btn_export, 1, 0)
         row.addWidget(self.btn_on, 1, 1)
         top_layout.addLayout(row)
-        layout.addWidget(top)
+        layout.addWidget(self.top_group)
 
-        self.rounds_box = QGroupBox("検査回")
+        self.rounds_box = QGroupBox()
         rounds_layout = QHBoxLayout(self.rounds_box)
         for round_no in (2, 3, 4):
-            button = QPushButton(f"{round_no}回目追加")
+            button = QPushButton()
             button.clicked.connect(lambda _=False, r=round_no: self.add_round(r))
             self.round_buttons[round_no] = button
             rounds_layout.addWidget(button)
         layout.addWidget(self.rounds_box)
 
-        self.items_box = QGroupBox("検査項目")
+        self.items_box = QGroupBox()
         self.items_layout = QGridLayout(self.items_box)
         self.items_layout.setSpacing(4)
         layout.addWidget(self.items_box)
 
-        action_box = QGroupBox("編集")
-        action_layout = QGridLayout(action_box)
-        self.btn_select = QPushButton("地物選択")
+        self.action_box = QGroupBox()
+        action_layout = QGridLayout(self.action_box)
+        self.btn_select = QPushButton()
         self.btn_select.clicked.connect(self.start_select)
-        self.btn_delete = QPushButton("削除")
+        self.btn_delete = QPushButton()
         self.btn_delete.clicked.connect(self.start_delete)
-        self.btn_edit = QPushButton("編集")
+        self.btn_edit = QPushButton()
         self.btn_edit.clicked.connect(self.start_edit)
-        self.btn_merge = QPushButton("統合")
+        self.btn_merge = QPushButton()
         self.btn_merge.clicked.connect(self.start_merge)
-        self.btn_shortcut_settings = QPushButton("ショートカット設定")
+        self.btn_shortcut_settings = QPushButton()
         self.btn_shortcut_settings.clicked.connect(self.open_inspection_shortcut_dialog)
-        self.chk_delete_confirm = QCheckBox("削除確認")
+        self.chk_delete_confirm = QCheckBox()
         self.chk_delete_confirm.setChecked(self.delete_confirm_enabled())
         self.chk_delete_confirm.toggled.connect(self.set_delete_confirm_enabled)
         for button in (self.btn_select, self.btn_delete, self.btn_edit, self.btn_merge, self.btn_shortcut_settings):
@@ -1189,37 +1191,37 @@ class InspectionTabWidget(QWidget):
         action_layout.addWidget(self.btn_merge, 1, 1)
         action_layout.addWidget(self.btn_shortcut_settings, 2, 0, 1, 2)
         action_layout.addWidget(self.chk_delete_confirm, 3, 0, 1, 2)
-        layout.addWidget(action_box)
+        layout.addWidget(self.action_box)
 
-        maintenance_box = QGroupBox("レイヤ管理")
-        maintenance_layout = QGridLayout(maintenance_box)
-        self.btn_add_layer = QPushButton("レイヤ追加")
+        self.maintenance_box = QGroupBox()
+        maintenance_layout = QGridLayout(self.maintenance_box)
+        self.btn_add_layer = QPushButton()
         self.btn_add_layer.clicked.connect(self.add_manual_layer)
-        self.btn_import_vector = QPushButton("ベクタ取込")
+        self.btn_import_vector = QPushButton()
         self.btn_import_vector.clicked.connect(self.import_vector_layers)
-        self.btn_import_qgis_layer = QPushButton("QGISレイヤ取込")
+        self.btn_import_qgis_layer = QPushButton()
         self.btn_import_qgis_layer.clicked.connect(self.import_qgis_project_layers)
-        self.btn_rename_item = QPushButton("レイヤ名変更")
+        self.btn_rename_item = QPushButton()
         self.btn_rename_item.clicked.connect(self.rename_inspection_item)
-        self.btn_color_item = QPushButton("色変更")
+        self.btn_color_item = QPushButton()
         self.btn_color_item.clicked.connect(self.change_inspection_color)
-        self.btn_move_manual = QPushButton("レイヤ移動")
+        self.btn_move_manual = QPushButton()
         self.btn_move_manual.clicked.connect(self.move_manual_layer_round)
-        self.btn_add_group = QPushButton("グループ追加")
+        self.btn_add_group = QPushButton()
         self.btn_add_group.clicked.connect(self.add_free_group)
-        self.btn_rename_group = QPushButton("グループ名変更")
+        self.btn_rename_group = QPushButton()
         self.btn_rename_group.clicked.connect(self.rename_free_group)
-        self.btn_delete_manual = QPushButton("手動削除")
+        self.btn_delete_manual = QPushButton()
         self.btn_delete_manual.clicked.connect(self.delete_manual_layer)
-        self.btn_delete_round = QPushButton("検査回削除")
+        self.btn_delete_round = QPushButton()
         self.btn_delete_round.clicked.connect(self.delete_ortho_round)
-        self.btn_delete_free_group = QPushButton("グループ削除")
+        self.btn_delete_free_group = QPushButton()
         self.btn_delete_free_group.clicked.connect(self.delete_free_group)
-        self.btn_delete_inspection_type = QPushButton("検査削除")
+        self.btn_delete_inspection_type = QPushButton()
         self.btn_delete_inspection_type.clicked.connect(self.delete_current_inspection_type)
-        self.btn_clean_empty = QPushButton("空地物削除")
+        self.btn_clean_empty = QPushButton()
         self.btn_clean_empty.clicked.connect(self.delete_empty_geometry_features)
-        self.btn_organize_layers = QPushButton("レイヤ整理")
+        self.btn_organize_layers = QPushButton()
         self.btn_organize_layers.clicked.connect(self.organize_inspection_layers)
         for button in (
             self.btn_add_layer, self.btn_import_vector, self.btn_import_qgis_layer, self.btn_rename_item, self.btn_color_item,
@@ -1243,11 +1245,53 @@ class InspectionTabWidget(QWidget):
         maintenance_layout.addWidget(self.btn_delete_free_group, 3, 0)
         maintenance_layout.addWidget(self.btn_delete_inspection_type, 3, 1)
         maintenance_layout.addWidget(self.btn_organize_layers, 3, 2)
-        layout.addWidget(maintenance_box)
+        layout.addWidget(self.maintenance_box)
         layout.addStretch()
         self.inspection_qshortcuts = []
         self.refresh_inspection_qshortcuts()
         self.refresh_ui()
+
+    def refresh_texts(self):
+        if not hasattr(self, "top_group"):
+            return
+        self.top_group.setTitle(tr("inspection.group.management"))
+        self.btn_type_ortho.setText(tr("inspection.type.ortho"))
+        self.btn_type_free.setText(tr("inspection.type.free"))
+        self.btn_new.setText(tr("inspection.btn.new"))
+        self.btn_load.setText(tr("inspection.btn.load"))
+        self.btn_export.setText(tr("inspection.btn.export"))
+        self.btn_on.setText(tr("inspection.btn.on"))
+        self.rounds_box.setTitle(tr("inspection.group.rounds"))
+        for round_no, button in self.round_buttons.items():
+            button.setText(tr("inspection.btn.round_add").format(round=round_no))
+        self.items_box.setTitle(tr("inspection.group.items"))
+        self.action_box.setTitle(tr("inspection.group.edit"))
+        self.btn_select.setText(tr("inspection.btn.select_feature"))
+        self.btn_delete.setText(tr("inspection.btn.delete"))
+        self.btn_edit.setText(tr("inspection.btn.edit"))
+        self.btn_merge.setText(tr("inspection.btn.merge"))
+        self.btn_shortcut_settings.setText(tr("inspection.btn.shortcut"))
+        self.chk_delete_confirm.setText(tr("inspection.chk.delete_confirm"))
+        self.maintenance_box.setTitle(tr("inspection.group.layers"))
+        self.btn_add_layer.setText(tr("inspection.btn.layer_add"))
+        self.btn_import_vector.setText(tr("inspection.btn.vector_import"))
+        self.btn_import_qgis_layer.setText(tr("inspection.btn.qgis_import"))
+        self.btn_rename_item.setText(tr("inspection.btn.layer_rename"))
+        self.btn_color_item.setText(tr("inspection.btn.color"))
+        self.btn_move_manual.setText(tr("inspection.btn.layer_move"))
+        self.btn_add_group.setText(tr("inspection.btn.group_add"))
+        self.btn_rename_group.setText(tr("inspection.btn.group_rename"))
+        self.btn_delete_manual.setText(tr("inspection.btn.manual_delete"))
+        self.btn_delete_round.setText(tr("inspection.btn.round_delete"))
+        self.btn_delete_free_group.setText(tr("inspection.btn.group_delete"))
+        self.btn_clean_empty.setText(tr("inspection.btn.empty_delete"))
+        self.btn_organize_layers.setText(tr("inspection.btn.organize"))
+        self._refresh_delete_inspection_type_text()
+        self.refresh_ui()
+
+    def _refresh_delete_inspection_type_text(self):
+        key = "inspection.btn.type_delete.free" if self.is_free_inspection() else "inspection.btn.type_delete.ortho"
+        self.btn_delete_inspection_type.setText(tr(key))
 
     def set_status(self, text):
         if hasattr(self.main_ui, "_set_status"):
@@ -3995,7 +4039,8 @@ class InspectionTabWidget(QWidget):
         self.refresh_ui()
 
     def refresh_ui(self):
-        self.path_label.setText(f"検査GPKG: {self.gpkg_path or '未作成'}")
+        path_text = self.gpkg_path or tr("inspection.path.none")
+        self.path_label.setText(tr("inspection.path").format(path=path_text))
         self.path_label.setToolTip(self.gpkg_path)
         self.btn_type_ortho.setChecked(self.active_inspection_type == INSPECTION_TYPE_ORTHO)
         self.btn_type_free.setChecked(self.active_inspection_type == INSPECTION_TYPE_FREE)
@@ -4019,7 +4064,7 @@ class InspectionTabWidget(QWidget):
         self.btn_rename_group.setEnabled(False)
         self.btn_delete_free_group.setEnabled(False)
         self.btn_delete_round.setEnabled(not self.is_free_inspection() and bool(existing_rounds))
-        self.btn_delete_inspection_type.setText("自由式削除" if self.is_free_inspection() else "ｵﾙｿ検査削除")
+        self._refresh_delete_inspection_type_text()
         root_group_name = FREE_INSPECTION_GROUP if self.is_free_inspection() else INSPECTION_GROUP
         root_group_exists = QgsProject.instance().layerTreeRoot().findGroup(root_group_name) is not None
         self.btn_delete_inspection_type.setEnabled(bool(self.current_inspection_layers()) or root_group_exists)
@@ -4055,11 +4100,11 @@ class InspectionTabWidget(QWidget):
             self.items_layout.addWidget(button, 0, 0)
             self.buttons_by_source[source] = button
         elif layers:
-            label = QLabel("右クリックで検査項目を選択してください")
+            label = QLabel(tr("inspection.items.select_prompt"))
             label.setWordWrap(True)
             self.items_layout.addWidget(label, 0, 0)
         else:
-            message = "レイヤ追加から作成してください" if self.is_free_inspection() else "新規検査を作成してください"
+            message = tr("inspection.items.create_free") if self.is_free_inspection() else tr("inspection.items.create_ortho")
             self.items_layout.addWidget(QLabel(message), 0, 0)
 
     def raw_inspection_layers(self):
@@ -4200,7 +4245,7 @@ class InspectionTabWidget(QWidget):
             self.install_context_filter()
             self.apply_inspection_selection_color()
             self.switch_to_pan()
-            self.btn_on.setText("検査ON")
+            self.btn_on.setText(tr("inspection.btn.on"))
             self.btn_on.setStyleSheet("QPushButton{background:#27ae60;color:white;font-weight:bold;}")
         else:
             self.remove_context_filter()
@@ -4613,13 +4658,13 @@ class InspectionTabWidget(QWidget):
         return True
     def context_action_definitions(self):
         return {
-            "pan": ("パン", self.switch_to_pan, "パンモードへ戻る"),
-            "select": ("選択", self.start_select, "検査データを選択"),
-            "layer_change": ("移層", self.start_layer_change, "選択データを別レイヤへ移層"),
-            "delete": ("削除", self.start_delete, "選択データを削除"),
-            "edit": ("編集", self.start_edit, "頂点編集モード"),
-            "move": ("移動", self.start_move, "選択データをドラッグ移動"),
-            "merge": ("統合", self.start_merge, "選択データを統合"),
+            "pan": (tr("inspection.menu.action.pan"), self.switch_to_pan, tr("inspection.menu.tip.pan")),
+            "select": (tr("inspection.menu.action.select"), self.start_select, tr("inspection.menu.tip.select")),
+            "layer_change": (tr("inspection.menu.action.layer_change"), self.start_layer_change, tr("inspection.menu.tip.layer_change")),
+            "delete": (tr("inspection.menu.action.delete"), self.start_delete, tr("inspection.menu.tip.delete")),
+            "edit": (tr("inspection.menu.action.edit"), self.start_edit, tr("inspection.menu.tip.edit")),
+            "move": (tr("inspection.menu.action.move"), self.start_move, tr("inspection.menu.tip.move")),
+            "merge": (tr("inspection.menu.action.merge"), self.start_merge, tr("inspection.menu.tip.merge")),
         }
 
     def context_action_order(self):
@@ -4775,15 +4820,15 @@ class InspectionTabWidget(QWidget):
         if layer_change_mode:
             row = QHBoxLayout()
             row.setSpacing(2)
-            btn_pan = QPushButton("メイン")
+            btn_pan = QPushButton(tr("inspection.menu.main"))
             btn_pan.setFixedWidth(CONTEXT_ACTION_BUTTON_WIDTH)
             btn_pan.clicked.connect(lambda _=False, m=menu, p=global_pos: (m.close(), self.show_main_menu(p)))
             row.addWidget(btn_pan)
             menu.setStyleSheet("QMenu{background:#fff6c8;} QMenu::item:selected{background:#ffe58a;color:#202020;}")
             top_widget.setStyleSheet("background:#fff6c8;")
             for text, slot, width in [
-                ("再選択", self.restart_layer_change_selection, 56),
-                ("やめる", self.cancel_layer_change, 50),
+                (tr("inspection.menu.reselect"), self.restart_layer_change_selection, 56),
+                (tr("inspection.menu.cancel"), self.cancel_layer_change, 50),
             ]:
                 btn = QPushButton(text)
                 btn.setFixedWidth(width)
@@ -4816,11 +4861,11 @@ class InspectionTabWidget(QWidget):
             has_free_items = bool(free_group_names) or any(grouped.get(name) for name in grouped)
             if not has_free_items:
                 self.add_menu_button(
-                    menu, "＋ グループ追加",
+                    menu, tr("inspection.menu.add_group"),
                     lambda: self.add_free_group(), close_menu=True, bold=True, indent=0
                 )
                 self.add_menu_button(
-                    menu, "＋ レイヤ追加",
+                    menu, tr("inspection.menu.add_layer"),
                     lambda: self.add_manual_layer(free_group_name=""), close_menu=True, bold=True, indent=0
                 )
             direct_layers = grouped.get("", [])
@@ -4869,11 +4914,11 @@ class InspectionTabWidget(QWidget):
             if has_free_items:
                 menu.addSeparator()
                 self.add_menu_button(
-                    menu, "＋ レイヤ追加",
+                    menu, tr("inspection.menu.add_layer"),
                     lambda: self.add_manual_layer(free_group_name=""), close_menu=True, bold=True, indent=0
                 )
                 self.add_menu_button(
-                    menu, "＋ グループ追加",
+                    menu, tr("inspection.menu.add_group"),
                     lambda: self.add_free_group(), close_menu=True, bold=True, indent=0
                 )
         else:
@@ -4889,7 +4934,7 @@ class InspectionTabWidget(QWidget):
                     group_order.append(round_no)
                 grouped[round_no].append(layer)
             for round_no in group_order:
-                title = "手動レイヤ" if round_no == 0 else f"{round_no}回目検査"
+                title = tr("inspection.menu.manual_layers") if round_no == 0 else tr("inspection.menu.round_title").format(round=round_no)
                 expanded = self.round_menu_expanded.get(round_no, True)
                 self.add_menu_button(
                     menu,
@@ -4928,18 +4973,18 @@ class InspectionTabWidget(QWidget):
         widget = QWidget(menu)
         layout = QHBoxLayout(widget)
         layout.setContentsMargins(4, 1, 4, 1)
-        chk = QCheckBox("連続")
-        chk.setToolTip("連続作成")
+        chk = QCheckBox(tr("inspection.menu.continuous"))
+        chk.setToolTip(tr("inspection.menu.continuous_tooltip"))
         chk.setChecked(self.continuous_capture_enabled)
         chk.toggled.connect(self.set_continuous_capture)
         layout.addWidget(chk)
         group = QButtonGroup(widget)
         group.setExclusive(True)
         for key, text in [
-            ("polygon", "多角"),
-            ("rectangle", "矩形"),
-            ("ellipse", "楕円"),
-            ("circle", "正円"),
+            ("polygon", tr("inspection.menu.shape_polygon")),
+            ("rectangle", tr("inspection.menu.shape_rectangle")),
+            ("ellipse", tr("inspection.menu.shape_ellipse")),
+            ("circle", tr("inspection.menu.shape_circle")),
         ]:
             btn = QPushButton(text)
             btn.setCheckable(True)
@@ -5474,17 +5519,17 @@ class InspectionTabWidget(QWidget):
         title_action = menu.addAction(self.layer_base_name(layer))
         title_action.setEnabled(False)
         menu.addSeparator()
-        add_action = menu.addAction("レイヤ追加")
+        add_action = menu.addAction(tr("inspection.btn.layer_add"))
         add_action.triggered.connect(lambda _=False, s=source_name: self.add_manual_layer(insert_above_source=s))
-        import_action = menu.addAction("ベクタ取込")
+        import_action = menu.addAction(tr("inspection.btn.vector_import"))
         import_action.triggered.connect(lambda _=False, s=source_name: self.import_vector_layers(insert_above_source=s))
-        rename_action = menu.addAction("レイヤ名変更")
+        rename_action = menu.addAction(tr("inspection.menu.layer_rename"))
         rename_action.triggered.connect(lambda _=False, l=layer: self.rename_inspection_item(l))
-        color_action = menu.addAction("色変更")
+        color_action = menu.addAction(tr("inspection.menu.color"))
         color_action.triggered.connect(lambda _=False, l=layer: self.change_inspection_color(l))
-        size_action = menu.addAction("線・点サイズ変更")
+        size_action = menu.addAction(tr("inspection.menu.size"))
         size_action.triggered.connect(lambda _=False, l=layer: self.change_layer_size(l))
-        delete_action = menu.addAction("手動削除")
+        delete_action = menu.addAction(tr("inspection.btn.manual_delete"))
         delete_action.setEnabled(self.is_manual_layer(layer))
         delete_action.triggered.connect(lambda _=False, l=layer: self.delete_manual_layer(l))
         menu.exec(global_pos)
@@ -5498,11 +5543,11 @@ class InspectionTabWidget(QWidget):
         title_action = menu.addAction(self.free_group_title(group_name))
         title_action.setEnabled(False)
         menu.addSeparator()
-        add_action = menu.addAction("レイヤ追加")
+        add_action = menu.addAction(tr("inspection.btn.layer_add"))
         add_action.triggered.connect(lambda _=False, g=group_name: self.add_manual_layer(free_group_name=g))
-        rename_action = menu.addAction("グループ名変更")
+        rename_action = menu.addAction(tr("inspection.menu.group_rename"))
         rename_action.triggered.connect(lambda _=False, g=group_name: self.rename_free_group(g))
-        delete_action = menu.addAction("グループ削除")
+        delete_action = menu.addAction(tr("inspection.menu.group_delete"))
         delete_action.triggered.connect(lambda _=False, g=group_name: self.delete_free_group(g))
         menu.exec(global_pos)
         if return_pos:

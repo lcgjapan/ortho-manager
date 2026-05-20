@@ -17,6 +17,7 @@ from qgis.core import (
 
 from .utils import DEFAULT_MIN_SCALE
 from .tasks import BuildVrtAndGpkgTask, ExternalVrtEngineTask, find_external_vrt_engine_path
+from .i18n import current_language, tr
 
 try:
     from osgeo import ogr
@@ -29,32 +30,31 @@ class TifListWindow(QWidget):
     def __init__(self, vrt_tab, parent=None):
         super().__init__(parent, Qt.WindowType.Tool)
         self.vrt_tab = vrt_tab
-        self.setWindowTitle("ファイル管理")
+        self.setWindowTitle(tr("tif.window.title"))
         self.resize(560, 420)
         self.setMinimumSize(360, 260)
 
         layout = QVBoxLayout(self)
         layout.setSpacing(6)
 
-        path_label = QLabel("VRT場所：")
-        path_label.setStyleSheet("font-weight:bold;")
-        layout.addWidget(path_label)
+        self.path_label = QLabel()
+        self.path_label.setStyleSheet("font-weight:bold;")
+        layout.addWidget(self.path_label)
         self.vrt_path_edit = QLineEdit()
-        self.vrt_path_edit.setPlaceholderText("VRTパス")
         self.vrt_path_edit.setReadOnly(True)
         self.vrt_path_edit.setStyleSheet("background:#f8f9fa; font-size:10px;")
         layout.addWidget(self.vrt_path_edit)
 
         header_row = QHBoxLayout()
-        header_label = QLabel("ファイル管理")
-        header_label.setStyleSheet("font-weight:bold;")
-        self.btn_sort_added = QPushButton("追加順")
+        self.header_label = QLabel()
+        self.header_label.setStyleSheet("font-weight:bold;")
+        self.btn_sort_added = QPushButton()
         self.btn_sort_added.setFixedWidth(58)
         self.btn_sort_added.clicked.connect(lambda: self.vrt_tab._set_tif_sort_mode("added"))
-        self.btn_sort_name = QPushButton("名前順")
+        self.btn_sort_name = QPushButton()
         self.btn_sort_name.setFixedWidth(58)
         self.btn_sort_name.clicked.connect(lambda: self.vrt_tab._set_tif_sort_mode("name"))
-        header_row.addWidget(header_label)
+        header_row.addWidget(self.header_label)
         header_row.addStretch()
         header_row.addWidget(self.btn_sort_added)
         header_row.addWidget(self.btn_sort_name)
@@ -62,7 +62,6 @@ class TifListWindow(QWidget):
 
         search_row = QHBoxLayout()
         self.search_edit = QLineEdit()
-        self.search_edit.setPlaceholderText("🔍 ファイル名で検索")
         self.search_edit.textChanged.connect(self._filter_list)
         btn_cls = QPushButton("✕")
         btn_cls.setFixedWidth(28)
@@ -75,46 +74,47 @@ class TifListWindow(QWidget):
         self.tif_listwidget.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         layout.addWidget(self.tif_listwidget)
 
-        self.count_label = QLabel("0 ファイル")
+        self.count_label = QLabel()
         layout.addWidget(self.count_label)
 
-        self.chk_include_subfolders = QCheckBox("サブフォルダも読み込む")
+        self.chk_include_subfolders = QCheckBox()
         self.chk_include_subfolders.setChecked(bool(getattr(self.vrt_tab, "include_subfolders", False)))
         self.chk_include_subfolders.toggled.connect(self.vrt_tab._set_include_subfolders)
         layout.addWidget(self.chk_include_subfolders)
 
         add_row = QHBoxLayout()
-        btn_folder = QPushButton("📂 フォルダ追加")
-        btn_folder.clicked.connect(self.vrt_tab._add_from_folder)
-        btn_folder.setStyleSheet(self.vrt_tab._btn_style("#3498db"))
-        btn_files = QPushButton("🖼 ファイル追加")
-        btn_files.clicked.connect(self.vrt_tab._add_files)
-        btn_files.setStyleSheet(self.vrt_tab._btn_style("#2ecc71"))
-        add_row.addWidget(btn_folder)
-        add_row.addWidget(btn_files)
+        self.btn_folder = QPushButton()
+        self.btn_folder.clicked.connect(self.vrt_tab._add_from_folder)
+        self.btn_folder.setStyleSheet(self.vrt_tab._btn_style("#3498db"))
+        self.btn_files = QPushButton()
+        self.btn_files.clicked.connect(self.vrt_tab._add_files)
+        self.btn_files.setStyleSheet(self.vrt_tab._btn_style("#2ecc71"))
+        add_row.addWidget(self.btn_folder)
+        add_row.addWidget(self.btn_files)
         layout.addLayout(add_row)
 
         action_row = QHBoxLayout()
-        btn_select_map = QPushButton("🖱 マップから削除")
-        btn_select_map.clicked.connect(self.vrt_tab._activate_overlay_and_select_tool)
-        btn_select_map.setStyleSheet(self.vrt_tab._btn_style("#f39c12"))
-        btn_remove = QPushButton("❌ 選択を削除")
-        btn_remove.clicked.connect(self.vrt_tab._remove_selected)
-        btn_remove.setStyleSheet(self.vrt_tab._btn_style("#e74c3c"))
-        btn_clear = QPushButton("🗑 全削除")
-        btn_clear.clicked.connect(self.vrt_tab._clear_list)
-        btn_clear.setStyleSheet(self.vrt_tab._btn_style("#95a5a6"))
-        for button in (btn_select_map, btn_remove, btn_clear):
+        self.btn_select_map = QPushButton()
+        self.btn_select_map.clicked.connect(self.vrt_tab._activate_overlay_and_select_tool)
+        self.btn_select_map.setStyleSheet(self.vrt_tab._btn_style("#f39c12"))
+        self.btn_remove = QPushButton()
+        self.btn_remove.clicked.connect(self.vrt_tab._remove_selected)
+        self.btn_remove.setStyleSheet(self.vrt_tab._btn_style("#e74c3c"))
+        self.btn_clear = QPushButton()
+        self.btn_clear.clicked.connect(self.vrt_tab._clear_list)
+        self.btn_clear.setStyleSheet(self.vrt_tab._btn_style("#95a5a6"))
+        for button in (self.btn_select_map, self.btn_remove, self.btn_clear):
             button.setFixedSize(124, 30)
-        btn_close = QPushButton("閉じる")
-        btn_close.clicked.connect(self.close)
-        action_row.addWidget(btn_select_map)
-        action_row.addWidget(btn_remove)
-        action_row.addWidget(btn_clear)
+        self.btn_close = QPushButton()
+        self.btn_close.clicked.connect(self.close)
+        action_row.addWidget(self.btn_select_map)
+        action_row.addWidget(self.btn_remove)
+        action_row.addWidget(self.btn_clear)
         action_row.addStretch()
-        action_row.addWidget(btn_close)
+        action_row.addWidget(self.btn_close)
         layout.addLayout(action_row)
 
+        self.refresh_texts()
         self.update_sort_buttons()
         self.reload_list()
 
@@ -136,7 +136,24 @@ class TifListWindow(QWidget):
             self._filter_list(keyword)
 
     def update_count(self):
-        self.count_label.setText(f"{len(self.vrt_tab.main_ui.tif_list)} ファイル")
+        self.count_label.setText(tr("tif.count").format(count=len(self.vrt_tab.main_ui.tif_list)))
+
+    def refresh_texts(self):
+        self.setWindowTitle(tr("tif.window.title"))
+        self.path_label.setText(tr("tif.label.vrt_path"))
+        self.vrt_path_edit.setPlaceholderText(tr("tif.placeholder.vrt_path"))
+        self.header_label.setText(tr("tif.window.title"))
+        self.btn_sort_added.setText(tr("tif.btn.sort_added"))
+        self.btn_sort_name.setText(tr("tif.btn.sort_name"))
+        self.search_edit.setPlaceholderText(tr("tif.placeholder.search"))
+        self.chk_include_subfolders.setText(tr("tif.chk.subfolders"))
+        self.btn_folder.setText(tr("tif.btn.folder_add"))
+        self.btn_files.setText(tr("tif.btn.files_add"))
+        self.btn_select_map.setText(tr("tif.btn.map_remove"))
+        self.btn_remove.setText(tr("tif.btn.remove_selected"))
+        self.btn_clear.setText(tr("tif.btn.clear"))
+        self.btn_close.setText(tr("tif.btn.close"))
+        self.update_count()
 
     def update_path_display(self):
         if hasattr(self, "vrt_path_edit"):
@@ -197,7 +214,9 @@ class VrtTabWidget(QWidget):
         was_blocked = self.btn_view_cache.blockSignals(True)
         self.btn_view_cache.setChecked(bool(enabled))
         self.btn_view_cache.setStyleSheet(self._view_cache_btn_style(bool(enabled)))
-        self.btn_view_cache.setToolTip("ビューキャッシュをOFFにします" if enabled else "ビューキャッシュをONにします")
+        self.btn_view_cache.setToolTip(
+            tr("vrt.tooltip.view_cache.off") if enabled else tr("vrt.tooltip.view_cache.on")
+        )
         self.btn_view_cache.blockSignals(was_blocked)
 
     def _focus_map_canvas_after_toggle(self):
@@ -224,7 +243,9 @@ class VrtTabWidget(QWidget):
         was_blocked = self.btn_custom_cache.blockSignals(True)
         self.btn_custom_cache.setChecked(bool(enabled))
         self.btn_custom_cache.setStyleSheet(self._custom_cache_btn_style(bool(enabled)))
-        self.btn_custom_cache.setToolTip("独自キャッシュをOFFにします" if enabled else "独自キャッシュをONにします")
+        self.btn_custom_cache.setToolTip(
+            tr("vrt.tooltip.custom_cache.off") if enabled else tr("vrt.tooltip.custom_cache.on")
+        )
         self.btn_custom_cache.blockSignals(was_blocked)
 
     def _toggle_custom_cache(self, checked):
@@ -242,11 +263,28 @@ class VrtTabWidget(QWidget):
         was_blocked = self.btn_screen_shield.blockSignals(True)
         self.btn_screen_shield.setChecked(bool(enabled))
         self.btn_screen_shield.setStyleSheet(self._screen_shield_btn_style(bool(enabled)))
-        self.btn_screen_shield.setToolTip("画面シールドをOFFにします" if enabled else "画面シールドをONにします")
+        self.btn_screen_shield.setToolTip(
+            tr("vrt.tooltip.screen_shield.off") if enabled else tr("vrt.tooltip.screen_shield.on")
+        )
         self.btn_screen_shield.blockSignals(was_blocked)
 
     def _toggle_screen_shield(self, checked):
         self.main_ui.apply_screen_shield_enabled(bool(checked), save=True, show_status=True)
+        self._focus_map_canvas_after_toggle()
+
+    def update_mouse_shield_button(self, enabled):
+        if not hasattr(self, "btn_mouse_shield"):
+            return
+        was_blocked = self.btn_mouse_shield.blockSignals(True)
+        self.btn_mouse_shield.setChecked(bool(enabled))
+        self.btn_mouse_shield.setStyleSheet(self._screen_shield_btn_style(bool(enabled)))
+        self.btn_mouse_shield.setToolTip(
+            tr("vrt.tooltip.mouse_shield.off") if enabled else tr("vrt.tooltip.mouse_shield.on")
+        )
+        self.btn_mouse_shield.blockSignals(was_blocked)
+
+    def _toggle_mouse_shield(self, checked):
+        self.main_ui.apply_mouse_shield_enabled(bool(checked), save=True, show_status=True)
         self._focus_map_canvas_after_toggle()
 
     def _build_ui(self):
@@ -254,8 +292,8 @@ class VrtTabWidget(QWidget):
         layout.setSpacing(6)
 
         # 1. VRT管理グループ
-        grp_vrt = QGroupBox("VRT管理")
-        grp_vrt_layout = QVBoxLayout(grp_vrt)
+        self.grp_vrt = QGroupBox()
+        grp_vrt_layout = QVBoxLayout(self.grp_vrt)
 
         combo_row = QHBoxLayout()
         self.vrt_combo = QComboBox()
@@ -273,60 +311,60 @@ class VrtTabWidget(QWidget):
 
         vrt_btn_row = QHBoxLayout()
         vrt_btn_row.setSpacing(4)
-        btn_new = QPushButton("新規")
-        btn_new.setFixedWidth(52)
-        btn_new.clicked.connect(self._new_vrt)
-        btn_new.setStyleSheet(self._btn_style("#27ae60"))
-        self.btn_rename = QPushButton("名前変更")
+        self.btn_new = QPushButton()
+        self.btn_new.setFixedWidth(52)
+        self.btn_new.clicked.connect(self._new_vrt)
+        self.btn_new.setStyleSheet(self._btn_style("#27ae60"))
+        self.btn_rename = QPushButton()
         self.btn_rename.setFixedWidth(70)
         self.btn_rename.clicked.connect(self._rename_vrt)
         self.btn_rename.setStyleSheet(self._btn_style("#2980b9"))
         self.btn_rename.setEnabled(False)
-        btn_load = QPushButton("VRT読込")
-        btn_load.setFixedWidth(66)
-        btn_load.clicked.connect(self._load_existing_vrt)
-        btn_load.setStyleSheet(self._btn_style("#8e44ad"))
-        btn_del = QPushButton("削除")
-        btn_del.setFixedWidth(50)
-        btn_del.clicked.connect(self._delete_vrt)
-        btn_del.setStyleSheet(self._btn_style("#e74c3c"))
-        btn_organize = QPushButton("レイヤ整理")
-        btn_organize.setFixedWidth(78)
-        btn_organize.clicked.connect(self._organize_vrt_layers)
-        btn_organize.setStyleSheet(self._btn_style("#7f8c8d"))
-        vrt_btn_row.addWidget(btn_new)
+        self.btn_load = QPushButton()
+        self.btn_load.setFixedWidth(66)
+        self.btn_load.clicked.connect(self._load_existing_vrt)
+        self.btn_load.setStyleSheet(self._btn_style("#8e44ad"))
+        self.btn_del = QPushButton()
+        self.btn_del.setFixedWidth(50)
+        self.btn_del.clicked.connect(self._delete_vrt)
+        self.btn_del.setStyleSheet(self._btn_style("#e74c3c"))
+        self.btn_organize = QPushButton()
+        self.btn_organize.setFixedWidth(78)
+        self.btn_organize.clicked.connect(self._organize_vrt_layers)
+        self.btn_organize.setStyleSheet(self._btn_style("#7f8c8d"))
+        vrt_btn_row.addWidget(self.btn_new)
         vrt_btn_row.addWidget(self.btn_rename)
-        vrt_btn_row.addWidget(btn_load)
-        vrt_btn_row.addWidget(btn_del)
+        vrt_btn_row.addWidget(self.btn_load)
+        vrt_btn_row.addWidget(self.btn_del)
         vrt_btn_row.addStretch()
         grp_vrt_layout.addLayout(vrt_btn_row)
 
         vrt_btn_row2 = QHBoxLayout()
         vrt_btn_row2.setSpacing(4)
-        vrt_btn_row2.addWidget(btn_organize)
+        vrt_btn_row2.addWidget(self.btn_organize)
         vrt_btn_row2.addStretch()
         grp_vrt_layout.addLayout(vrt_btn_row2)
 
-        layout.addWidget(grp_vrt)
+        layout.addWidget(self.grp_vrt)
 
         # 2. ファイル管理グループ
-        grp_file = QGroupBox("ファイル管理")
-        grp_file_layout = QHBoxLayout(grp_file)
+        self.grp_file = QGroupBox()
+        grp_file_layout = QHBoxLayout(self.grp_file)
         grp_file_layout.setContentsMargins(6, 6, 6, 6)
-        self.count_label = QLabel("ファイル数：0ファイル")
+        self.count_label = QLabel()
         self.count_label.setStyleSheet("font-weight:bold;")
-        btn_show_tif_list = QPushButton("ファイル管理")
-        btn_show_tif_list.setFixedWidth(86)
-        btn_show_tif_list.clicked.connect(self._open_tif_list_window)
-        btn_show_tif_list.setStyleSheet(self._btn_style("#34495e"))
+        self.btn_show_tif_list = QPushButton()
+        self.btn_show_tif_list.setFixedWidth(86)
+        self.btn_show_tif_list.clicked.connect(self._open_tif_list_window)
+        self.btn_show_tif_list.setStyleSheet(self._btn_style("#34495e"))
         grp_file_layout.addWidget(self.count_label)
         grp_file_layout.addStretch()
-        grp_file_layout.addWidget(btn_show_tif_list)
-        layout.addWidget(grp_file)
+        grp_file_layout.addWidget(self.btn_show_tif_list)
+        layout.addWidget(self.grp_file)
 
         # 3. 表示縮尺設定グループ
-        grp_scale = QGroupBox("表示縮尺設定")
-        grp_scale_layout = QVBoxLayout(grp_scale)
+        self.grp_scale = QGroupBox()
+        grp_scale_layout = QVBoxLayout(self.grp_scale)
         grp_scale_layout.setContentsMargins(4, 4, 4, 4)
         PRESET_SCALES = [500, 1000, 2500, 5000, 10000, 25000, 50000, 100000]
 
@@ -352,45 +390,45 @@ class VrtTabWidget(QWidget):
 
         manual_row = QHBoxLayout()
         manual_row.setSpacing(2)
-        manual_prefix_label = QLabel("手動  ")
-        manual_prefix_label.setFixedWidth(44)
-        manual_scale_label = QLabel("1:")
-        manual_scale_label.setFixedWidth(14)
-        manual_row.addWidget(manual_prefix_label)
-        manual_row.addWidget(manual_scale_label)
+        self.manual_prefix_label = QLabel()
+        self.manual_prefix_label.setFixedWidth(44)
+        self.manual_scale_label = QLabel("1:")
+        self.manual_scale_label.setFixedWidth(14)
+        manual_row.addWidget(self.manual_prefix_label)
+        manual_row.addWidget(self.manual_scale_label)
         self.scale_manual_edit = QLineEdit()
         self.scale_manual_edit.setFixedWidth(72)
-        btn_manual_apply = QPushButton("適用")
-        btn_manual_apply.setFixedWidth(42)
-        btn_manual_apply.setStyleSheet(self._btn_style("#2980b9"))
-        btn_manual_apply.clicked.connect(self._apply_scale_manual)
+        self.btn_manual_apply = QPushButton()
+        self.btn_manual_apply.setFixedWidth(42)
+        self.btn_manual_apply.setStyleSheet(self._btn_style("#2980b9"))
+        self.btn_manual_apply.clicked.connect(self._apply_scale_manual)
         manual_row.addWidget(self.scale_manual_edit)
-        manual_row.addWidget(btn_manual_apply)
-        btn_all = QPushButton("🌐 全表示")
-        btn_all.setFixedWidth(78)
-        btn_all.setFixedHeight(24)
-        btn_all.setStyleSheet(self._btn_style("#e67e22"))
-        btn_all.clicked.connect(self._apply_scale_all)
-        self.scale_btns[0] = btn_all
-        manual_row.addWidget(btn_all)
+        manual_row.addWidget(self.btn_manual_apply)
+        self.btn_all = QPushButton()
+        self.btn_all.setFixedWidth(78)
+        self.btn_all.setFixedHeight(24)
+        self.btn_all.setStyleSheet(self._btn_style("#e67e22"))
+        self.btn_all.clicked.connect(self._apply_scale_all)
+        self.scale_btns[0] = self.btn_all
+        manual_row.addWidget(self.btn_all)
         manual_row.addStretch()
         grp_scale_layout.addLayout(manual_row)
 
         cache_row = QHBoxLayout()
         cache_row.setSpacing(6)
-        self.btn_view_cache = QPushButton("ﾋﾞｭｰｷｬｯｼｭ")
+        self.btn_view_cache = QPushButton()
         self.btn_view_cache.setCheckable(True)
         self.btn_view_cache.setFixedWidth(78)
         self.btn_view_cache.setFixedHeight(24)
         self.btn_view_cache.clicked.connect(self._toggle_view_cache)
         cache_row.addWidget(self.btn_view_cache)
-        self.btn_custom_cache = QPushButton("独自ｷｬｯｼｭ")
+        self.btn_custom_cache = QPushButton()
         self.btn_custom_cache.setCheckable(True)
         self.btn_custom_cache.setFixedWidth(78)
         self.btn_custom_cache.setFixedHeight(24)
         self.btn_custom_cache.clicked.connect(self._toggle_custom_cache)
         cache_row.addWidget(self.btn_custom_cache)
-        self.btn_screen_shield = QPushButton("画面ｼｰﾙﾄﾞ")
+        self.btn_screen_shield = QPushButton()
         self.btn_screen_shield.setCheckable(True)
         self.btn_screen_shield.setFixedWidth(78)
         self.btn_screen_shield.setFixedHeight(24)
@@ -399,16 +437,29 @@ class VrtTabWidget(QWidget):
         cache_row.addStretch()
         grp_scale_layout.addLayout(cache_row)
 
+        mouse_shield_row = QHBoxLayout()
+        mouse_shield_row.setSpacing(6)
+        self.btn_mouse_shield = QPushButton()
+        self.btn_mouse_shield.setCheckable(True)
+        self.btn_mouse_shield.setFixedWidth(78)
+        self.btn_mouse_shield.setFixedHeight(24)
+        self.btn_mouse_shield.clicked.connect(self._toggle_mouse_shield)
+        mouse_shield_row.addWidget(self.btn_mouse_shield)
+        mouse_shield_row.addStretch()
+        grp_scale_layout.addLayout(mouse_shield_row)
+
         self.update_view_cache_button(getattr(self.main_ui, "view_cache_enabled", False))
         self.update_custom_cache_button(getattr(self.main_ui, "custom_cache_enabled", False))
         self.update_screen_shield_button(getattr(self.main_ui, "screen_shield_enabled", False))
-        layout.addWidget(grp_scale)
+        self.update_mouse_shield_button(getattr(self.main_ui, "mouse_shield_enabled", False))
+        layout.addWidget(self.grp_scale)
         self._update_tif_sort_buttons()
 
-        self.btn_build = QPushButton("⚡ VRT生成・更新", self)
+        self.btn_build = QPushButton(self)
         self.btn_build.clicked.connect(self._build_and_load_vrt)
         self.btn_build.setStyleSheet(self._btn_style_big("#8e44ad"))
         self.btn_build.setVisible(False)
+        self.refresh_texts()
 
         self.vrt_progress_bar = QProgressBar()
         self.vrt_progress_bar.setValue(0)
@@ -419,6 +470,32 @@ class VrtTabWidget(QWidget):
         layout.addStretch()
 
     # --- UI更新・同期メソッド ---
+    def refresh_texts(self):
+        self.grp_vrt.setTitle(tr("vrt.group.vrt"))
+        self.grp_file.setTitle(tr("vrt.group.files"))
+        self.grp_scale.setTitle(tr("vrt.group.scale"))
+        self.btn_new.setText(tr("vrt.btn.new"))
+        self.btn_rename.setText(tr("vrt.btn.rename"))
+        self.btn_load.setText(tr("vrt.btn.load"))
+        self.btn_del.setText(tr("vrt.btn.delete"))
+        self.btn_organize.setText(tr("vrt.btn.organize"))
+        self.btn_show_tif_list.setText(tr("vrt.btn.file_manager"))
+        self.manual_prefix_label.setText(tr("vrt.label.manual"))
+        self.btn_manual_apply.setText(tr("vrt.btn.apply"))
+        self.btn_all.setText(tr("vrt.btn.all"))
+        self.btn_view_cache.setText(tr("vrt.btn.view_cache"))
+        self.btn_custom_cache.setText(tr("vrt.btn.custom_cache"))
+        self.btn_screen_shield.setText(tr("vrt.btn.screen_shield"))
+        self.btn_mouse_shield.setText(tr("vrt.btn.mouse_shield"))
+        self.btn_build.setText(tr("vrt.btn.build"))
+        self.update_count()
+        self.update_view_cache_button(getattr(self.main_ui, "view_cache_enabled", False))
+        self.update_custom_cache_button(getattr(self.main_ui, "custom_cache_enabled", False))
+        self.update_screen_shield_button(getattr(self.main_ui, "screen_shield_enabled", False))
+        self.update_mouse_shield_button(getattr(self.main_ui, "mouse_shield_enabled", False))
+        if self.tif_list_window is not None:
+            self.tif_list_window.refresh_texts()
+
     def populate_vrt_combo(self):
         self.vrt_combo.blockSignals(True)
         self.vrt_combo.clear()
@@ -507,7 +584,7 @@ class VrtTabWidget(QWidget):
             self.tif_list_window.reload_list()
 
     def update_count(self):
-        text = f"ファイル数：{len(self.main_ui.tif_list)}ファイル"
+        text = tr("vrt.label.file_count").format(count=len(self.main_ui.tif_list))
         if hasattr(self, "count_label"):
             self.count_label.setText(text)
         if self.tif_list_window is not None:

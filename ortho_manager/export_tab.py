@@ -18,6 +18,7 @@ from qgis.core import (
     QgsProject, QgsVectorLayer, QgsRasterLayer, QgsMessageLog, Qgis,
     QgsWkbTypes, QgsMapSettings, QgsMapRendererCustomPainterJob, QgsRectangle
 )
+from .i18n import tr
 
 try:
     from osgeo import gdal
@@ -53,6 +54,7 @@ class ExportTabWidget(QWidget):
         self.progress_updated.connect(self._update_progress)
         
         self._build_ui()
+        self.refresh_texts()
         
         # ESCキーでの選択解除ショートカット
         self.shortcut_esc = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
@@ -66,6 +68,99 @@ class ExportTabWidget(QWidget):
 
     def _btn_style_big(self, color):
         return f"QPushButton{{background:{color};color:white;border:none;border-radius:5px;padding:7px;font-size:12px;font-weight:bold;}}QPushButton:hover{{background:{color}CC;}}"
+
+    def _combo_value(self, combo):
+        value = combo.currentData()
+        return value if value is not None else combo.currentText()
+
+    def _set_combo_items(self, combo, items):
+        current = combo.currentData()
+        if current is None:
+            current = combo.currentText()
+        combo.blockSignals(True)
+        combo.clear()
+        for value, text in items:
+            combo.addItem(text, value)
+        index = combo.findData(current)
+        if index < 0 and combo.count():
+            index = 0
+        if index >= 0:
+            combo.setCurrentIndex(index)
+        combo.blockSignals(False)
+
+    def refresh_texts(self):
+        if not hasattr(self, "grp_in"):
+            return
+        self.grp_in.setTitle(tr("export.group.input"))
+        self.lbl_info.setText(tr("export.info.target"))
+        self.chk_include_vector.setText(tr("export.chk.include_vector"))
+        self.grp_bound.setTitle(tr("export.group.bounds"))
+        self.lbl_zukaku.setText(tr("export.label.zukaku"))
+        self.btn_select_map.setText(tr("export.btn.map_select"))
+        self.lbl_id.setText(tr("export.label.id"))
+        self.grp_out.setTitle(tr("export.group.output"))
+        self.rb_mode_split.setText(tr("export.rb.split"))
+        self.rb_mode_single.setText(tr("export.rb.single"))
+        self.rb_mode_single.setToolTip(tr("export.tooltip.single"))
+        self.lbl_sname.setText(tr("export.label.name"))
+        self.lbl_outdir.setText(tr("export.label.outdir"))
+        self.lbl_fmt.setText(tr("export.label.format"))
+        self._set_combo_items(self.format_combo, [
+            ("TIF＋TFW", tr("export.format.tif_tfw")),
+            ("GeoTIFF", tr("export.format.geotiff")),
+            ("TFWのみ", tr("export.format.tfw_only")),
+            ("JPG＋JGW", tr("export.format.jpg_jgw")),
+            ("ECW", tr("export.format.ecw")),
+            ("PDF", tr("export.format.pdf")),
+        ])
+        self.lbl_res.setText(tr("export.label.resolution"))
+        self.res_x_edit.setPlaceholderText(tr("export.placeholder.source_res"))
+        self.res_y_edit.setPlaceholderText(tr("export.placeholder.source_res"))
+        self.lbl_depth.setText(tr("export.label.bit"))
+        self.lbl_alg.setText(tr("export.label.resample"))
+        self.grp_opt.setTitle(tr("export.group.options"))
+        self.chk_skip_empty_vrt.setText(tr("export.chk.skip_empty"))
+        self.chk_skip_empty_vrt.setToolTip(tr("export.tooltip.skip_empty"))
+        self.chk_skip_solid.setText(tr("export.chk.skip_solid"))
+        self.chk_background_process.setText(tr("export.chk.background"))
+        self.chk_background_process.setToolTip(tr("export.tooltip.background"))
+        self.lbl_bg.setText(tr("export.label.bg"))
+        self.lbl_mode.setText(tr("export.label.mode"))
+        self.lbl_workers.setText(tr("export.label.workers"))
+        self.btn_export.setText(tr("export.btn.run"))
+        self._set_combo_items(self.depth_combo, [
+            ("24bit フルカラー (RGB: 透過なし)", tr("export.depth.24")),
+            ("32bit フルカラー (RGBA: 透過あり)", tr("export.depth.32")),
+            ("8bit (Byte)", tr("export.depth.8")),
+            ("16bit 無符号 (UInt16)", tr("export.depth.u16")),
+            ("16bit 有符号 (Int16)", tr("export.depth.i16")),
+            ("32bit 浮動小数点 (Float32)", tr("export.depth.f32")),
+        ])
+        self._set_combo_items(self.resample_combo, [
+            ("最近傍法 (Nearest)", tr("export.resample.nearest")),
+            ("キュービック (Cubic)", tr("export.resample.cubic")),
+            ("バイリニア (Bilinear)", tr("export.resample.bilinear")),
+        ])
+        self._set_combo_items(self.skip_color_combo, [
+            ("白", tr("export.color.white")),
+            ("黒", tr("export.color.black")),
+            ("透明", tr("export.color.transparent")),
+        ])
+        self._set_combo_items(self.bg_color_combo, [
+            ("白", tr("export.color.white")),
+            ("黒", tr("export.color.black")),
+            ("透明", tr("export.color.transparent")),
+            ("プロジェクト色", tr("export.color.project")),
+        ])
+        self._set_combo_items(self.export_mode_combo, [
+            ("標準高速", tr("export.mode.fast")),
+            ("標準 2.18", tr("export.mode.standard")),
+            ("診断: Warp直接出力", tr("export.mode.warp")),
+            ("診断: Warp直接＋後処理", tr("export.mode.warp_post")),
+            ("診断: 図郭形状そのまま", tr("export.mode.shape")),
+            ("診断: 矩形最速", tr("export.mode.rect")),
+            ("診断: 選択VRT直接", tr("export.mode.vrt")),
+        ])
 
     def _build_ui(self):
         main_layout = QVBoxLayout(self)
@@ -84,43 +179,43 @@ class ExportTabWidget(QWidget):
         layout.setContentsMargins(4, 4, 4, 4)
 
         # --- 1. 入力データ設定 ---
-        grp_in = QGroupBox("1. 入力データ設定")
-        gl_in = QVBoxLayout(grp_in)
+        self.grp_in = QGroupBox()
+        gl_in = QVBoxLayout(self.grp_in)
         gl_in.setSpacing(4)
         gl_in.setContentsMargins(6, 12, 6, 6)
 
-        lbl_info = QLabel("ℹ 出力対象はレイヤパネル表示順（ON）の全ラスタ")
-        lbl_info.setStyleSheet("color: #2980b9; font-weight: bold; font-size:11px;")
-        lbl_info.setWordWrap(True)
-        gl_in.addWidget(lbl_info)
+        self.lbl_info = QLabel()
+        self.lbl_info.setStyleSheet("color: #2980b9; font-weight: bold; font-size:11px;")
+        self.lbl_info.setWordWrap(True)
+        gl_in.addWidget(self.lbl_info)
 
-        self.chk_include_vector = QCheckBox("表示中のベクタデータも画像に焼き付ける")
+        self.chk_include_vector = QCheckBox()
         self.chk_include_vector.setChecked(False)
         gl_in.addWidget(self.chk_include_vector)
-        layout.addWidget(grp_in)
+        layout.addWidget(self.grp_in)
 
         # --- 2. 出力範囲（図郭）設定 ---
-        grp_bound = QGroupBox("2. 出力範囲（図郭）設定")
-        gl_bound = QVBoxLayout(grp_bound)
+        self.grp_bound = QGroupBox()
+        gl_bound = QVBoxLayout(self.grp_bound)
         gl_bound.setSpacing(4)
         gl_bound.setContentsMargins(6, 12, 6, 6)
 
         row_zuk = QHBoxLayout()
-        lbl_zukaku = QLabel("図郭レイヤ：")
-        gl_bound.addWidget(lbl_zukaku)
+        self.lbl_zukaku = QLabel()
+        gl_bound.addWidget(self.lbl_zukaku)
         self.zukaku_combo = QComboBox()
         self.zukaku_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         gl_bound.addWidget(self.zukaku_combo)
 
-        btn_select_map = QPushButton("🖱 マップから選択 (ESCで解除)")
-        btn_select_map.setStyleSheet(self._btn_style("#f39c12"))
-        btn_select_map.clicked.connect(self._activate_select_tool)
-        gl_bound.addWidget(btn_select_map)
+        self.btn_select_map = QPushButton()
+        self.btn_select_map.setStyleSheet(self._btn_style("#f39c12"))
+        self.btn_select_map.clicked.connect(self._activate_select_tool)
+        gl_bound.addWidget(self.btn_select_map)
 
         row_id = QHBoxLayout()
-        lbl_id = QLabel("図郭ID：")
-        lbl_id.setFixedWidth(50)
-        row_id.addWidget(lbl_id)
+        self.lbl_id = QLabel()
+        self.lbl_id.setFixedWidth(50)
+        row_id.addWidget(self.lbl_id)
         self.id_field_combo = QComboBox()
         self.id_field_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         row_id.addWidget(self.id_field_combo)
@@ -128,27 +223,26 @@ class ExportTabWidget(QWidget):
         
         self.zukaku_combo.currentIndexChanged.connect(self._refresh_field_combo)
         self._refresh_layer_combo()
-        layout.addWidget(grp_bound)
+        layout.addWidget(self.grp_bound)
 
         # --- 3. 出力設定 ---
-        grp_out = QGroupBox("3. 出力設定")
-        gl_out = QVBoxLayout(grp_out)
+        self.grp_out = QGroupBox()
+        gl_out = QVBoxLayout(self.grp_out)
         gl_out.setSpacing(4)
         gl_out.setContentsMargins(6, 12, 6, 6)
 
         row_mode = QHBoxLayout()
-        self.rb_mode_split = QRadioButton("図郭ごとに出力")
-        self.rb_mode_single = QRadioButton("1ファイルで出力")
-        self.rb_mode_single.setToolTip("選択図郭がある場合は選択図郭、ない場合は全図郭の外接矩形を1ファイルで出力します")
+        self.rb_mode_split = QRadioButton()
+        self.rb_mode_single = QRadioButton()
         self.rb_mode_split.setChecked(True)
         row_mode.addWidget(self.rb_mode_split)
         row_mode.addWidget(self.rb_mode_single)
         gl_out.addLayout(row_mode)
 
         row_single_name = QHBoxLayout()
-        lbl_sname = QLabel("名前：")
-        lbl_sname.setFixedWidth(35)
-        row_single_name.addWidget(lbl_sname)
+        self.lbl_sname = QLabel()
+        self.lbl_sname.setFixedWidth(35)
+        row_single_name.addWidget(self.lbl_sname)
         self.single_name_edit = QLineEdit()
         self.single_name_edit.setText("merged_ortho")
         self.single_name_edit.setEnabled(False)
@@ -156,8 +250,8 @@ class ExportTabWidget(QWidget):
         row_single_name.addWidget(self.single_name_edit)
         gl_out.addLayout(row_single_name)
 
-        lbl_outdir = QLabel("出力フォルダ：")
-        gl_out.addWidget(lbl_outdir)
+        self.lbl_outdir = QLabel()
+        gl_out.addWidget(self.lbl_outdir)
         row_outdir = QHBoxLayout()
         self.export_out_edit = QLineEdit()
         btn_out = QPushButton("...")
@@ -168,134 +262,111 @@ class ExportTabWidget(QWidget):
         gl_out.addLayout(row_outdir)
 
         row_fmt = QHBoxLayout()
-        lbl_fmt = QLabel("形式：")
-        lbl_fmt.setFixedWidth(35)
-        row_fmt.addWidget(lbl_fmt)
+        self.lbl_fmt = QLabel()
+        self.lbl_fmt.setFixedWidth(35)
+        row_fmt.addWidget(self.lbl_fmt)
         self.format_combo = QComboBox()
-        self.format_combo.addItems(["TIF＋TFW", "GeoTIFF", "TFWのみ", "JPG＋JGW", "ECW", "PDF"])
+        self._set_combo_items(self.format_combo, [
+            ("TIF＋TFW", "TIF＋TFW"),
+            ("GeoTIFF", "GeoTIFF"),
+            ("TFWのみ", "TFWのみ"),
+            ("JPG＋JGW", "JPG＋JGW"),
+            ("ECW", "ECW"),
+            ("PDF", "PDF"),
+        ])
         row_fmt.addWidget(self.format_combo)
         gl_out.addLayout(row_fmt)
 
         row_res = QHBoxLayout()
-        lbl_res = QLabel("解像度(m)：")
-        row_res.addWidget(lbl_res)
+        self.lbl_res = QLabel()
+        row_res.addWidget(self.lbl_res)
         
         row_res.addStretch()
         
         lbl_res_x = QLabel("X")
         row_res.addWidget(lbl_res_x)
         self.res_x_edit = QLineEdit()
-        self.res_x_edit.setPlaceholderText("元画像通り")
         self.res_x_edit.setMaximumWidth(70) 
         row_res.addWidget(self.res_x_edit)
         
         lbl_res_y = QLabel("Y")
         row_res.addWidget(lbl_res_y)
         self.res_y_edit = QLineEdit()
-        self.res_y_edit.setPlaceholderText("元画像通り")
         self.res_y_edit.setMaximumWidth(70)
         row_res.addWidget(self.res_y_edit)
         gl_out.addLayout(row_res)
 
         row_depth = QHBoxLayout()
-        lbl_depth = QLabel("ビット：")
-        lbl_depth.setFixedWidth(40)
-        row_depth.addWidget(lbl_depth)
+        self.lbl_depth = QLabel()
+        self.lbl_depth.setFixedWidth(40)
+        row_depth.addWidget(self.lbl_depth)
         self.depth_combo = QComboBox()
-        self.depth_combo.addItems([
-            "24bit フルカラー (RGB: 透過なし)",
-            "32bit フルカラー (RGBA: 透過あり)",
-            "8bit (Byte)",
-            "16bit 無符号 (UInt16)",
-            "16bit 有符号 (Int16)",
-            "32bit 浮動小数点 (Float32)"
-        ])
         row_depth.addWidget(self.depth_combo)
         gl_out.addLayout(row_depth)
 
         row_alg = QHBoxLayout()
-        lbl_alg = QLabel("補間：")
-        lbl_alg.setFixedWidth(35)
-        row_alg.addWidget(lbl_alg)
+        self.lbl_alg = QLabel()
+        self.lbl_alg.setFixedWidth(35)
+        row_alg.addWidget(self.lbl_alg)
         self.resample_combo = QComboBox()
-        self.resample_combo.addItems(["最近傍法 (Nearest)", "キュービック (Cubic)", "バイリニア (Bilinear)"])
         row_alg.addWidget(self.resample_combo)
         gl_out.addLayout(row_alg)
-        layout.addWidget(grp_out)
+        layout.addWidget(self.grp_out)
 
         # --- 4. 高度なオプション ---
-        grp_opt = QGroupBox("4. 高度なオプション")
-        gl_opt = QVBoxLayout(grp_opt)
+        self.grp_opt = QGroupBox()
+        gl_opt = QVBoxLayout(self.grp_opt)
         gl_opt.setSpacing(4)
         gl_opt.setContentsMargins(6, 12, 6, 6)
 
-        self.chk_skip_empty_vrt = QCheckBox("ラスタ実データがない図郭はスキップ")
-        self.chk_skip_empty_vrt.setToolTip("出力対象ラスタに実データがない図郭を出力せずにスキップします")
+        self.chk_skip_empty_vrt = QCheckBox()
         self.chk_skip_empty_vrt.setChecked(True)
         gl_opt.addWidget(self.chk_skip_empty_vrt)
 
         row_skip = QHBoxLayout()
-        self.chk_skip_solid = QCheckBox("図郭内に同色の場合はスキップ：")
+        self.chk_skip_solid = QCheckBox()
         self.chk_skip_solid.setChecked(True)
         self.skip_color_combo = QComboBox()
-        self.skip_color_combo.addItems(["白", "黒", "透明"])
         row_skip.addWidget(self.chk_skip_solid)
         row_skip.addWidget(self.skip_color_combo)
         gl_opt.addLayout(row_skip)
 
         row_bg = QHBoxLayout()
-        self.chk_background_process = QCheckBox("背景色処理")
+        self.chk_background_process = QCheckBox()
         self.chk_background_process.setChecked(True)
-        self.chk_background_process.setToolTip("ON: 選択した背景色を反映します / OFF: 背景処理を行いません")
         row_bg.addWidget(self.chk_background_process)
-        lbl_bg = QLabel("背景色：")
-        lbl_bg.setFixedWidth(50)
-        row_bg.addWidget(lbl_bg)
+        self.lbl_bg = QLabel()
+        self.lbl_bg.setFixedWidth(50)
+        row_bg.addWidget(self.lbl_bg)
         self.bg_color_combo = QComboBox()
-        self.bg_color_combo.addItems(["白", "黒", "透明", "プロジェクト色"])
         row_bg.addWidget(self.bg_color_combo)
         gl_opt.addLayout(row_bg)
 
         row_mode = QHBoxLayout()
-        lbl_mode = QLabel("モード：")
-        lbl_mode.setFixedWidth(50)
-        row_mode.addWidget(lbl_mode)
+        self.lbl_mode = QLabel()
+        self.lbl_mode.setFixedWidth(50)
+        row_mode.addWidget(self.lbl_mode)
         self.export_mode_combo = QComboBox()
-        self.export_mode_combo.addItems([
-            "標準高速",
-            "標準 2.18",
-            "診断: Warp直接出力",
-            "診断: Warp直接＋後処理",
-            "診断: 図郭形状そのまま",
-            "診断: 矩形最速",
-            "診断: 選択VRT直接",
-        ])
         row_mode.addWidget(self.export_mode_combo)
         gl_opt.addLayout(row_mode)
 
         row_workers = QHBoxLayout()
-        lbl_workers = QLabel("並列数：")
-        lbl_workers.setFixedWidth(50)
-        row_workers.addWidget(lbl_workers)
+        self.lbl_workers = QLabel()
+        self.lbl_workers.setFixedWidth(50)
+        row_workers.addWidget(self.lbl_workers)
         self.worker_count_combo = QComboBox()
         self.worker_count_combo.addItems(["1", "2", "4", "6", "8", "12", "16"])
         self.worker_count_combo.setCurrentText("16")
         row_workers.addWidget(self.worker_count_combo)
         gl_opt.addLayout(row_workers)
-        layout.addWidget(grp_opt)
+        layout.addWidget(self.grp_opt)
 
         # --- 実行ボタン ---
         row_run = QHBoxLayout()
-        btn_log_mark = QPushButton("ログ開始")
-        btn_log_mark.setToolTip("次のテストログの開始位置をQGISログに記録します")
-        btn_log_mark.clicked.connect(self._mark_log_start)
-        btn_log_mark.setStyleSheet(self._btn_style("#607d8b"))
-        row_run.addWidget(btn_log_mark)
-
-        btn_export = QPushButton("🚀 書き出し実行")
-        btn_export.clicked.connect(self._run_export)
-        btn_export.setStyleSheet(self._btn_style_big("#c0392b"))
-        row_run.addWidget(btn_export, 1)
+        self.btn_export = QPushButton()
+        self.btn_export.clicked.connect(self._run_export)
+        self.btn_export.setStyleSheet(self._btn_style_big("#c0392b"))
+        row_run.addWidget(self.btn_export, 1)
         layout.addLayout(row_run)
 
         self.export_progress_bar = QProgressBar()
@@ -592,7 +663,7 @@ class ExportTabWidget(QWidget):
         return input_layers
 
     def _get_bg_color_value(self):
-        val = self.bg_color_combo.currentText()
+        val = self._combo_value(self.bg_color_combo)
         if val == "透明": return (0, 0, 0, 0)
         if val == "白": return (255, 255, 255, 255)
         if val == "黒": return (0, 0, 0, 255)
@@ -1477,10 +1548,10 @@ class ExportTabWidget(QWidget):
         out_dir = self.export_out_edit.text().strip()
         layer_id = self.zukaku_combo.currentData()
         id_field = self.id_field_combo.currentText()
-        format_val = self.format_combo.currentText()
-        resample_str = self.resample_combo.currentText()
+        format_val = self._combo_value(self.format_combo)
+        resample_str = self._combo_value(self.resample_combo)
         bg_val = self._get_bg_color_value()
-        export_mode = self.export_mode_combo.currentText()
+        export_mode = self._combo_value(self.export_mode_combo)
         export_mode_key = export_mode.replace(" ", "_").replace(":", "")
         export_run_id = time.strftime("%Y%m%d_%H%M%S")
         worker_count = int(self.worker_count_combo.currentText())
@@ -1494,8 +1565,8 @@ class ExportTabWidget(QWidget):
         requested_empty_check = self.chk_skip_empty_vrt.isChecked()
         requested_solid_check = self.chk_skip_solid.isChecked()
         background_control_enabled = self.chk_background_process.isChecked()
-        selected_bg_color = self.bg_color_combo.currentText()
-        selected_solid_color = self.skip_color_combo.currentText()
+        selected_bg_color = self._combo_value(self.bg_color_combo)
+        selected_solid_color = self._combo_value(self.skip_color_combo)
         standard_like_mode = standard_fast_mode or standard_mode or standard_no_bg_mode or warp_direct_mode or warp_direct_post_mode
         postprocess_background = background_control_enabled
         effective_warp_direct_mode = (warp_direct_mode or warp_direct_post_mode) and format_val in ["TIF＋TFW", "GeoTIFF"]
@@ -1585,7 +1656,7 @@ class ExportTabWidget(QWidget):
         try: res_y = float(self.res_y_edit.text())
         except ValueError: res_y = abs(src_gt[5])
 
-        depth_str = self.depth_combo.currentText()
+        depth_str = self._combo_value(self.depth_combo)
         output_type = None
         force_24bit = False
         
