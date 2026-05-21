@@ -70,6 +70,15 @@ class SettingsTabWidget(QWidget):
         future_layout.addWidget(self.future_note)
         layout.addWidget(self.future_group)
 
+        self.rating_group = QGroupBox()
+        rating_layout = QVBoxLayout(self.rating_group)
+        rating_layout.setContentsMargins(8, 8, 8, 8)
+        self.rating_note = QLabel()
+        self.rating_note.setWordWrap(True)
+        self.rating_note.setStyleSheet("color:#555;")
+        rating_layout.addWidget(self.rating_note)
+        layout.addWidget(self.rating_group)
+
         layout.addStretch(1)
 
         self._set_combo_language(current_language())
@@ -114,4 +123,6 @@ class SettingsTabWidget(QWidget):
         self.btn_log_start.setToolTip(tr("settings.tooltip.log_start", language))
         self.future_group.setTitle(tr("settings.future_group", language))
         self.future_note.setText(tr("settings.future_note", language))
+        self.rating_group.setTitle(tr("settings.rating_group", language))
+        self.rating_note.setText(tr("settings.rating_note", language))
         self._set_combo_language(language)

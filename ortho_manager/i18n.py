@@ -66,6 +66,16 @@ TRANSLATIONS = {
         "en": "Logs, reset, cache tools.",
         "zh": "日志开始、日志重置、缓存通用设置等功能会添加到这里。",
     },
+    "settings.rating_group": {
+        "ja": "評価のお願い",
+        "en": "Rating",
+        "zh": "评分请求",
+    },
+    "settings.rating_note": {
+        "ja": "OrthoManager が役に立ったら、QGIS公式プラグインページで評価をいただけるとうれしいです！\nありがとうございます。",
+        "en": "If OrthoManager is useful, a rating on the official QGIS plugin page would be appreciated.\nThank you!",
+        "zh": "如果 OrthoManager 对您有帮助，欢迎在 QGIS 官方插件页面给予评价。\n谢谢！",
+    },
     "settings.log_group": {
         "ja": "ログ",
         "en": "Log",

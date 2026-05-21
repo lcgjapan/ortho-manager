@@ -34,9 +34,9 @@ class OrthoManagerDockWidget(QDockWidget):
     GROUP_CRS_PROPERTY = "OrthoManager/group_crs_authid"
 
     def __init__(self, iface, parent=None):
-        super().__init__("OrthoManager v3.27", parent)
+        super().__init__("OrthoManager v3.27.1", parent)
         self.iface = iface
-        self.setWindowTitle("OrthoManager v3.27")
+        self.setWindowTitle("OrthoManager v3.27.1")
         self.setFeatures(
             QDockWidget.DockWidgetFeature.DockWidgetClosable
             | QDockWidget.DockWidgetFeature.DockWidgetMovable
@@ -544,14 +544,7 @@ class OrthoManagerDockWidget(QDockWidget):
             self._custom_cache_job_extent = QgsRectangle(expanded_extent)
             self._custom_cache_job_map_to_pixel = settings.mapToPixel()
             job.start()
-            QgsMessageLog.logMessage(
-                "CUSTOM_CACHE_PREFETCH_START "
-                f"layer={vrt_layer.id()} "
-                f"extent=({expanded_extent.xMinimum():.3f},{expanded_extent.yMinimum():.3f},"
-                f"{expanded_extent.xMaximum():.3f},{expanded_extent.yMaximum():.3f}) "
-                f"size={canvas.size().width()}x{canvas.size().height()}",
-                "OrthoManager", Qgis.MessageLevel.Info
-            )
+
         except Exception as e:
             QgsMessageLog.logMessage(
                 f"独自キャッシュ先読みエラー: {e}",
@@ -579,14 +572,7 @@ class OrthoManagerDockWidget(QDockWidget):
                     if cache and hasattr(cache, "setCacheImageWithParameters"):
                         cache.setCacheImageWithParameters(cache_key, image, extent, map_to_pixel, [vrt_layer])
                         has_cache = cache.hasCacheImage(cache_key) if hasattr(cache, "hasCacheImage") else False
-                        QgsMessageLog.logMessage(
-                            "CUSTOM_CACHE_STORED "
-                            f"layer={cache_key} has_cache={has_cache} "
-                            f"image={image.width()}x{image.height()} "
-                            f"extent=({extent.xMinimum():.3f},{extent.yMinimum():.3f},"
-                            f"{extent.xMaximum():.3f},{extent.yMaximum():.3f})",
-                            "OrthoManager", Qgis.MessageLevel.Info
-                        )
+
                     else:
                         QgsMessageLog.logMessage(
                             "CUSTOM_CACHE_STORE_SKIPPED cache_api_unavailable",
