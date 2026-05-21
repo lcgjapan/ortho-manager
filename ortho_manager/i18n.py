@@ -811,6 +811,21 @@ TRANSLATIONS = {
         "en": "Mouse",
         "zh": "鼠盾",
     },
+    "vrt.btn.mouse_shield_4x": {
+        "ja": "ﾏｳｽ4x",
+        "en": "Mouse 4x",
+        "zh": "鼠盾4x",
+    },
+    "vrt.btn.mouse_shield_5x": {
+        "ja": "ﾏｳｽ5x",
+        "en": "Mouse 5x",
+        "zh": "鼠盾5x",
+    },
+    "vrt.btn.mouse_shield_6x": {
+        "ja": "ﾏｳｽ6x",
+        "en": "Mouse 6x",
+        "zh": "鼠盾6x",
+    },
     "vrt.btn.build": {
         "ja": "⚡ VRT生成・更新",
         "en": "⚡ Build/Update",

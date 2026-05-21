@@ -272,9 +272,15 @@ class VrtTabWidget(QWidget):
         self.main_ui.apply_screen_shield_enabled(bool(checked), save=True, show_status=True)
         self._focus_map_canvas_after_toggle()
 
-    def update_mouse_shield_button(self, enabled):
-        if not hasattr(self, "btn_mouse_shield"):
+    def update_mouse_shield_controls(self, enabled, scale):
+        if not hasattr(self, "btn_mouse_shield") or not hasattr(self, "cmb_mouse_shield_scale"):
             return
+        try:
+            active_scale = int(scale)
+        except Exception:
+            active_scale = 5
+        if active_scale not in (1, 2, 3, 4, 5, 6):
+            active_scale = 5
         was_blocked = self.btn_mouse_shield.blockSignals(True)
         self.btn_mouse_shield.setChecked(bool(enabled))
         self.btn_mouse_shield.setStyleSheet(self._screen_shield_btn_style(bool(enabled)))
@@ -283,8 +289,22 @@ class VrtTabWidget(QWidget):
         )
         self.btn_mouse_shield.blockSignals(was_blocked)
 
+        combo_blocked = self.cmb_mouse_shield_scale.blockSignals(True)
+        index = self.cmb_mouse_shield_scale.findData(active_scale)
+        if index >= 0:
+            self.cmb_mouse_shield_scale.setCurrentIndex(index)
+        self.cmb_mouse_shield_scale.blockSignals(combo_blocked)
+
     def _toggle_mouse_shield(self, checked):
-        self.main_ui.apply_mouse_shield_enabled(bool(checked), save=True, show_status=True)
+        scale = self.cmb_mouse_shield_scale.currentData() if hasattr(self, "cmb_mouse_shield_scale") else 5
+        self.main_ui.apply_mouse_shield_enabled(scale if checked else False, save=True, show_status=True)
+        self._focus_map_canvas_after_toggle()
+
+    def _change_mouse_shield_scale(self, index):
+        if index < 0:
+            return
+        scale = self.cmb_mouse_shield_scale.itemData(index)
+        self.main_ui.set_mouse_shield_scale(scale, save=True, show_status=True)
         self._focus_map_canvas_after_toggle()
 
     def _build_ui(self):
@@ -445,13 +465,23 @@ class VrtTabWidget(QWidget):
         self.btn_mouse_shield.setFixedHeight(24)
         self.btn_mouse_shield.clicked.connect(self._toggle_mouse_shield)
         mouse_shield_row.addWidget(self.btn_mouse_shield)
+        self.cmb_mouse_shield_scale = QComboBox()
+        self.cmb_mouse_shield_scale.setFixedWidth(58)
+        self.cmb_mouse_shield_scale.setFixedHeight(24)
+        for scale in (1, 2, 3, 4, 5, 6):
+            self.cmb_mouse_shield_scale.addItem(f"{scale}x", scale)
+        self.cmb_mouse_shield_scale.currentIndexChanged.connect(self._change_mouse_shield_scale)
+        mouse_shield_row.addWidget(self.cmb_mouse_shield_scale)
         mouse_shield_row.addStretch()
         grp_scale_layout.addLayout(mouse_shield_row)
 
         self.update_view_cache_button(getattr(self.main_ui, "view_cache_enabled", False))
         self.update_custom_cache_button(getattr(self.main_ui, "custom_cache_enabled", False))
         self.update_screen_shield_button(getattr(self.main_ui, "screen_shield_enabled", False))
-        self.update_mouse_shield_button(getattr(self.main_ui, "mouse_shield_enabled", False))
+        self.update_mouse_shield_controls(
+            getattr(self.main_ui, "mouse_shield_enabled", False),
+            getattr(self.main_ui, "mouse_shield_scale", 5),
+        )
         layout.addWidget(self.grp_scale)
         self._update_tif_sort_buttons()
 
@@ -492,7 +522,10 @@ class VrtTabWidget(QWidget):
         self.update_view_cache_button(getattr(self.main_ui, "view_cache_enabled", False))
         self.update_custom_cache_button(getattr(self.main_ui, "custom_cache_enabled", False))
         self.update_screen_shield_button(getattr(self.main_ui, "screen_shield_enabled", False))
-        self.update_mouse_shield_button(getattr(self.main_ui, "mouse_shield_enabled", False))
+        self.update_mouse_shield_controls(
+            getattr(self.main_ui, "mouse_shield_enabled", False),
+            getattr(self.main_ui, "mouse_shield_scale", 5),
+        )
         if self.tif_list_window is not None:
             self.tif_list_window.refresh_texts()
 

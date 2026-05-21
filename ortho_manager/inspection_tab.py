@@ -408,6 +408,10 @@ class InspectionMapTool(QgsMapTool):
 
     def _event_map_point(self, event, use_snap=False):
         if use_snap:
+            close_point = self._line_close_snap_point(event)
+            if close_point is not None:
+                self._clear_snap_indicator()
+                return close_point
             match = self._snap_match(event)
             self._update_snap_indicator(match)
             if match and match.isValid():
@@ -420,6 +424,23 @@ class InspectionMapTool(QgsMapTool):
             except Exception:
                 pass
         return QgsPointXY(event.mapPoint())
+
+    def _line_close_snap_point(self, event):
+        if self.tab.operation_mode != "create" or self.tab.active_geom_type != "line":
+            return None
+        if len(self.points) < 2:
+            return None
+        first = QgsPointXY(self.points[0])
+        try:
+            first_pixel = self.canvas.getCoordinateTransform().transform(first)
+            event_pixel = event.pixelPoint()
+            dx = first_pixel.x() - event_pixel.x()
+            dy = first_pixel.y() - event_pixel.y()
+            if (dx * dx + dy * dy) <= 144:
+                return first
+        except Exception:
+            pass
+        return None
 
     def _ensure_select_band(self):
         if self.select_band:
@@ -1071,9 +1092,11 @@ class InspectionTabWidget(QWidget):
         self.continuous_capture_enabled = False
         self.active_capture_shape = "polygon"
         self.context_filter_canvas = None
+        self.right_button_guard_active = False
         self.round_menu_expanded = {}
         self.free_group_menu_expanded = {}
         self._original_selection_colors = {}
+        self.selection_highlight_items = []
         self.drag_highlight_button = None
         self.drag_highlight_target = ""
         self.drag_source_button = None
@@ -2570,6 +2593,8 @@ class InspectionTabWidget(QWidget):
         new_name, ok = QInputDialog.getText(self, "レイヤ名変更", "新しいレイヤ名:", text=str(old_name))
         new_name = new_name.strip() if ok else ""
         if not new_name:
+            return
+        if self.block_locked_layers([layer], "レイヤ名変更できません", "レイヤ属性を更新"):
             return
         if QMessageBox.question(
             self,
@@ -4209,6 +4234,12 @@ class InspectionTabWidget(QWidget):
                     continue
             except Exception:
                 pass
+            if self.is_layer_locked(layer):
+                try:
+                    layer.removeSelection()
+                except Exception:
+                    pass
+                continue
             layers.append(layer)
         return layers
 
@@ -4326,6 +4357,69 @@ class InspectionTabWidget(QWidget):
             except Exception:
                 pass
         self._original_selection_colors.clear()
+        self.clear_selection_highlight()
+
+    def clear_selection_highlight(self):
+        try:
+            scene = self.iface.mapCanvas().scene()
+        except Exception:
+            scene = None
+        for item in self.selection_highlight_items:
+            try:
+                if scene is not None:
+                    scene.removeItem(item)
+            except Exception:
+                pass
+        self.selection_highlight_items = []
+
+    def refresh_selection_highlight(self):
+        self.clear_selection_highlight()
+        if not self.inspection_enabled:
+            return
+        canvas = self.iface.mapCanvas()
+        yellow = QColor("#ffd400")
+        yellow.setAlpha(255)
+        for layer in self.selectable_inspection_layers():
+            if layer.geometryType() not in (Qgis.GeometryType.Line, Qgis.GeometryType.Point):
+                continue
+            ids = list(layer.selectedFeatureIds())
+            if not ids:
+                continue
+            request = QgsFeatureRequest().setFilterFids(ids)
+            for feature in layer.getFeatures(request):
+                geom = feature.geometry()
+                if not geom or geom.isEmpty():
+                    continue
+                if layer.geometryType() == Qgis.GeometryType.Line:
+                    band = QgsRubberBand(canvas, Qgis.GeometryType.Line)
+                    band.setStrokeColor(yellow)
+                    band.setWidth(5)
+                    try:
+                        band.setToGeometry(geom, layer)
+                    except Exception:
+                        continue
+                    band.show()
+                    self.selection_highlight_items.append(band)
+                else:
+                    points = geom.asMultiPoint() if geom.isMultipart() else [geom.asPoint()]
+                    for point in points:
+                        marker = QgsVertexMarker(canvas)
+                        marker.setCenter(QgsPointXY(point))
+                        marker.setColor(yellow)
+                        marker.setIconSize(11)
+                        marker.setPenWidth(5)
+                        try:
+                            marker.setIconType(QgsVertexMarker.IconType.ICON_CIRCLE)
+                        except Exception:
+                            try:
+                                marker.setIconType(QgsVertexMarker.ICON_CIRCLE)
+                            except Exception:
+                                pass
+                        try:
+                            marker.setZValue(1100)
+                        except Exception:
+                            pass
+                        self.selection_highlight_items.append(marker)
 
     def yellow_select_cursor(self):
         pixmap = QPixmap(24, 24)
@@ -4413,6 +4507,7 @@ class InspectionTabWidget(QWidget):
     def eventFilter(self, obj, event):
         if self.inspection_enabled and obj == self.context_filter_canvas:
             if event.type() == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.RightButton:
+                self.right_button_guard_active = True
                 if self.operation_mode == "create" and self.map_tool and self.map_tool.points:
                     try:
                         event.accept()
@@ -4436,6 +4531,21 @@ class InspectionTabWidget(QWidget):
                         global_pos = obj.mapToGlobal(event.pos())
                 self.show_context_menu(global_pos)
                 return True
+            if self.right_button_guard_active:
+                if event.type() == QEvent.Type.MouseMove:
+                    try:
+                        if event.buttons() & Qt.MouseButton.RightButton:
+                            event.accept()
+                            return True
+                    except Exception:
+                        pass
+                if event.type() == QEvent.Type.MouseButtonRelease and event.button() == Qt.MouseButton.RightButton:
+                    self.right_button_guard_active = False
+                    try:
+                        event.accept()
+                    except Exception:
+                        pass
+                    return True
             if self.operation_mode == "edit":
                 if event.type() == QEvent.Type.MouseMove:
                     point = self.map_point_from_mouse_event(event)
@@ -5009,8 +5119,9 @@ class InspectionTabWidget(QWidget):
         button = QPushButton(text)
         button.setFlat(True)
         button.setMinimumWidth(170)
+        text_color = "#202020"
         base_style = (
-            "QPushButton{border:none;text-align:left;padding:3px 6px;color:#202020;}"
+            f"QPushButton{{border:none;text-align:left;padding:3px 6px;color:{text_color};}}"
             "QPushButton:hover{background:#dcecff;}"
         )
         button.setProperty("base_style", base_style)
@@ -5041,8 +5152,9 @@ class InspectionTabWidget(QWidget):
         button.setMinimumWidth(170)
         button.setProperty("inspection_drop_target", target)
         button.setProperty("inspection_group_name", group_name or "")
+        text_color = "#d93025" if self.is_free_group_locked(group_name) else "#202020"
         base_style = (
-            "QPushButton{border:none;text-align:left;padding:3px 6px;color:#202020;}"
+            f"QPushButton{{border:none;text-align:left;padding:3px 6px;color:{text_color};}}"
             "QPushButton:hover{background:#dcecff;}"
         )
         button.setProperty("base_style", base_style)
@@ -5070,7 +5182,10 @@ class InspectionTabWidget(QWidget):
         button.setFlat(True)
         button.setMinimumWidth(170)
         layer = self.layer_by_source(source_name)
-        text_color = "#0645ad" if layer and self.is_manual_layer(layer) else "#202020"
+        if self.is_layer_locked(layer):
+            text_color = "#d93025"
+        else:
+            text_color = "#0645ad" if layer and self.is_manual_layer(layer) else "#202020"
         base_style = (
             f"QPushButton{{border:none;text-align:left;padding:3px 6px;color:{text_color};}}"
             "QPushButton:hover{background:#dcecff;}"
@@ -5334,6 +5449,57 @@ class InspectionTabWidget(QWidget):
 
     def free_group_title(self, group_name):
         return group_name if group_name else "自由式検査直下"
+
+    def layer_lock_manager(self):
+        return getattr(self.main_ui, "layer_lock_manager", None)
+
+    def is_layer_locked(self, layer):
+        manager = self.layer_lock_manager()
+        if manager is None or layer is None:
+            return False
+        try:
+            return manager.is_layer_locked(layer)
+        except Exception:
+            return False
+
+    def is_free_group_locked(self, group_name):
+        manager = self.layer_lock_manager()
+        group = self.find_free_group_node(group_name)
+        if manager is None or group is None:
+            return False
+        try:
+            return manager.is_node_effectively_locked(group)
+        except Exception:
+            return False
+
+    def find_free_group_node(self, group_name):
+        root = QgsProject.instance().layerTreeRoot()
+        if not group_name:
+            return root.findGroup(FREE_INSPECTION_GROUP)
+        for free_root in self.direct_child_groups(root, FREE_INSPECTION_GROUP):
+            groups = self.direct_child_groups(free_root, group_name)
+            if groups:
+                return groups[0]
+        return None
+
+    def locked_layer_names(self, layers):
+        names = []
+        for layer in layers:
+            if layer is not None and self.is_layer_locked(layer):
+                names.append(self.display_layer_name(layer))
+        return names
+
+    def block_locked_layers(self, layers, title, action_label):
+        names = self.locked_layer_names(layers)
+        if not names:
+            return False
+        QMessageBox.warning(
+            self,
+            title,
+            f"ロック中のレイヤには{action_label}できません。\n\n" + "\n".join(names[:8]),
+        )
+        self.set_status("ロック中のレイヤです")
+        return True
 
     def is_after_drop_target(self, target_source):
         return str(target_source).startswith("__after__:")
@@ -5917,6 +6083,7 @@ class InspectionTabWidget(QWidget):
                 self.set_status("移層: 移動する検査図形を選択してください")
             else:
                 self.set_status("選択解除")
+            self.refresh_selection_highlight()
             return False
         current = set(layer.selectedFeatureIds())
         if modifiers & Qt.KeyboardModifier.ControlModifier:
@@ -5928,6 +6095,7 @@ class InspectionTabWidget(QWidget):
                 current = set()
             current.add(feature.id())
         layer.selectByIds(list(current))
+        self.refresh_selection_highlight()
         self.iface.setActiveLayer(layer)
         if self.operation_mode == "layer_change_select":
             self.update_map_cursor()
@@ -5961,6 +6129,7 @@ class InspectionTabWidget(QWidget):
             self.iface.setActiveLayer(selected_layers[0])
         elif selected_layers:
             self.iface.setActiveLayer(selected_layers[0])
+        self.refresh_selection_highlight()
         if total:
             if self.operation_mode == "layer_change_select":
                 self.update_map_cursor()
@@ -5980,6 +6149,7 @@ class InspectionTabWidget(QWidget):
                 layer.removeSelection()
             except Exception:
                 pass
+        self.clear_selection_highlight()
 
     def delete_feature_at(self, point):
         layer, feature = self.find_feature_at(point)
@@ -6030,6 +6200,7 @@ class InspectionTabWidget(QWidget):
         else:
             selected.add(feature.id())
         layer.selectByIds(list(selected))
+        self.refresh_selection_highlight()
         if len(selected) >= 2:
             self.merge_selected_features(layer)
             self.operation_mode = "create"
@@ -6037,6 +6208,8 @@ class InspectionTabWidget(QWidget):
     def edit_memo_at(self, point):
         layer, feature = self.find_feature_at(point, allow_polygon_fill=True)
         if not layer:
+            return
+        if self.block_locked_layers([layer], "メモ編集できません", "メモを編集"):
             return
         idx = layer.fields().indexOf("memo")
         old = feature["memo"] if idx >= 0 else ""
@@ -6052,6 +6225,8 @@ class InspectionTabWidget(QWidget):
         self.refresh_counts()
 
     def add_geometry_feature(self, layer, geometry):
+        if self.block_locked_layers([layer], "追加できません", "新しい図形を追加"):
+            return
         feature = QgsFeature(layer.fields())
         feature.setGeometry(geometry)
         now = self.now_text()
@@ -6105,6 +6280,9 @@ class InspectionTabWidget(QWidget):
                 self.set_status("移動対象が見つかりません")
                 return False
         self.feature_move_targets = [(layer, list(ids)) for layer, ids in targets if layer and ids]
+        if self.block_locked_layers([layer for layer, _ids in self.feature_move_targets], "移動できません", "図形を移動"):
+            self.feature_move_targets = []
+            return False
         total = sum(len(ids) for _layer, ids in self.feature_move_targets)
         if not total:
             self.set_status("移動対象が選択されていません")
@@ -6179,6 +6357,10 @@ class InspectionTabWidget(QWidget):
             self.clear_feature_move_preview()
             self.set_status("移動対象が選択されていません")
             return False
+        if self.block_locked_layers([layer for layer, _ids in targets], "移動できません", "図形を移動"):
+            self.clear_feature_move_preview()
+            self.feature_move_targets = []
+            return False
         now = self.now_text()
         moved = 0
         failed_layers = []
@@ -6231,6 +6413,11 @@ class InspectionTabWidget(QWidget):
             self.operation_mode = "layer_change"
             self.ensure_map_tool()
             QTimer.singleShot(0, lambda: self.show_context_menu(QCursor.pos()))
+            return True
+        involved_layers = [layer for layer, _ids in targets] + [target_layer]
+        if self.block_locked_layers(involved_layers, "移層できません", "図形を移層"):
+            self.operation_mode = "layer_change"
+            self.ensure_map_tool()
             return True
         total = sum(len(ids) for _layer, ids in targets)
         if QMessageBox.question(
@@ -6297,6 +6484,8 @@ class InspectionTabWidget(QWidget):
         targets = self.selected_vector_targets()
         if not targets:
             return False
+        if self.block_locked_layers([layer for layer, _ids in targets], "削除できません", "図形を削除"):
+            return True
         count = sum(len(ids) for _layer, ids in targets)
         if not self.confirm_delete_if_needed("地物を削除", f"選択中の {count} 件を削除しますか？"):
             return True
@@ -6307,6 +6496,7 @@ class InspectionTabWidget(QWidget):
     def _delete_features(self, layer, ids):
         layer.dataProvider().deleteFeatures(ids)
         layer.removeSelection()
+        self.refresh_selection_highlight()
         layer.triggerRepaint()
         self.refresh_counts()
         self.set_status(f"🗑 {len(ids)} 件を削除しました")
@@ -6319,6 +6509,8 @@ class InspectionTabWidget(QWidget):
         return self._activate_vertex_edit(targets[0][0])
 
     def _activate_vertex_edit(self, layer):
+        if self.block_locked_layers([layer], "編集できません", "図形を編集"):
+            return False
         if not self.prepare_layer_edit(layer, activate_tool=True):
             return False
         self.set_status(f"編集モード: {self.display_layer_name(layer)}")
@@ -6369,6 +6561,8 @@ class InspectionTabWidget(QWidget):
             pass
 
     def prepare_layer_edit(self, layer, activate_tool=False):
+        if self.block_locked_layers([layer], "編集できません", "図形を編集"):
+            return False
         self.active_layer_id = layer.id()
         self.active_geom_type = layer.customProperty(INSPECTION_PROP_PREFIX + "geom_type", self.layer_geom_type_key(layer))
         self.active_color = layer.customProperty(INSPECTION_PROP_PREFIX + "color", "ff0000")
@@ -6485,6 +6679,8 @@ class InspectionTabWidget(QWidget):
     def merge_selected_features(self, forced_layer=None):
         targets = [(forced_layer, list(forced_layer.selectedFeatureIds()))] if forced_layer else self.selected_vector_targets()
         targets = [(layer, ids) for layer, ids in targets if layer and ids]
+        if self.block_locked_layers([layer for layer, _ids in targets], "統合できません", "図形を統合"):
+            return True
         total_count = sum(len(ids) for _layer, ids in targets)
         if total_count < 2:
             return False
@@ -6497,6 +6693,8 @@ class InspectionTabWidget(QWidget):
         feature_label = "ライン" if is_line_merge else "ポリゴン"
         target_layer = self.choose_merge_target_layer([layer for layer, _ids in targets], geometry_type)
         if not target_layer:
+            return True
+        if self.block_locked_layers([target_layer], "統合できません", "統合後図形を保存"):
             return True
         features, geoms = self.collect_merge_features(targets, target_layer)
         if len(features) != total_count or len(geoms) != total_count:
@@ -6584,6 +6782,8 @@ class InspectionTabWidget(QWidget):
         for layer, _ids in [(target_layer, [])] + targets:
             if layer and all(existing.id() != layer.id() for existing in involved):
                 involved.append(layer)
+        if self.block_locked_layers(involved, "統合できません", "図形を統合"):
+            return False
         started = []
         commanded = []
         try:
@@ -6764,7 +6964,10 @@ class InspectionTabWidget(QWidget):
         unique_selected = {layer.id(): layer for layer in selected_layers}
         if len(unique_selected) == 1:
             return list(unique_selected.values())[0]
-        candidate_layers = [layer for layer in self.selectable_inspection_layers() if layer.geometryType() == geometry_type]
+        candidate_layers = [
+            layer for layer in self.selectable_inspection_layers()
+            if layer.geometryType() == geometry_type and not self.is_layer_locked(layer)
+        ]
         if not candidate_layers:
             return None
         labels = [self.display_layer_name(layer) for layer in candidate_layers]

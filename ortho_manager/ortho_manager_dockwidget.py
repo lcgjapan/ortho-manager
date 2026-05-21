@@ -26,6 +26,7 @@ from .export_tab import ExportTabWidget
 from .inspection_tab import InspectionTabWidget
 from .settings_tab import SettingsTabWidget
 from .i18n import current_language, tr
+from .layer_lock import LayerLockManager
 from .tasks import find_external_vrt_engine_path, run_external_vrt_engine_sync
 
 class OrthoManagerDockWidget(QDockWidget):
@@ -33,9 +34,9 @@ class OrthoManagerDockWidget(QDockWidget):
     GROUP_CRS_PROPERTY = "OrthoManager/group_crs_authid"
 
     def __init__(self, iface, parent=None):
-        super().__init__("OrthoManager v3.15", parent)
+        super().__init__("OrthoManager v3.27", parent)
         self.iface = iface
-        self.setWindowTitle("OrthoManager v3.15")
+        self.setWindowTitle("OrthoManager v3.27")
         self.setFeatures(
             QDockWidget.DockWidgetFeature.DockWidgetClosable
             | QDockWidget.DockWidgetFeature.DockWidgetMovable
@@ -74,6 +75,7 @@ class OrthoManagerDockWidget(QDockWidget):
         self._custom_cache_timer.timeout.connect(self._run_custom_cache_prefetch)
         self.screen_shield_enabled = False
         self.mouse_shield_enabled = False
+        self.mouse_shield_scale = 5
         self._screen_shield_labels = {}
         self._screen_shield_hide_timer = QTimer(self)
         self._screen_shield_hide_timer.setSingleShot(True)
@@ -99,20 +101,32 @@ class OrthoManagerDockWidget(QDockWidget):
         self._mouse_pan_preview_canvas = None
         self._mouse_pan_preview_target = None
         self._mouse_pan_preview_extent_key = None
+        self._mouse_pan_preview_extent = None
+        self._mouse_pan_preview_scale = 5
         self._mouse_pan_preview_job = None
         self._mouse_pan_preview_job_canvas = None
         self._mouse_pan_preview_job_target = None
         self._mouse_pan_preview_job_margin = (0, 0)
         self._mouse_pan_preview_job_size = (0, 0)
         self._mouse_pan_preview_job_key = None
+        self._mouse_pan_preview_job_extent = None
+        self._mouse_pan_preview_job_scale = 5
         self._mouse_pan_preview_pending = False
+        self._mouse_pan_fallback_active = False
         self._mouse_pan_preview_timer = QTimer(self)
         self._mouse_pan_preview_timer.setSingleShot(True)
         self._mouse_pan_preview_timer.setInterval(250)
         self._mouse_pan_preview_timer.timeout.connect(self._start_mouse_pan_wide_preview)
+        self._mouse_diag_canvas_slots = {}
+        self._mouse_diag_render_start_sec = {}
+        self._mouse_diag_pan_id = 0
+        self._mouse_diag_last_move_log_sec = 0.0
+        self._mouse_diag_last_extent_log_sec = 0.0
+        self.layer_lock_manager = None
 
         # --- UI構築 ---
         self._build_ui()
+        self.layer_lock_manager = LayerLockManager(self.iface, self)
         self.setMinimumSize(280, 200)
         self.setMaximumWidth(16777215)
         self.resize(320, self.height())
@@ -358,6 +372,11 @@ class OrthoManagerDockWidget(QDockWidget):
         try:
             if hasattr(self, "inspection_tab"):
                 self.inspection_tab.cleanup_before_unload()
+        except Exception:
+            pass
+        try:
+            if self.layer_lock_manager is not None:
+                self.layer_lock_manager.cleanup()
         except Exception:
             pass
         try:
@@ -622,38 +641,83 @@ class OrthoManagerDockWidget(QDockWidget):
 
     def load_mouse_shield_setting(self):
         try:
-            value = QgsSettings().value("OrthoManager/mouse_shield_enabled", False)
-            if isinstance(value, str):
-                enabled = value.lower() in ("1", "true", "yes", "on")
+            enabled_value = QgsSettings().value("OrthoManager/mouse_shield_enabled", False)
+            if isinstance(enabled_value, str):
+                enabled = enabled_value.lower() in ("1", "true", "yes", "on")
             else:
-                enabled = bool(value)
+                enabled = bool(enabled_value)
+            scale_value = QgsSettings().value("OrthoManager/mouse_shield_scale", None)
+            if scale_value is None or scale_value == "":
+                scale = 5
+            else:
+                scale = self._normalize_mouse_shield_scale(scale_value, default=5)
         except Exception:
             enabled = False
-        self.apply_mouse_shield_enabled(enabled, save=False, show_status=False)
+            scale = 5
+        self.mouse_shield_scale = scale if scale in (1, 2, 3, 4, 5, 6) else 5
+        self.apply_mouse_shield_enabled(self.mouse_shield_scale if enabled else False, save=False, show_status=False)
+
+    def _normalize_mouse_shield_scale(self, value, default=5):
+        allowed = (1, 2, 3, 4, 5, 6)
+        if isinstance(value, bool):
+            return default if value and default in allowed else (4 if value else 0)
+        if isinstance(value, str):
+            text = value.strip().lower()
+            if text in ("1", "true", "yes", "on"):
+                return default if default in allowed else 4
+            if text in ("0", "false", "no", "off", ""):
+                return 0
+            try:
+                value = int(float(text))
+            except Exception:
+                return default if default in allowed else 0
+        try:
+            scale = int(value)
+        except Exception:
+            return default if default in allowed else 0
+        return scale if scale in allowed else (default if default in allowed else 0)
 
     def apply_mouse_shield_enabled(self, enabled, save=True, show_status=True):
-        enabled = bool(enabled)
+        previous_scale = self.mouse_shield_scale
+        if isinstance(enabled, bool):
+            scale = self._normalize_mouse_shield_scale(enabled, default=previous_scale)
+        else:
+            scale = self._normalize_mouse_shield_scale(enabled, default=previous_scale)
+        enabled = scale in (1, 2, 3, 4, 5, 6)
         self.mouse_shield_enabled = enabled
+        self.mouse_shield_scale = scale if enabled else previous_scale if previous_scale in (1, 2, 3, 4, 5, 6) else 5
+        if previous_scale != self.mouse_shield_scale:
+            self._clear_mouse_pan_preview("shield_scale_changed")
+            self._mouse_pan_preview_pending = False
         canvas = self.iface.mapCanvas()
         if enabled or self.screen_shield_enabled:
             self._install_screen_shield_event_filter(canvas)
             if enabled:
+                self._mouse_diag_log(
+                    f"ENABLED {self._mouse_diag_canvas_state(canvas)}"
+                )
                 self._queue_mouse_pan_wide_preview(canvas, delay_ms=120)
         else:
             self._remove_screen_shield_event_filter(canvas)
             self._hide_screen_shield_overlay()
+            self._mouse_diag_log("DISABLED")
         if save:
             try:
                 QgsSettings().setValue("OrthoManager/mouse_shield_enabled", enabled)
+                QgsSettings().setValue("OrthoManager/mouse_shield_scale", self.mouse_shield_scale)
             except Exception:
                 pass
         if hasattr(self, "vrt_tab"):
             try:
-                self.vrt_tab.update_mouse_shield_button(enabled)
+                self.vrt_tab.update_mouse_shield_controls(self.mouse_shield_enabled, self.mouse_shield_scale)
             except Exception:
                 pass
         if show_status:
-            self._set_status("✅ マウスシールド ON" if enabled else "マウスシールド OFF")
+            self._set_status(
+                f"✅ マウスシールド {self.mouse_shield_scale}x ON"
+                if enabled
+                else "マウスシールド OFF"
+            )
 
     def _map_canvases(self):
         canvases = []
@@ -680,6 +744,155 @@ class OrthoManagerDockWidget(QDockWidget):
                 pass
         return None
 
+    def _mouse_diag_log(self, message, level=Qgis.MessageLevel.Info):
+        return
+
+    def _mouse_diag_extent_text(self, canvas):
+        try:
+            extent = canvas.extent()
+            return (
+                f"scale={canvas.scale():.1f} "
+                f"extent=({extent.xMinimum():.2f},{extent.yMinimum():.2f},"
+                f"{extent.xMaximum():.2f},{extent.yMaximum():.2f}) "
+                f"size={canvas.width()}x{canvas.height()}"
+            )
+        except Exception as exc:
+            return f"extent_error={exc}"
+
+    def _mouse_diag_canvas_state(self, canvas):
+        parts = [f"shield_scale={self.mouse_shield_scale}"]
+        for label, method_name in (
+            ("preview", "previewJobsEnabled"),
+            ("cache", "isCachingEnabled"),
+            ("parallel", "isParallelRenderingEnabled"),
+            ("interval", "mapUpdateInterval"),
+        ):
+            try:
+                method = getattr(canvas, method_name)
+                parts.append(f"{label}={method()}")
+            except Exception:
+                pass
+        try:
+            layer = self._get_vrt_layer(self.current_vrt_name)
+            if layer:
+                parts.append(f"layer={layer.id()}")
+                cache = canvas.cache()
+                if cache and hasattr(cache, "hasCacheImage"):
+                    parts.append(f"layer_cache={cache.hasCacheImage(layer.id())}")
+        except Exception:
+            pass
+        parts.append(self._mouse_diag_extent_text(canvas))
+        return " ".join(parts)
+
+    def _connect_mouse_diag_canvas(self, canvas):
+        if not self._is_canvas_alive(canvas) or canvas in self._mouse_diag_canvas_slots:
+            return
+        slots = []
+        for signal_name, handler in (
+            ("extentsChanged", self._on_mouse_diag_extent_changed),
+            ("renderStarting", self._on_mouse_diag_render_start),
+            ("renderComplete", self._on_mouse_diag_render_complete),
+            ("mapCanvasRefreshed", self._on_mouse_diag_canvas_refreshed),
+        ):
+            try:
+                signal = getattr(canvas, signal_name)
+                slot = lambda *args, c=canvas, h=handler: h(c, *args)
+                signal.connect(slot)
+                slots.append((signal, slot))
+            except Exception:
+                pass
+        if slots:
+            self._mouse_diag_canvas_slots[canvas] = slots
+
+    def _disconnect_mouse_diag_canvases(self):
+        for canvas, slots in list(self._mouse_diag_canvas_slots.items()):
+            for signal, slot in slots:
+                try:
+                    signal.disconnect(slot)
+                except Exception:
+                    pass
+        self._mouse_diag_canvas_slots = {}
+        self._mouse_diag_render_start_sec = {}
+
+    def _clear_mouse_pan_preview(self, reason=None):
+        self._mouse_pan_preview_pixmap = None
+        self._mouse_pan_preview_margin = (0, 0)
+        self._mouse_pan_preview_target_size = (0, 0)
+        self._mouse_pan_preview_target = None
+        self._mouse_pan_preview_extent_key = None
+        self._mouse_pan_preview_extent = None
+        self._mouse_pan_preview_scale = 0
+        if reason:
+            self._mouse_diag_log(f"PREVIEW_CLEAR reason={reason}")
+
+    def _mouse_pan_scale_matches(self, canvas, key=None):
+        key = key or self._mouse_pan_preview_extent_key
+        if key is None or len(key) < 7:
+            return False
+        try:
+            current_scale = round(canvas.scale(), 1)
+            preview_scale = float(key[6])
+        except Exception:
+            return False
+        return abs(current_scale - preview_scale) <= max(0.2, preview_scale * 0.0005)
+
+    def _on_mouse_diag_extent_changed(self, canvas, *args):
+        if not self.mouse_shield_enabled:
+            return
+        if not self._mouse_pan_light_active and self._mouse_pan_preview_extent_key is not None:
+            if not self._mouse_pan_scale_matches(canvas):
+                self._clear_mouse_pan_preview("scale_changed")
+                try:
+                    if self._mouse_pan_preview_job and self._mouse_pan_preview_job.isActive():
+                        self._mouse_pan_preview_job.cancelWithoutBlocking()
+                except Exception:
+                    pass
+                self._queue_mouse_pan_wide_preview(canvas, delay_ms=120)
+        now = time.perf_counter()
+        if not self._mouse_pan_light_active and now - self._mouse_diag_last_extent_log_sec < 0.4:
+            return
+        self._mouse_diag_last_extent_log_sec = now
+        phase = "drag" if self._mouse_pan_light_active else "idle"
+        self._mouse_diag_log(
+            f"EXTENT_CHANGED phase={phase} pan={self._mouse_diag_pan_id} "
+            f"{self._mouse_diag_canvas_state(canvas)}"
+        )
+
+    def _on_mouse_diag_render_start(self, canvas, *args):
+        if not self.mouse_shield_enabled:
+            return
+        self._mouse_diag_render_start_sec[canvas] = time.perf_counter()
+        phase = "drag" if self._mouse_pan_light_active else "idle"
+        self._mouse_diag_log(
+            f"RENDER_START phase={phase} pan={self._mouse_diag_pan_id} "
+            f"{self._mouse_diag_canvas_state(canvas)}"
+        )
+
+    def _on_mouse_diag_render_complete(self, canvas, *args):
+        if not self.mouse_shield_enabled:
+            return
+        elapsed_ms = None
+        start_sec = self._mouse_diag_render_start_sec.get(canvas)
+        if start_sec is not None:
+            elapsed_ms = int((time.perf_counter() - start_sec) * 1000)
+        phase = "drag" if self._mouse_pan_light_active else "idle"
+        elapsed = f" elapsed_ms={elapsed_ms}" if elapsed_ms is not None else ""
+        self._mouse_diag_log(
+            f"RENDER_COMPLETE phase={phase} pan={self._mouse_diag_pan_id}{elapsed} "
+            f"{self._mouse_diag_canvas_state(canvas)}"
+        )
+
+    def _on_mouse_diag_canvas_refreshed(self, canvas, *args):
+        if not self.mouse_shield_enabled:
+            return
+        if not self._mouse_pan_light_active:
+            return
+        phase = "drag" if self._mouse_pan_light_active else "idle"
+        self._mouse_diag_log(
+            f"CANVAS_REFRESHED phase={phase} pan={self._mouse_diag_pan_id} "
+            f"{self._mouse_diag_canvas_state(canvas)}"
+        )
+
     def _register_screen_shield_canvas(self, canvas):
         if not canvas or canvas in self._screen_shield_registered_canvases:
             return
@@ -688,6 +901,8 @@ class OrthoManagerDockWidget(QDockWidget):
             if canvas.viewport():
                 canvas.viewport().installEventFilter(self)
             self._screen_shield_registered_canvases.append(canvas)
+            if self.mouse_shield_enabled:
+                self._connect_mouse_diag_canvas(canvas)
         except Exception:
             pass
 
@@ -708,6 +923,7 @@ class OrthoManagerDockWidget(QDockWidget):
             if self.screen_shield_enabled or self.mouse_shield_enabled:
                 self._register_screen_shield_canvas(canvas)
             if self.mouse_shield_enabled:
+                self._connect_mouse_diag_canvas(canvas)
                 self._queue_mouse_pan_wide_preview(canvas, delay_ms=350)
 
     def _install_screen_shield_event_filter(self, canvas):
@@ -736,6 +952,7 @@ class OrthoManagerDockWidget(QDockWidget):
                 except Exception:
                     pass
             self._screen_shield_registered_canvases = []
+            self._disconnect_mouse_diag_canvases()
         except Exception:
             pass
         self._screen_shield_event_filter_installed = False
@@ -812,10 +1029,35 @@ class OrthoManagerDockWidget(QDockWidget):
             self._screen_shield_labels[target] = label
         return label
 
+    def set_mouse_shield_scale(self, scale, save=True, show_status=True):
+        scale = self._normalize_mouse_shield_scale(scale, default=self.mouse_shield_scale)
+        if scale == 0:
+            scale = 5
+        previous_scale = self.mouse_shield_scale
+        self.mouse_shield_scale = scale
+        if previous_scale != scale:
+            self._clear_mouse_pan_preview("shield_scale_changed")
+            self._mouse_pan_preview_pending = False
+            if self.mouse_shield_enabled:
+                canvas = self.iface.mapCanvas()
+                self._queue_mouse_pan_wide_preview(canvas, delay_ms=80)
+        if save:
+            try:
+                QgsSettings().setValue("OrthoManager/mouse_shield_scale", self.mouse_shield_scale)
+            except Exception:
+                pass
+        if hasattr(self, "vrt_tab"):
+            try:
+                self.vrt_tab.update_mouse_shield_controls(self.mouse_shield_enabled, self.mouse_shield_scale)
+            except Exception:
+                pass
+        if show_status:
+            self._set_status(f"マウスシールド倍率 {self.mouse_shield_scale}x")
+
     def _mouse_pan_wide_settings(self, canvas, target):
         width = max(1, target.width())
         height = max(1, target.height())
-        scale = 5
+        scale = self.mouse_shield_scale if self.mouse_shield_scale in (1, 2, 3, 4, 5, 6) else 5
         extent = QgsRectangle(canvas.extent())
         center_x = (extent.xMinimum() + extent.xMaximum()) / 2.0
         center_y = (extent.yMinimum() + extent.yMaximum()) / 2.0
@@ -839,11 +1081,13 @@ class OrthoManagerDockWidget(QDockWidget):
         settings = QgsMapSettings(canvas.mapSettings())
         settings.setExtent(wide_extent)
         settings.setOutputSize(QSize(width * scale, height * scale))
-        margin = (width * ((scale - 1) // 2), height * ((scale - 1) // 2))
-        return settings, margin, (width, height), key
+        margin = (int(round(width * (scale - 1) / 2)), int(round(height * (scale - 1) / 2)))
+        return settings, margin, (width, height), key, wide_extent, scale
 
     def _queue_mouse_pan_wide_preview(self, canvas=None, delay_ms=250):
         if not self.mouse_shield_enabled:
+            return
+        if self._mouse_pan_light_active:
             return
         canvas = canvas if self._is_canvas_alive(canvas) else self._first_alive_canvas()
         if not self._is_canvas_alive(canvas):
@@ -852,6 +1096,11 @@ class OrthoManagerDockWidget(QDockWidget):
             return
         self._mouse_pan_preview_canvas = canvas
         try:
+            if delay_ms <= 120 or self._mouse_pan_light_active:
+                self._mouse_diag_log(
+                    f"WIDE_PREVIEW_QUEUE delay_ms={delay_ms} "
+                    f"active={self._mouse_pan_light_active} {self._mouse_diag_canvas_state(canvas)}"
+                )
             self._mouse_pan_preview_timer.start(max(0, int(delay_ms)))
         except Exception as exc:
             QgsMessageLog.logMessage(
@@ -862,17 +1111,26 @@ class OrthoManagerDockWidget(QDockWidget):
     def _start_mouse_pan_wide_preview(self):
         if not self.mouse_shield_enabled:
             return
+        if self._mouse_pan_light_active:
+            self._mouse_pan_preview_pending = True
+            self._mouse_diag_log("WIDE_PREVIEW_DEFERRED active_drag=True")
+            return
         if self._mouse_pan_preview_job and self._mouse_pan_preview_job.isActive():
             self._mouse_pan_preview_pending = True
+            self._mouse_diag_log("WIDE_PREVIEW_PENDING existing_job_active=True")
             return
         canvas = self._mouse_pan_preview_canvas if self._is_canvas_alive(self._mouse_pan_preview_canvas) else self._first_alive_canvas()
         if not self._is_canvas_alive(canvas):
             return
         target = canvas.viewport() or canvas
         try:
-            settings, margin, size, key = self._mouse_pan_wide_settings(canvas, target)
+            settings, margin, size, key, wide_extent, scale = self._mouse_pan_wide_settings(canvas, target)
             if key == self._mouse_pan_preview_extent_key and self._mouse_pan_preview_pixmap is not None and not self._mouse_pan_preview_pixmap.isNull():
                 return
+            self._mouse_diag_log(
+                f"WIDE_PREVIEW_START key={key} margin={margin} size={size} "
+                f"{self._mouse_diag_canvas_state(canvas)}"
+            )
             job = QgsMapRendererParallelJob(settings)
             job.finished.connect(self._on_mouse_pan_wide_preview_finished)
             self._mouse_pan_preview_job = job
@@ -881,6 +1139,8 @@ class OrthoManagerDockWidget(QDockWidget):
             self._mouse_pan_preview_job_margin = margin
             self._mouse_pan_preview_job_size = size
             self._mouse_pan_preview_job_key = key
+            self._mouse_pan_preview_job_extent = QgsRectangle(wide_extent)
+            self._mouse_pan_preview_job_scale = scale
             job.start()
         except Exception as exc:
             self._mouse_pan_preview_job = None
@@ -896,30 +1156,83 @@ class OrthoManagerDockWidget(QDockWidget):
         try:
             image = job.renderedImage()
             if not image.isNull():
+                if self._mouse_pan_preview_job_scale != self.mouse_shield_scale:
+                    self._mouse_diag_log(
+                        "WIDE_PREVIEW_DISCARD "
+                        f"reason=shield_scale_changed job_scale={self._mouse_pan_preview_job_scale} "
+                        f"current_scale={self.mouse_shield_scale}"
+                    )
+                    if not self._mouse_pan_light_active and self.mouse_shield_enabled:
+                        self._mouse_pan_preview_pending = True
+                    return
+                if self._is_canvas_alive(self._mouse_pan_preview_job_canvas):
+                    if not self._mouse_pan_scale_matches(
+                        self._mouse_pan_preview_job_canvas,
+                        self._mouse_pan_preview_job_key,
+                    ):
+                        self._mouse_diag_log(
+                            f"WIDE_PREVIEW_DISCARD reason=scale_mismatch job_key={self._mouse_pan_preview_job_key}"
+                        )
+                        if not self._mouse_pan_light_active:
+                            self._mouse_pan_preview_pending = True
+                        return
+                self._mouse_diag_log(
+                    f"WIDE_PREVIEW_FINISH image={image.width()}x{image.height()} "
+                    f"job_key={self._mouse_pan_preview_job_key}"
+                )
                 self._mouse_pan_preview_pixmap = QPixmap.fromImage(image)
                 self._mouse_pan_preview_margin = self._mouse_pan_preview_job_margin
                 self._mouse_pan_preview_target_size = self._mouse_pan_preview_job_size
                 self._mouse_pan_preview_target = self._mouse_pan_preview_job_target
                 self._mouse_pan_preview_extent_key = self._mouse_pan_preview_job_key
-                current_key = None
+                self._mouse_pan_preview_extent = (
+                    QgsRectangle(self._mouse_pan_preview_job_extent)
+                    if self._mouse_pan_preview_job_extent is not None
+                    else None
+                )
+                self._mouse_pan_preview_scale = self._mouse_pan_preview_job_scale
+                current_margin = None
                 if self._is_canvas_alive(self._mouse_pan_preview_job_canvas) and self._mouse_pan_preview_job_target is not None:
                     try:
-                        _, _, _, current_key = self._mouse_pan_wide_settings(
+                        current_margin = self._mouse_pan_preview_offset(
                             self._mouse_pan_preview_job_canvas,
                             self._mouse_pan_preview_job_target,
                         )
                     except Exception:
-                        current_key = None
+                        current_margin = None
                 if (
-                    current_key == self._mouse_pan_preview_job_key
+                    current_margin is not None
                     and self._mouse_pan_light_active
                     and self._mouse_pan_snapshot_target is self._mouse_pan_preview_job_target
                 ):
-                    self._mouse_pan_snapshot_pixmap = self._mouse_pan_preview_pixmap
-                    self._mouse_pan_snapshot_margin = self._mouse_pan_preview_margin
-                    if self._mouse_pan_current_pos is not None:
-                        self._mouse_pan_snapshot_start_pos = self._mouse_pan_current_pos
-                    self._refresh_mouse_pan_snapshot_overlay()
+                    if self._mouse_pan_fallback_active:
+                        self._mouse_diag_log(f"WIDE_PREVIEW_RECOVER_ACTIVE_DRAG accepted=True margin={current_margin}")
+                        self._mouse_pan_snapshot_pixmap = self._mouse_pan_preview_pixmap
+                        self._mouse_pan_snapshot_margin = current_margin
+                        self._mouse_pan_fallback_active = False
+                        if self._mouse_pan_current_pos is not None:
+                            self._mouse_pan_snapshot_start_pos = self._mouse_pan_current_pos
+                        target = self._mouse_pan_snapshot_target
+                        if target is not None:
+                            label = self._mouse_pan_label_for_target(target)
+                            label.setPixmap(self._mouse_pan_snapshot_pixmap)
+                            label.setGeometry(
+                                -current_margin[0],
+                                -current_margin[1],
+                                self._mouse_pan_snapshot_pixmap.width(),
+                                self._mouse_pan_snapshot_pixmap.height(),
+                            )
+                            label.raise_()
+                            label.show()
+                    else:
+                        self._mouse_diag_log(f"WIDE_PREVIEW_READY_DURING_DRAG kept_for_next_pan=True margin={current_margin}")
+                elif self._mouse_pan_light_active:
+                    self._mouse_diag_log(
+                        f"WIDE_PREVIEW_NOT_APPLIED active_drag=True reason=outside_preview "
+                        f"job_key={self._mouse_pan_preview_job_key}"
+                    )
+            else:
+                self._mouse_diag_log("WIDE_PREVIEW_FINISH image_is_null=True", Qgis.MessageLevel.Warning)
         except Exception as exc:
             QgsMessageLog.logMessage(
                 f"MOUSE_SHIELD_WIDE_PREVIEW_FINISH_FAILED: {exc}",
@@ -929,25 +1242,74 @@ class OrthoManagerDockWidget(QDockWidget):
             self._mouse_pan_preview_job = None
             self._mouse_pan_preview_job_canvas = None
             self._mouse_pan_preview_job_target = None
+            self._mouse_pan_preview_job_extent = None
             if self._mouse_pan_preview_pending:
                 self._mouse_pan_preview_pending = False
                 self._queue_mouse_pan_wide_preview(delay_ms=80)
 
+    def _mouse_pan_preview_offset(self, canvas, target):
+        if self._mouse_pan_preview_extent is None:
+            return None
+        if self._mouse_pan_preview_pixmap is None or self._mouse_pan_preview_pixmap.isNull():
+            return None
+        if not self._mouse_pan_scale_matches(canvas):
+            return None
+        if self._mouse_pan_preview_target is not target:
+            return None
+        if self._mouse_pan_preview_target_size != (target.width(), target.height()):
+            return None
+        current = QgsRectangle(canvas.extent())
+        preview = self._mouse_pan_preview_extent
+        tolerance = max(preview.width(), preview.height()) * 0.0005
+        if (
+            current.xMinimum() < preview.xMinimum() - tolerance
+            or current.xMaximum() > preview.xMaximum() + tolerance
+            or current.yMinimum() < preview.yMinimum() - tolerance
+            or current.yMaximum() > preview.yMaximum() + tolerance
+        ):
+            return None
+        source = self._mouse_pan_preview_pixmap
+        if preview.width() <= 0 or preview.height() <= 0:
+            return None
+        offset_x = int(round((current.xMinimum() - preview.xMinimum()) / preview.width() * source.width()))
+        offset_y = int(round((preview.yMaximum() - current.yMaximum()) / preview.height() * source.height()))
+        max_x = max(0, source.width() - target.width())
+        max_y = max(0, source.height() - target.height())
+        offset_x = min(max(offset_x, 0), max_x)
+        offset_y = min(max(offset_y, 0), max_y)
+        return offset_x, offset_y
+
     def _prepared_mouse_pan_wide_pixmap(self, canvas, target):
         if self._mouse_pan_preview_pixmap is None or self._mouse_pan_preview_pixmap.isNull():
+            self._mouse_diag_log("PREVIEW_USE rejected=no_pixmap")
+            return QPixmap(), (0, 0)
+        if not self._mouse_pan_scale_matches(canvas):
+            self._mouse_diag_log(
+                f"PREVIEW_USE rejected=scale_mismatch cached_key={self._mouse_pan_preview_extent_key}"
+            )
+            self._clear_mouse_pan_preview("scale_mismatch")
+            return QPixmap(), (0, 0)
+        if self._mouse_pan_preview_scale != self.mouse_shield_scale:
+            self._mouse_diag_log(
+                f"PREVIEW_USE rejected=shield_scale_mismatch cached={self._mouse_pan_preview_scale} current={self.mouse_shield_scale}"
+            )
+            self._clear_mouse_pan_preview("shield_scale_mismatch")
             return QPixmap(), (0, 0)
         if self._mouse_pan_preview_target is not target:
+            self._mouse_diag_log("PREVIEW_USE rejected=target_mismatch")
             return QPixmap(), (0, 0)
         size = self._mouse_pan_preview_target_size
         if size != (target.width(), target.height()):
+            self._mouse_diag_log(f"PREVIEW_USE rejected=size_mismatch cached={size} target={(target.width(), target.height())}")
             return QPixmap(), (0, 0)
-        try:
-            _, _, _, current_key = self._mouse_pan_wide_settings(canvas, target)
-        except Exception:
+        margin = self._mouse_pan_preview_offset(canvas, target)
+        if margin is None:
+            self._mouse_diag_log(
+                f"PREVIEW_USE rejected=outside_preview cached_key={self._mouse_pan_preview_extent_key}"
+            )
             return QPixmap(), (0, 0)
-        if current_key != self._mouse_pan_preview_extent_key:
-            return QPixmap(), (0, 0)
-        return self._mouse_pan_preview_pixmap, self._mouse_pan_preview_margin
+        self._mouse_diag_log(f"PREVIEW_USE accepted=True margin={margin}")
+        return self._mouse_pan_preview_pixmap, margin
 
     def _show_mouse_pan_snapshot_overlay(self, canvas, event):
         if not self._is_canvas_alive(canvas):
@@ -958,16 +1320,16 @@ class OrthoManagerDockWidget(QDockWidget):
         if pixmap.isNull():
             pixmap = target.grab()
             margin = (0, 0)
-            self._queue_mouse_pan_wide_preview(canvas, delay_ms=0)
         if pixmap.isNull():
             return False
         self._mouse_pan_snapshot_pixmap = pixmap
         self._mouse_pan_snapshot_start_pos = self._mouse_pan_current_pos
         self._mouse_pan_snapshot_target = target
         self._mouse_pan_snapshot_margin = margin
+        self._mouse_pan_fallback_active = margin == (0, 0)
         label = self._mouse_pan_label_for_target(target)
-        label.setPixmap(self._shifted_mouse_pan_pixmap(0, 0))
-        label.setGeometry(0, 0, target.width(), target.height())
+        label.setPixmap(pixmap)
+        label.setGeometry(-margin[0], -margin[1], pixmap.width(), pixmap.height())
         label.raise_()
         label.show()
         self._screen_shield_hide_timer.stop()
@@ -998,7 +1360,7 @@ class OrthoManagerDockWidget(QDockWidget):
         start_x, start_y = self._mouse_pan_snapshot_start_pos
         current_x, current_y = self._mouse_pan_current_pos
         margin_x, margin_y = self._mouse_pan_snapshot_margin
-        if margin_x and margin_y and (abs(current_x - start_x) > margin_x * 0.35 or abs(current_y - start_y) > margin_y * 0.35):
+        if False and margin_x and margin_y and (abs(current_x - start_x) > margin_x * 0.35 or abs(current_y - start_y) > margin_y * 0.35):
             self._queue_mouse_pan_wide_preview(self._mouse_pan_light_canvas, delay_ms=0)
 
     def _refresh_mouse_pan_snapshot_overlay(self):
@@ -1012,11 +1374,11 @@ class OrthoManagerDockWidget(QDockWidget):
         dx = current_x - start_x
         dy = current_y - start_y
         label = self._mouse_pan_label_for_target(target)
-        shifted = self._shifted_mouse_pan_pixmap(dx, dy)
-        if shifted.isNull():
+        source = self._mouse_pan_snapshot_pixmap
+        if source is None or source.isNull():
             return
-        label.setPixmap(shifted)
-        label.setGeometry(0, 0, target.width(), target.height())
+        margin_x, margin_y = self._mouse_pan_snapshot_margin
+        label.setGeometry(dx - margin_x, dy - margin_y, source.width(), source.height())
         label.raise_()
         label.show()
 
@@ -1026,32 +1388,81 @@ class OrthoManagerDockWidget(QDockWidget):
         self._mouse_pan_snapshot_target = None
         self._mouse_pan_snapshot_margin = (0, 0)
         self._mouse_pan_current_pos = None
+        self._mouse_pan_fallback_active = False
         self._screen_shield_hide_timer.start(duration_ms)
+
+    def _inspection_mode_blocks_mouse_shield(self):
+        tab = getattr(self, "inspection_tab", None)
+        if tab is None:
+            return False
+        try:
+            if not getattr(tab, "inspection_enabled", False):
+                return False
+            mode = getattr(tab, "operation_mode", "")
+            return mode not in ("", "pan", "pan_pending")
+        except Exception:
+            return False
 
     def _handle_mouse_pan_light_mode(self, event, canvas):
         if not self.mouse_shield_enabled:
             return
         event_type = event.type()
+        if self._inspection_mode_blocks_mouse_shield():
+            if event_type == QEvent.Type.MouseButtonPress:
+                mode = getattr(getattr(self, "inspection_tab", None), "operation_mode", "")
+                self._mouse_diag_log(f"SKIP reason=inspection_mode mode={mode}")
+            return
         pan_buttons = (Qt.MouseButton.LeftButton, Qt.MouseButton.MiddleButton)
         if event_type == QEvent.Type.MouseButtonPress:
             if event.button() in pan_buttons:
                 if not self._is_vrt_raster_visible_now(self._get_vrt_layer(self.current_vrt_name), canvas):
                     return
+                self._mouse_diag_pan_id += 1
+                self._mouse_diag_last_move_log_sec = 0.0
+                if self._mouse_pan_preview_timer.isActive():
+                    self._mouse_pan_preview_timer.stop()
+                    self._mouse_pan_preview_pending = True
+                self._mouse_diag_log(
+                    f"PAN_PRESS id={self._mouse_diag_pan_id} pos={self._mouse_event_xy(event)} "
+                    f"{self._mouse_diag_canvas_state(canvas)}"
+                )
                 self._screen_shield_mouse_drag_active = True
                 self._screen_shield_mouse_shown_for_drag = True
                 self._mouse_pan_light_active = True
                 self._mouse_pan_light_canvas = canvas
                 self._hide_screen_shield_overlay()
-                self._show_mouse_pan_snapshot_overlay(canvas, event)
+                shown = self._show_mouse_pan_snapshot_overlay(canvas, event)
+                self._mouse_diag_log(
+                    f"PAN_SNAPSHOT id={self._mouse_diag_pan_id} shown={shown} "
+                    f"margin={self._mouse_pan_snapshot_margin}"
+                )
                 self._apply_mouse_pan_light_mode(canvas)
             return
         if event_type == QEvent.Type.MouseMove:
             if self._mouse_pan_light_active and self._is_canvas_alive(canvas):
                 self._update_mouse_pan_snapshot_overlay(event)
+                now = time.perf_counter()
+                if now - self._mouse_diag_last_move_log_sec >= 0.2:
+                    self._mouse_diag_last_move_log_sec = now
+                    dx = dy = 0
+                    if self._mouse_pan_snapshot_start_pos is not None and self._mouse_pan_current_pos is not None:
+                        start_x, start_y = self._mouse_pan_snapshot_start_pos
+                        current_x, current_y = self._mouse_pan_current_pos
+                        dx = current_x - start_x
+                        dy = current_y - start_y
+                    self._mouse_diag_log(
+                        f"PAN_MOVE id={self._mouse_diag_pan_id} pos={self._mouse_pan_current_pos} "
+                        f"delta=({dx},{dy}) margin={self._mouse_pan_snapshot_margin} "
+                        f"{self._mouse_diag_canvas_state(canvas)}"
+                    )
                 self._apply_mouse_pan_light_mode(canvas)
             return
         if event_type == QEvent.Type.MouseButtonRelease:
             if event.button() in pan_buttons:
+                self._mouse_diag_log(
+                    f"PAN_RELEASE id={self._mouse_diag_pan_id} pos={self._mouse_event_xy(event)} "
+                    f"active={self._mouse_pan_light_active} {self._mouse_diag_canvas_state(canvas)}"
+                )
                 self._screen_shield_mouse_drag_active = False
                 self._screen_shield_mouse_shown_for_drag = False
                 if self._mouse_pan_light_active:
@@ -1524,13 +1935,17 @@ class OrthoManagerDockWidget(QDockWidget):
 
         if hasattr(self, "inspection_tab"):
             self.inspection_tab.restore_state(inspection_state)
-             
+        if self.layer_lock_manager is not None:
+            self.layer_lock_manager.refresh()
+            
         self._set_status(f"✅ プロジェクトから {len(self.vrt_registry)} 件を復元")
 
     def reset_all(self):
         self._disconnect_all_scale_signals()
         if hasattr(self, "inspection_tab"):
             self.inspection_tab.clear_inspection_state(remove_layers=False)
+        if self.layer_lock_manager is not None:
+            self.layer_lock_manager.schedule_refresh()
         self._reset_ui()
         self.vrt_registry.clear()
         self.current_vrt_name = ""
