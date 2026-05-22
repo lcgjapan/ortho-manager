@@ -3,7 +3,7 @@ name=OrthoManager
 qgisMinimumVersion=3.40
 qgisMaximumVersion=4.99
 description=Orthophoto inspection and export support tool
-version=3.28
+version=3.28.1
 author=劉春光
 email=91273604+lcgjapan@users.noreply.github.com
 about=QGIS plugin for orthophoto inspection, VRT management, inspection vector editing, vector import, and orthophoto export workflows.
@@ -15,7 +15,7 @@ category=Raster
 icon=icon.png
 experimental=False
 deprecated=False
-changelog=Version 3.28: Fixes stale vector display and edit cache after moving, transferring, deleting, merging, or editing inspection features; keeps move mode and selection after moving features; clears Mouse Shield previews after vector changes; suppresses repeated edit-target diagnostic logs; prevents duplicate point creation in non-continuous mode.<br><br>バージョン 3.28: 検査ベクタの移動・移層・削除・統合・編集後に古い位置の図形が一瞬表示されたり、移動前の古い図形を編集できてしまう問題を修正しました。移動後も移動モードと選択状態を維持し、ベクタ変更後のマウスシールド用プレビューを破棄するようにしました。編集ターゲット診断ログの連発を停止し、非連続モードで点を連打すると複数作成できてしまう問題も修正しました。
+changelog=Version 3.28.1: Maintenance release that removes a deprecated QGIS provider forceReload call which could show a warning during inspection feature creation. Keeps v3.28 behavior unchanged.<br><br>バージョン 3.28.1: 検査図形作成時にQGIS 4系で表示されることがある provider forceReload 非推奨警告を解消したメンテナンス版です。v3.28の動作はそのまま維持しています。
 
 
 

@@ -4120,10 +4120,6 @@ class InspectionTabWidget(QWidget):
             provider = None
         if reload_data and provider:
             try:
-                provider.forceReload()
-            except Exception:
-                pass
-            try:
                 provider.reloadData()
             except Exception:
                 pass
