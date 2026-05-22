@@ -602,6 +602,8 @@ class InspectionMapTool(QgsMapTool):
         if mode == "merge":
             self.tab.toggle_merge_feature_at(point)
             return
+        if mode != "create":
+            return
 
         layer = self.tab.active_layer()
         if not layer:
@@ -1143,6 +1145,7 @@ class InspectionTabWidget(QWidget):
         self.feature_move_targets = []
         self.feature_move_preview_bands = []
         self.feature_move_undo_stack = []
+        self._layers_needing_edit_refresh = set()
         self._refresh_counts_pending = False
         self._edit_preview_width_overridden = False
         self._original_digitizing_line_width = None
@@ -3160,8 +3163,7 @@ class InspectionTabWidget(QWidget):
         for layer, ids in targets:
             layer.dataProvider().deleteFeatures(ids)
             layer.removeSelection()
-            layer.updateExtents()
-            layer.triggerRepaint()
+            self.refresh_vector_layer_after_data_change(layer, reload_data=True)
         self.refresh_counts()
         self.set_status(f"🧹 空地物削除: {total} 件")
 
@@ -4103,6 +4105,122 @@ class InspectionTabWidget(QWidget):
         self._refresh_counts_pending = True
         QTimer.singleShot(delay_ms, self.refresh_counts)
 
+    def refresh_vector_layer_after_data_change(self, layer, reload_data=True, mark_edit_refresh=True):
+        if not layer:
+            return
+        if mark_edit_refresh:
+            try:
+                self._layers_needing_edit_refresh.add(layer.id())
+            except Exception:
+                pass
+        provider = None
+        try:
+            provider = layer.dataProvider()
+        except Exception:
+            provider = None
+        if reload_data and provider:
+            try:
+                provider.forceReload()
+            except Exception:
+                pass
+            try:
+                provider.reloadData()
+            except Exception:
+                pass
+        try:
+            layer.updateExtents(True)
+        except Exception:
+            try:
+                layer.updateExtents()
+            except Exception:
+                pass
+        try:
+            layer.invalidateWgs84Extent()
+        except Exception:
+            pass
+        try:
+            layer.triggerRepaint()
+        except Exception:
+            pass
+        try:
+            canvas = self.iface.mapCanvas()
+            cache = canvas.cache()
+            if cache:
+                cache.invalidateCacheForLayer(layer)
+            canvas.refresh()
+        except Exception:
+            pass
+        try:
+            if hasattr(self.main_ui, "invalidate_interaction_image_caches"):
+                self.main_ui.invalidate_interaction_image_caches()
+        except Exception:
+            pass
+        QTimer.singleShot(0, lambda l=layer: self.refresh_vector_layer_later(l))
+
+    def close_edit_buffer_before_provider_change(self, layer):
+        if not layer:
+            return True, ""
+        try:
+            if not layer.isEditable():
+                return True, ""
+        except Exception:
+            return True, ""
+        try:
+            if layer.commitChanges():
+                return True, ""
+            errors = "; ".join(layer.commitErrors())
+            try:
+                layer.rollBack()
+            except Exception:
+                pass
+            return False, errors or "編集バッファを保存できませんでした"
+        except Exception as exc:
+            try:
+                layer.rollBack()
+            except Exception:
+                pass
+            return False, str(exc)
+
+    def refresh_pending_data_change_layers(self):
+        pending_ids = list(getattr(self, "_layers_needing_edit_refresh", set()) or [])
+        if not pending_ids:
+            return
+        project = QgsProject.instance()
+        for layer_id in pending_ids:
+            layer = project.mapLayer(layer_id)
+            if not isinstance(layer, QgsVectorLayer):
+                self._layers_needing_edit_refresh.discard(layer_id)
+                continue
+            try:
+                if layer.isEditable():
+                    continue
+            except Exception:
+                pass
+            self.refresh_vector_layer_after_data_change(layer, reload_data=True, mark_edit_refresh=False)
+            try:
+                self._layers_needing_edit_refresh.discard(layer_id)
+            except Exception:
+                pass
+
+    def refresh_vector_layer_later(self, layer):
+        if not layer:
+            return
+        try:
+            layer.updateExtents(True)
+        except Exception:
+            try:
+                layer.updateExtents()
+            except Exception:
+                pass
+        try:
+            layer.triggerRepaint()
+        except Exception:
+            pass
+        try:
+            self.iface.mapCanvas().refresh()
+        except Exception:
+            pass
+
     def refresh_ui(self):
         path_text = self.gpkg_path or tr("inspection.path.none")
         self.path_label.setText(tr("inspection.path").format(path=path_text))
@@ -4564,7 +4682,7 @@ class InspectionTabWidget(QWidget):
         self.set_status("パンモード")
 
     def switch_to_pan_if_still_create(self):
-        if self.operation_mode == "create":
+        if self.operation_mode in ("create", "pan_pending"):
             self.switch_to_pan()
 
     def finish_edit_for_mode_switch(self):
@@ -6119,6 +6237,7 @@ class InspectionTabWidget(QWidget):
         return None
 
     def find_feature_at(self, point, allow_polygon_fill=False, tolerance_factor=8):
+        self.refresh_pending_data_change_layers()
         rect = self._search_rect(point, tolerance_factor=tolerance_factor)
         rect_geom = QgsGeometry.fromRect(rect)
         point_geom = QgsGeometry.fromPointXY(point)
@@ -6265,6 +6384,23 @@ class InspectionTabWidget(QWidget):
                 pass
         self.clear_selection_highlight()
 
+    def restore_feature_move_selection(self, targets):
+        restored_targets = []
+        for layer, ids in targets:
+            ids = list(ids or [])
+            if not layer or not ids:
+                continue
+            try:
+                layer.selectByIds(ids)
+                restored_targets.append((layer, ids))
+            except Exception:
+                pass
+        if restored_targets:
+            self.feature_move_targets = restored_targets
+        self.refresh_selection_highlight()
+        if self.operation_mode == "move":
+            self.ensure_map_tool_soon()
+
     def delete_feature_at(self, point):
         layer, feature = self.find_feature_at(point)
         if not layer:
@@ -6334,7 +6470,7 @@ class InspectionTabWidget(QWidget):
         provider = layer.dataProvider()
         changes = {idx: text, layer.fields().indexOf("updated_at"): self.now_text()}
         provider.changeAttributeValues({feature.id(): changes})
-        layer.triggerRepaint()
+        self.refresh_vector_layer_after_data_change(layer, reload_data=True)
         layer.setLabelsEnabled(True)
         self.refresh_counts()
 
@@ -6360,8 +6496,9 @@ class InspectionTabWidget(QWidget):
                 feature.setAttribute(idx, value)
         ok, _features = layer.dataProvider().addFeatures([feature])
         if ok:
-            layer.updateExtents()
-            layer.triggerRepaint()
+            if not self.continuous_capture_enabled:
+                self.operation_mode = "pan_pending"
+            self.refresh_vector_layer_after_data_change(layer, reload_data=True)
             self.set_status(f"✅ 検査図形を追加: {self.layer_base_name(layer)}")
             if not self.continuous_capture_enabled:
                 QTimer.singleShot(0, self.switch_to_pan_if_still_create)
@@ -6475,9 +6612,14 @@ class InspectionTabWidget(QWidget):
         moved = 0
         failed_layers = []
         undo_entries = []
+        moved_targets = []
         for layer, ids in targets:
             dx, dy = self.layer_delta_from_map_points(layer, start_point, end_point)
             if abs(dx) + abs(dy) <= 0:
+                continue
+            safe, error = self.close_edit_buffer_before_provider_change(layer)
+            if not safe:
+                failed_layers.append(f"{self.display_layer_name(layer)}（{error}）")
                 continue
             geometry_changes = {}
             for feature in layer.getFeatures(QgsFeatureRequest().setFilterFids(ids)):
@@ -6500,19 +6642,22 @@ class InspectionTabWidget(QWidget):
             updated_idx = layer.fields().indexOf("updated_at")
             if updated_idx >= 0:
                 provider.changeAttributeValues({fid: {updated_idx: now} for fid in geometry_changes.keys()})
-            layer.updateExtents()
-            layer.triggerRepaint()
+            self.refresh_vector_layer_after_data_change(layer, reload_data=True)
             moved += len(geometry_changes)
+            moved_targets.append((layer, list(geometry_changes.keys())))
         self.clear_feature_move_preview()
         self.refresh_counts()
-        self.feature_move_targets = self.selected_vector_targets()
-        self.refresh_selection_highlight()
         if moved:
             self.feature_move_undo_stack.append(undo_entries)
+            self.operation_mode = "move"
+            self.restore_feature_move_selection(moved_targets)
+            QTimer.singleShot(0, lambda targets=moved_targets: self.restore_feature_move_selection(targets))
+        else:
+            self.refresh_selection_highlight()
         if failed_layers:
             QMessageBox.warning(self, "移動できません", "一部レイヤを移動できませんでした。\n" + "\n".join(failed_layers[:8]))
         if moved:
-            self.set_status(f"✅ 移動: {moved} 件")
+            self.set_status(f"✅ 移動: {moved} 件 / 続けて移動できます（右クリックで終了）")
             return True
         self.set_status("移動できませんでした")
         return False
@@ -6533,7 +6678,11 @@ class InspectionTabWidget(QWidget):
             self.feature_move_undo_stack.append(entries)
             return False
         restored = 0
+        restored_targets = []
         for layer in layers:
+            safe, error = self.close_edit_buffer_before_provider_change(layer)
+            if not safe:
+                continue
             changes = {
                 fid: QgsGeometry(geom)
                 for entry_layer, fid, geom in entries
@@ -6542,16 +6691,18 @@ class InspectionTabWidget(QWidget):
             if not changes:
                 continue
             if layer.dataProvider().changeGeometryValues(changes):
-                layer.updateExtents()
-                layer.triggerRepaint()
+                self.refresh_vector_layer_after_data_change(layer, reload_data=True)
                 restored += len(changes)
+                restored_targets.append((layer, list(changes.keys())))
         if not restored:
             self.feature_move_undo_stack.append(entries)
             self.set_status("移動を戻せませんでした")
             return False
         self.clear_feature_move_preview()
         self.refresh_counts()
-        self.refresh_selection_highlight()
+        self.operation_mode = "move"
+        self.restore_feature_move_selection(restored_targets)
+        QTimer.singleShot(0, lambda targets=restored_targets: self.restore_feature_move_selection(targets))
         self.set_status(f"↶ 移動を戻しました: {restored} 件")
         return True
 
@@ -6587,9 +6738,21 @@ class InspectionTabWidget(QWidget):
         desc = self.layer_descriptor(target_layer)
         source_moves = []
         now = self.now_text()
+        safe, error = self.close_edit_buffer_before_provider_change(target_layer)
+        if not safe:
+            QMessageBox.warning(self, "移層できません", f"移動先レイヤを保存できませんでした。\n{error}")
+            self.operation_mode = "layer_change"
+            self.ensure_map_tool()
+            return True
         for layer, ids in targets:
             if layer.id() == target_layer.id():
                 continue
+            safe, error = self.close_edit_buffer_before_provider_change(layer)
+            if not safe:
+                QMessageBox.warning(self, "移層できません", f"移動元レイヤを保存できませんでした。\n{error}")
+                self.operation_mode = "layer_change"
+                self.ensure_map_tool()
+                return True
             layer_features = []
             for feature in layer.getFeatures(QgsFeatureRequest().setFilterFids(ids)):
                 new_feature = QgsFeature(target_layer.fields())
@@ -6629,8 +6792,7 @@ class InspectionTabWidget(QWidget):
             if not delete_ok:
                 if added_feature_ids:
                     target_layer.dataProvider().deleteFeatures(added_feature_ids)
-                    target_layer.updateExtents()
-                    target_layer.triggerRepaint()
+                    self.refresh_vector_layer_after_data_change(target_layer, reload_data=True)
                 QMessageBox.warning(
                     self,
                     "移層できません",
@@ -6640,11 +6802,9 @@ class InspectionTabWidget(QWidget):
                 self.ensure_map_tool()
                 return True
             layer.removeSelection()
-            layer.updateExtents()
-            layer.triggerRepaint()
+            self.refresh_vector_layer_after_data_change(layer, reload_data=True)
         self.clear_selection_highlight()
-        target_layer.updateExtents()
-        target_layer.triggerRepaint()
+        self.refresh_vector_layer_after_data_change(target_layer, reload_data=True)
         self.active_layer_id = target_layer.id()
         self.active_geom_type = target_layer.customProperty(INSPECTION_PROP_PREFIX + "geom_type", "polygon")
         self.active_color = target_layer.customProperty(INSPECTION_PROP_PREFIX + "color", "ff0000")
@@ -6668,10 +6828,14 @@ class InspectionTabWidget(QWidget):
         return True
 
     def _delete_features(self, layer, ids):
+        safe, error = self.close_edit_buffer_before_provider_change(layer)
+        if not safe:
+            QMessageBox.warning(self, "削除できません", f"レイヤを保存できませんでした。\n{error}")
+            return
         layer.dataProvider().deleteFeatures(ids)
         layer.removeSelection()
         self.refresh_selection_highlight()
-        layer.triggerRepaint()
+        self.refresh_vector_layer_after_data_change(layer, reload_data=True)
         self.refresh_counts()
         self.set_status(f"🗑 {len(ids)} 件を削除しました")
 
@@ -6737,6 +6901,16 @@ class InspectionTabWidget(QWidget):
     def prepare_layer_edit(self, layer, activate_tool=False):
         if self.block_locked_layers([layer], "編集できません", "図形を編集"):
             return False
+        try:
+            needs_refresh = layer.id() in self._layers_needing_edit_refresh
+        except Exception:
+            needs_refresh = False
+        if needs_refresh and not layer.isEditable():
+            self.refresh_vector_layer_after_data_change(layer, reload_data=True, mark_edit_refresh=False)
+            try:
+                self._layers_needing_edit_refresh.discard(layer.id())
+            except Exception:
+                pass
         self.active_layer_id = layer.id()
         self.active_geom_type = layer.customProperty(INSPECTION_PROP_PREFIX + "geom_type", self.layer_geom_type_key(layer))
         self.active_color = layer.customProperty(INSPECTION_PROP_PREFIX + "color", "ff0000")
@@ -6775,11 +6949,6 @@ class InspectionTabWidget(QWidget):
         if not activate_tool:
             return True
         self.apply_edit_preview_width(layer)
-        QgsMessageLog.logMessage(
-            f"INSPECTION_EDIT_TARGET layer={self.display_layer_name(layer)} id={layer.id()}",
-            "OrthoManager",
-            Qgis.MessageLevel.Info,
-        )
         QTimer.singleShot(0, lambda l=layer: self.trigger_vertex_tool(l, force_restart=True))
         return True
 
@@ -6829,14 +6998,22 @@ class InspectionTabWidget(QWidget):
 
     def finish_edit_mode(self, defer_pan=False, switch_to_pan_after=True):
         saved = 0
+        touched_layers = []
         for layer in self.inspection_layers():
             try:
                 if layer.isEditable():
                     if layer.commitChanges():
                         saved += 1
+                        touched_layers.append(layer)
                     else:
                         layer.rollBack()
                 layer.removeSelection()
+            except Exception:
+                pass
+        for layer in touched_layers:
+            self.refresh_vector_layer_after_data_change(layer, reload_data=True, mark_edit_refresh=False)
+            try:
+                self._layers_needing_edit_refresh.discard(layer.id())
             except Exception:
                 pass
         self.restore_edit_preview_width()
@@ -6910,18 +7087,8 @@ class InspectionTabWidget(QWidget):
             return True
         for layer, _ids in targets:
             layer.removeSelection()
-            layer.updateExtents()
-            layer.triggerRepaint()
-            try:
-                layer.reload()
-            except Exception:
-                pass
-        target_layer.updateExtents()
-        target_layer.triggerRepaint()
-        try:
-            target_layer.reload()
-        except Exception:
-            pass
+            self.refresh_vector_layer_after_data_change(layer, reload_data=True)
+        self.refresh_vector_layer_after_data_change(target_layer, reload_data=True)
         self.active_layer_id = target_layer.id()
         self.active_geom_type = target_layer.customProperty(INSPECTION_PROP_PREFIX + "geom_type", "polygon")
         self.active_color = target_layer.customProperty(INSPECTION_PROP_PREFIX + "color", "ff0000")

@@ -52,3 +52,8 @@ https://github.com/lcgjapan/ortho-manager/issues
 ## License
 
 GPL-3.0-or-later. See `LICENSE`.
+
+## Rating
+
+OrthoManager が役に立ったら、QGIS公式プラグインページで評価をいただけるとうれしいです！
+ありがとうございます。

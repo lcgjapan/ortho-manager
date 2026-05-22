@@ -34,9 +34,9 @@ class OrthoManagerDockWidget(QDockWidget):
     GROUP_CRS_PROPERTY = "OrthoManager/group_crs_authid"
 
     def __init__(self, iface, parent=None):
-        super().__init__("OrthoManager v3.27.2", parent)
+        super().__init__("OrthoManager v3.28", parent)
         self.iface = iface
-        self.setWindowTitle("OrthoManager v3.27.2")
+        self.setWindowTitle("OrthoManager v3.28")
         self.setFeatures(
             QDockWidget.DockWidgetFeature.DockWidgetClosable
             | QDockWidget.DockWidgetFeature.DockWidgetMovable
@@ -810,6 +810,32 @@ class OrthoManagerDockWidget(QDockWidget):
         self._mouse_pan_preview_scale = 0
         if reason:
             self._mouse_diag_log(f"PREVIEW_CLEAR reason={reason}")
+
+    def invalidate_interaction_image_caches(self, reason=None):
+        try:
+            if self._mouse_pan_preview_timer:
+                self._mouse_pan_preview_timer.stop()
+        except Exception:
+            pass
+        try:
+            if self._mouse_pan_preview_job and self._mouse_pan_preview_job.isActive():
+                self._mouse_pan_preview_job.cancelWithoutBlocking()
+        except Exception:
+            pass
+        self._mouse_pan_preview_job = None
+        self._mouse_pan_preview_job_canvas = None
+        self._mouse_pan_preview_job_target = None
+        self._mouse_pan_preview_job_key = None
+        self._mouse_pan_preview_job_extent = None
+        self._mouse_pan_preview_pending = False
+        self._clear_mouse_pan_preview(reason)
+        self._mouse_pan_snapshot_pixmap = None
+        self._mouse_pan_snapshot_start_pos = None
+        self._mouse_pan_snapshot_target = None
+        self._mouse_pan_snapshot_margin = (0, 0)
+        self._mouse_pan_current_pos = None
+        self._mouse_pan_fallback_active = False
+        self._custom_cache_last_key = None
 
     def _mouse_pan_scale_matches(self, canvas, key=None):
         key = key or self._mouse_pan_preview_extent_key
