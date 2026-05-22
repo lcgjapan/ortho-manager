@@ -34,9 +34,9 @@ class OrthoManagerDockWidget(QDockWidget):
     GROUP_CRS_PROPERTY = "OrthoManager/group_crs_authid"
 
     def __init__(self, iface, parent=None):
-        super().__init__("OrthoManager v3.27.1", parent)
+        super().__init__("OrthoManager v3.27.2", parent)
         self.iface = iface
-        self.setWindowTitle("OrthoManager v3.27.1")
+        self.setWindowTitle("OrthoManager v3.27.2")
         self.setFeatures(
             QDockWidget.DockWidgetFeature.DockWidgetClosable
             | QDockWidget.DockWidgetFeature.DockWidgetMovable

@@ -547,6 +547,14 @@ class InspectionMapTool(QgsMapTool):
 
     def canvasPressEvent(self, event):
         if event.button() == Qt.MouseButton.RightButton:
+            if self.tab.operation_mode == "move":
+                try:
+                    event.accept()
+                except Exception:
+                    pass
+                self._clear_move_state()
+                self.tab.switch_to_pan()
+                return
             if self.tab.operation_mode == "create" and self.points:
                 try:
                     event.accept()
@@ -583,6 +591,7 @@ class InspectionMapTool(QgsMapTool):
             return
         if mode == "move":
             if self.tab.begin_feature_move_at(point):
+                self.tab.update_map_cursor()
                 self.move_start_point = QgsPointXY(point)
                 self.move_start_pixel = event.pixelPoint()
                 self.move_dragging = False
@@ -619,11 +628,16 @@ class InspectionMapTool(QgsMapTool):
         self._rebuild_capture_preview()
 
     def canvasMoveEvent(self, event):
+        if self.move_start_point and self.tab.operation_mode != "move":
+            self._clear_move_state()
+            return
         if self.tab.operation_mode in ("select", "layer_change_select") and self.select_start_point:
             self._clear_snap_indicator()
             self._update_select_band(event.pixelPoint())
         elif self.tab.operation_mode == "move" and self.move_start_point:
             self._clear_snap_indicator()
+            if not self.move_dragging:
+                self.tab.clear_selection_highlight()
             self.move_dragging = True
             self.tab.update_feature_move_preview(self.move_start_point, self._event_map_point(event))
         elif self.tab.operation_mode == "create":
@@ -646,6 +660,9 @@ class InspectionMapTool(QgsMapTool):
             self._clear_snap_indicator()
 
     def canvasReleaseEvent(self, event):
+        if self.move_start_point and self.tab.operation_mode != "move":
+            self._clear_move_state()
+            return
         if self.tab.operation_mode == "move" and self.move_start_point:
             self._clear_snap_indicator()
             start_pixel = self.move_start_pixel
@@ -664,6 +681,7 @@ class InspectionMapTool(QgsMapTool):
                 self.tab.finish_feature_move(start_point, end_point)
             else:
                 self.tab.clear_feature_move_preview()
+                self.tab.refresh_selection_highlight()
                 self.tab.set_status("移動: ドラッグすると選択データを移動します")
             return
         if self.shape_start_point and self.tab.operation_mode == "create":
@@ -730,6 +748,19 @@ class InspectionMapTool(QgsMapTool):
                 if self._remove_last_capture_point():
                     message = "1つ前の点に戻しました" if self.points else "作成開始前に戻しました"
                     self.tab.set_status(message)
+                    event.accept()
+                    return
+        if self.tab.operation_mode == "move":
+            is_undo = key == Qt.Key.Key_Backspace
+            try:
+                is_undo = is_undo or (
+                    key == Qt.Key.Key_Z
+                    and event.modifiers() & Qt.KeyboardModifier.ControlModifier
+                )
+            except Exception:
+                pass
+            if is_undo:
+                if self.tab.undo_last_feature_move():
                     event.accept()
                     return
         if self.tab.handle_shortcut_key(event):
@@ -1111,6 +1142,8 @@ class InspectionTabWidget(QWidget):
         self.group_drag_preview_label = None
         self.feature_move_targets = []
         self.feature_move_preview_bands = []
+        self.feature_move_undo_stack = []
+        self._refresh_counts_pending = False
         self._edit_preview_width_overridden = False
         self._original_digitizing_line_width = None
         self._original_digitizing_line_width_had_key = False
@@ -4059,9 +4092,16 @@ class InspectionTabWidget(QWidget):
         layer.setName(f"{base}（{count}）")
 
     def refresh_counts(self):
+        self._refresh_counts_pending = False
         for layer in self.inspection_layers():
             self.update_layer_display_name(layer)
         self.refresh_ui()
+
+    def schedule_refresh_counts(self, delay_ms=80):
+        if self._refresh_counts_pending:
+            return
+        self._refresh_counts_pending = True
+        QTimer.singleShot(delay_ms, self.refresh_counts)
 
     def refresh_ui(self):
         path_text = self.gpkg_path or tr("inspection.path.none")
@@ -4303,26 +4343,43 @@ class InspectionTabWidget(QWidget):
         if canvas.viewport():
             canvas.viewport().setFocus()
 
+    def ensure_map_tool_soon(self):
+        self.ensure_map_tool()
+        QTimer.singleShot(0, self.ensure_map_tool)
+        QTimer.singleShot(80, self.ensure_map_tool)
+
     def update_map_cursor(self):
         if not self.map_tool:
             return
         cursor = Qt.CursorShape.CrossCursor
-        if self.operation_mode in ("delete", "merge", "layer_change", "move"):
+        if self.operation_mode == "move":
+            self.apply_map_cursor(self.move_cursor())
+            return
+        if self.operation_mode in ("delete", "merge", "layer_change"):
             cursor = Qt.CursorShape.PointingHandCursor
         elif self.operation_mode == "layer_change_select":
-            self.map_tool.setCursor(self.yellow_select_cursor())
+            self.apply_map_cursor(self.yellow_select_cursor())
             return
         elif self.operation_mode == "edit":
-            self.map_tool.setCursor(self.red_edit_cursor())
-            try:
-                self.iface.mapCanvas().viewport().setCursor(self.red_edit_cursor())
-            except Exception:
-                pass
+            self.apply_map_cursor(self.red_edit_cursor())
             return
         elif self.operation_mode == "select":
-            self.map_tool.setCursor(self.yellow_select_cursor())
+            self.apply_map_cursor(self.yellow_select_cursor())
             return
-        self.map_tool.setCursor(QCursor(cursor))
+        self.apply_map_cursor(QCursor(cursor))
+
+    def apply_map_cursor(self, cursor):
+        if self.map_tool:
+            try:
+                self.map_tool.setCursor(cursor)
+            except Exception:
+                pass
+        try:
+            viewport = self.iface.mapCanvas().viewport()
+            if viewport:
+                viewport.setCursor(cursor)
+        except Exception:
+            pass
 
     def inspection_canvases(self):
         canvases = []
@@ -4449,12 +4506,43 @@ class InspectionTabWidget(QWidget):
         painter.end()
         return QCursor(pixmap, 12, 12)
 
+    def move_cursor(self):
+        pixmap = QPixmap(24, 24)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+        painter.setPen(QPen(QColor("#202020"), 4))
+        painter.drawLine(12, 2, 12, 22)
+        painter.drawLine(2, 12, 22, 12)
+        painter.drawLine(12, 2, 8, 6)
+        painter.drawLine(12, 2, 16, 6)
+        painter.drawLine(12, 22, 8, 18)
+        painter.drawLine(12, 22, 16, 18)
+        painter.drawLine(2, 12, 6, 8)
+        painter.drawLine(2, 12, 6, 16)
+        painter.drawLine(22, 12, 18, 8)
+        painter.drawLine(22, 12, 18, 16)
+        painter.setPen(QPen(QColor("#ffd400"), 2))
+        painter.drawLine(12, 2, 12, 22)
+        painter.drawLine(2, 12, 22, 12)
+        painter.drawLine(12, 2, 8, 6)
+        painter.drawLine(12, 2, 16, 6)
+        painter.drawLine(12, 22, 8, 18)
+        painter.drawLine(12, 22, 16, 18)
+        painter.drawLine(2, 12, 6, 8)
+        painter.drawLine(2, 12, 6, 16)
+        painter.drawLine(22, 12, 18, 8)
+        painter.drawLine(22, 12, 18, 16)
+        painter.end()
+        return QCursor(pixmap, 12, 12)
+
     def switch_to_pan(self):
         if self.operation_mode == "edit":
             self.finish_edit_mode(defer_pan=True)
             return
         self.clear_feature_move_preview()
         self.feature_move_targets = []
+        self.feature_move_undo_stack = []
         self.clear_inspection_selection()
         self.operation_mode = "pan"
         try:
@@ -4474,6 +4562,10 @@ class InspectionTabWidget(QWidget):
                 pass
         self.refresh_ui()
         self.set_status("パンモード")
+
+    def switch_to_pan_if_still_create(self):
+        if self.operation_mode == "create":
+            self.switch_to_pan()
 
     def finish_edit_for_mode_switch(self):
         self.clear_feature_move_preview()
@@ -4506,8 +4598,29 @@ class InspectionTabWidget(QWidget):
 
     def eventFilter(self, obj, event):
         if self.inspection_enabled and obj == self.context_filter_canvas:
+            if self.operation_mode == "move" and event.type() in (
+                QEvent.Type.MouseButtonPress,
+                QEvent.Type.MouseMove,
+                QEvent.Type.MouseButtonRelease,
+            ):
+                try:
+                    if self.iface.mapCanvas().mapTool() != self.map_tool:
+                        self.ensure_map_tool()
+                    else:
+                        self.update_map_cursor()
+                except Exception:
+                    pass
             if event.type() == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.RightButton:
                 self.right_button_guard_active = True
+                if self.operation_mode == "move":
+                    try:
+                        event.accept()
+                    except Exception:
+                        pass
+                    if self.map_tool:
+                        self.map_tool._clear_move_state()
+                    self.switch_to_pan()
+                    return True
                 if self.operation_mode == "create" and self.map_tool and self.map_tool.points:
                     try:
                         event.accept()
@@ -4551,10 +4664,9 @@ class InspectionTabWidget(QWidget):
                     point = self.map_point_from_mouse_event(event)
                     if point:
                         self.prepare_edit_layer_at(point, activate_tool=True, quiet=True)
-                    try:
-                        obj.setCursor(self.red_edit_cursor())
-                    except Exception:
-                        pass
+                    self.update_map_cursor()
+            elif self.operation_mode == "move" and event.type() == QEvent.Type.MouseMove:
+                self.update_map_cursor()
         return super().eventFilter(obj, event)
 
     def map_point_from_mouse_event(self, event):
@@ -5935,8 +6047,10 @@ class InspectionTabWidget(QWidget):
         if self.operation_mode in ("layer_change", "layer_change_select"):
             self.set_status("移層中です。パンで解除してください")
             return
+        if self.operation_mode != "move":
+            self.feature_move_undo_stack = []
         self.operation_mode = "move"
-        self.ensure_map_tool()
+        self.ensure_map_tool_soon()
         if self.selected_vector_targets():
             self.set_status("移動: 選択データをドラッグしてください")
         else:
@@ -6246,16 +6360,12 @@ class InspectionTabWidget(QWidget):
                 feature.setAttribute(idx, value)
         ok, _features = layer.dataProvider().addFeatures([feature])
         if ok:
-            try:
-                layer.reload()
-            except Exception:
-                pass
             layer.updateExtents()
             layer.triggerRepaint()
-            self.refresh_counts()
             self.set_status(f"✅ 検査図形を追加: {self.layer_base_name(layer)}")
             if not self.continuous_capture_enabled:
-                QTimer.singleShot(120, self.switch_to_pan)
+                QTimer.singleShot(0, self.switch_to_pan_if_still_create)
+            self.schedule_refresh_counts()
         else:
             QMessageBox.warning(self, "追加失敗", "検査図形を追加できませんでした。")
 
@@ -6364,6 +6474,7 @@ class InspectionTabWidget(QWidget):
         now = self.now_text()
         moved = 0
         failed_layers = []
+        undo_entries = []
         for layer, ids in targets:
             dx, dy = self.layer_delta_from_map_points(layer, start_point, end_point)
             if abs(dx) + abs(dy) <= 0:
@@ -6377,11 +6488,13 @@ class InspectionTabWidget(QWidget):
                     geom.translate(dx, dy)
                 except Exception:
                     continue
+                undo_entries.append((layer, feature.id(), QgsGeometry(feature.geometry())))
                 geometry_changes[feature.id()] = geom
             if not geometry_changes:
                 continue
             provider = layer.dataProvider()
             if not provider.changeGeometryValues(geometry_changes):
+                undo_entries = [entry for entry in undo_entries if entry[0] != layer or entry[1] not in geometry_changes]
                 failed_layers.append(self.display_layer_name(layer))
                 continue
             updated_idx = layer.fields().indexOf("updated_at")
@@ -6393,6 +6506,9 @@ class InspectionTabWidget(QWidget):
         self.clear_feature_move_preview()
         self.refresh_counts()
         self.feature_move_targets = self.selected_vector_targets()
+        self.refresh_selection_highlight()
+        if moved:
+            self.feature_move_undo_stack.append(undo_entries)
         if failed_layers:
             QMessageBox.warning(self, "移動できません", "一部レイヤを移動できませんでした。\n" + "\n".join(failed_layers[:8]))
         if moved:
@@ -6400,6 +6516,44 @@ class InspectionTabWidget(QWidget):
             return True
         self.set_status("移動できませんでした")
         return False
+
+    def undo_last_feature_move(self):
+        if not self.feature_move_undo_stack:
+            entries = []
+        else:
+            entries = list(self.feature_move_undo_stack.pop() or [])
+        if not entries:
+            self.set_status("戻す移動がありません")
+            return False
+        layers = []
+        for layer, _fid, _geom in entries:
+            if layer and all(id(layer) != id(existing) for existing in layers):
+                layers.append(layer)
+        if self.block_locked_layers(layers, "戻せません", "図形の移動を戻す"):
+            self.feature_move_undo_stack.append(entries)
+            return False
+        restored = 0
+        for layer in layers:
+            changes = {
+                fid: QgsGeometry(geom)
+                for entry_layer, fid, geom in entries
+                if entry_layer == layer and geom
+            }
+            if not changes:
+                continue
+            if layer.dataProvider().changeGeometryValues(changes):
+                layer.updateExtents()
+                layer.triggerRepaint()
+                restored += len(changes)
+        if not restored:
+            self.feature_move_undo_stack.append(entries)
+            self.set_status("移動を戻せませんでした")
+            return False
+        self.clear_feature_move_preview()
+        self.refresh_counts()
+        self.refresh_selection_highlight()
+        self.set_status(f"↶ 移動を戻しました: {restored} 件")
+        return True
 
     def move_selected_to_layer(self, target_layer):
         targets = self.selected_vector_targets()
@@ -6431,12 +6585,12 @@ class InspectionTabWidget(QWidget):
             QTimer.singleShot(0, lambda: self.show_context_menu(QCursor.pos()))
             return True
         desc = self.layer_descriptor(target_layer)
-        new_features = []
-        delete_map = []
+        source_moves = []
         now = self.now_text()
         for layer, ids in targets:
             if layer.id() == target_layer.id():
                 continue
+            layer_features = []
             for feature in layer.getFeatures(QgsFeatureRequest().setFilterFids(ids)):
                 new_feature = QgsFeature(target_layer.fields())
                 geom = QgsGeometry(feature.geometry())
@@ -6460,15 +6614,35 @@ class InspectionTabWidget(QWidget):
                     idx = target_layer.fields().indexOf(name)
                     if idx >= 0:
                         new_feature.setAttribute(idx, value)
-                new_features.append(new_feature)
-            delete_map.append((layer, ids))
-        if new_features:
-            target_layer.dataProvider().addFeatures(new_features)
-        for layer, ids in delete_map:
-            layer.dataProvider().deleteFeatures(ids)
+                layer_features.append(new_feature)
+            if layer_features:
+                source_moves.append((layer, ids, layer_features))
+        for layer, ids, layer_features in source_moves:
+            add_ok, added_features = target_layer.dataProvider().addFeatures(layer_features)
+            if not add_ok:
+                QMessageBox.warning(self, "移層できません", "移動先レイヤへ図形を追加できませんでした。")
+                self.operation_mode = "layer_change"
+                self.ensure_map_tool()
+                return True
+            added_feature_ids = [feature.id() for feature in added_features if feature.id() is not None and feature.id() >= 0]
+            delete_ok = layer.dataProvider().deleteFeatures(ids)
+            if not delete_ok:
+                if added_feature_ids:
+                    target_layer.dataProvider().deleteFeatures(added_feature_ids)
+                    target_layer.updateExtents()
+                    target_layer.triggerRepaint()
+                QMessageBox.warning(
+                    self,
+                    "移層できません",
+                    "移動元レイヤから図形を削除できなかったため、移動先への追加を取り消しました。",
+                )
+                self.operation_mode = "layer_change"
+                self.ensure_map_tool()
+                return True
             layer.removeSelection()
             layer.updateExtents()
             layer.triggerRepaint()
+        self.clear_selection_highlight()
         target_layer.updateExtents()
         target_layer.triggerRepaint()
         self.active_layer_id = target_layer.id()
