@@ -18,7 +18,7 @@ from qgis.core import (
     QgsProject, QgsVectorLayer, QgsRasterLayer, QgsMessageLog, Qgis,
     QgsWkbTypes, QgsMapSettings, QgsMapRendererCustomPainterJob, QgsRectangle
 )
-from .i18n import tr
+from .i18n import tr, tr_text
 
 try:
     from osgeo import gdal
@@ -414,14 +414,14 @@ class ExportTabWidget(QWidget):
     def _activate_select_tool(self):
         layer_id = self.zukaku_combo.currentData()
         if not layer_id:
-            QMessageBox.warning(self, "警告", "図郭レイヤがありません")
+            QMessageBox.warning(self, tr_text("警告"), tr_text("図郭レイヤがありません"))
             return
         layer = QgsProject.instance().mapLayer(layer_id)
         if layer:
             self.main_ui.iface.setActiveLayer(layer)
             try:
                 self.main_ui.iface.actionSelect().trigger()
-                self.main_ui._set_status("🖱 マップ上で出力対象の図郭をクリックしてください（ESCで解除）")
+                self.main_ui._set_status(tr_text("🖱 マップ上で出力対象の図郭をクリックしてください（ESCで解除）"))
             except: pass
 
     def _clear_selection(self):
@@ -430,7 +430,7 @@ class ExportTabWidget(QWidget):
             layer = QgsProject.instance().mapLayer(layer_id)
             if layer:
                 layer.removeSelection()
-                self.main_ui._set_status("ℹ 図郭の選択を解除しました")
+                self.main_ui._set_status(tr_text("ℹ 図郭の選択を解除しました"))
 
     def _mark_log_start(self):
         mark_time = time.strftime("%Y-%m-%d %H:%M:%S")
@@ -440,7 +440,7 @@ class ExportTabWidget(QWidget):
             "OrthoManager",
             Qgis.MessageLevel.Info,
         )
-        self.main_ui._set_status("ログ開始位置を記録しました")
+        self.main_ui._set_status(tr_text("ログ開始位置を記録しました"))
 
     def _show_export_busy_message(self):
         self._hide_export_busy_message()
@@ -450,7 +450,7 @@ class ExportTabWidget(QWidget):
         except Exception:
             parent = self.window()
 
-        label = QLabel("書き出し中です...\nQGISが一時的に反応しにくくなる場合があります", parent)
+        label = QLabel(tr_text("書き出し中です...\nQGISが一時的に反応しにくくなる場合があります"), parent)
         label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         label.setStyleSheet(
@@ -512,7 +512,7 @@ class ExportTabWidget(QWidget):
         self._export_progress_started_at = time.time()
         self._export_cancel_requested = False
         dlg = QProgressDialog("書き出し準備中...", "キャンセル", 0, self._export_progress_total, self)
-        dlg.setWindowTitle("書き出し中")
+        dlg.setWindowTitle(tr_text("書き出し中"))
         dlg.setWindowModality(Qt.WindowModality.NonModal)
         dlg.setMinimumDuration(0)
         dlg.setAutoClose(False)
@@ -545,9 +545,9 @@ class ExportTabWidget(QWidget):
             return
         reply = QMessageBox.question(
             self,
-            "キャンセル確認",
-            "本当に書き出しをキャンセルしてもよろしいでしょうか？\n\n"
-            "はいを押すと実行中の処理を停止し、未完成ファイルを削除します。",
+            tr_text("キャンセル確認"),
+            tr_text("本当に書き出しをキャンセルしてもよろしいでしょうか？\n\n"
+            "はいを押すと実行中の処理を停止し、未完成ファイルを削除します。"),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -564,7 +564,7 @@ class ExportTabWidget(QWidget):
         if self._export_cancel_event:
             self._export_cancel_event.set()
         self._show_export_cancel_processing()
-        self.main_ui._set_status("キャンセル要求を受け付けました。実行中の処理を停止しています...")
+        self.main_ui._set_status(tr_text("キャンセル要求を受け付けました。実行中の処理を停止しています..."))
         QApplication.processEvents()
         QTimer.singleShot(0, self._show_export_cancel_processing)
         QTimer.singleShot(200, self._show_export_cancel_processing)
@@ -573,11 +573,11 @@ class ExportTabWidget(QWidget):
         if not self._export_progress_dialog:
             return
         try:
-            self._export_progress_dialog.setWindowTitle("キャンセル処理中")
+            self._export_progress_dialog.setWindowTitle(tr_text("キャンセル処理中"))
             self._export_progress_dialog.setCancelButton(None)
             self._export_progress_dialog.setRange(0, 0)
             self._export_progress_dialog.setLabelText(
-                "キャンセル処理中...\n実行中の処理を停止し、未完成ファイルを削除しています。"
+                tr_text("キャンセル処理中...\n実行中の処理を停止し、未完成ファイルを削除しています。")
             )
             self._export_progress_dialog.show()
             self._export_progress_dialog.raise_()
@@ -1521,6 +1521,53 @@ class ExportTabWidget(QWidget):
             pass
         return paths
 
+    def _collect_source_resolutions(self, path, visited=None):
+        visited = visited or set()
+        norm_path = os.path.normpath(path)
+        if norm_path in visited:
+            return []
+        visited.add(norm_path)
+
+        if os.path.splitext(norm_path)[1].lower() == ".vrt":
+            resolutions = []
+            for src_path in self._vrt_source_paths(norm_path):
+                resolutions.extend(self._collect_source_resolutions(src_path, visited))
+            return resolutions
+
+        try:
+            ds = gdal.Open(norm_path)
+            if not ds:
+                return []
+            gt = ds.GetGeoTransform()
+            ds = None
+            if not gt:
+                return []
+            x_res = abs(float(gt[1]))
+            y_res = abs(float(gt[5]))
+            if x_res > 0 and y_res > 0:
+                return [(x_res, y_res, norm_path)]
+        except Exception:
+            return []
+        return []
+
+    def _default_export_resolution(self, input_paths):
+        resolutions = []
+        for path in input_paths:
+            resolutions.extend(self._collect_source_resolutions(path))
+
+        if not resolutions:
+            return None
+
+        x_res = min(item[0] for item in resolutions)
+        y_res = min(item[1] for item in resolutions)
+        QgsMessageLog.logMessage(
+            f"EXPORT_SOURCE_RESOLUTION x_res={x_res:.12g} y_res={y_res:.12g} "
+            f"sources={len(resolutions)} reason=source_rasters",
+            "OrthoManager",
+            Qgis.MessageLevel.Info,
+        )
+        return x_res, y_res
+
     def _input_layers_have_alpha(self, input_layers):
         for layer in input_layers:
             if not layer:
@@ -1542,7 +1589,7 @@ class ExportTabWidget(QWidget):
         start_time = time.time()
         
         if not GDAL_OK:
-            QMessageBox.critical(self, "エラー", "GDALライブラリが見つかりません。")
+            QMessageBox.critical(self, tr_text("エラー"), tr_text("GDALライブラリが見つかりません。"))
             return
 
         out_dir = self.export_out_edit.text().strip()
@@ -1572,18 +1619,34 @@ class ExportTabWidget(QWidget):
         effective_warp_direct_mode = (warp_direct_mode or warp_direct_post_mode) and format_val in ["TIF＋TFW", "GeoTIFF"]
         
         if not out_dir:
-            QMessageBox.warning(self, "警告", "出力フォルダを指定してください")
+            QMessageBox.warning(self, tr_text("警告"), tr_text("出力フォルダを指定してください"))
             return
         if not layer_id:
-            QMessageBox.warning(self, "警告", "図郭レイヤを選択してください")
+            QMessageBox.warning(self, tr_text("警告"), tr_text("図郭レイヤを選択してください"))
             return
+
+        try:
+            self.main_ui._set_status(tr_text("⏳ 書き出し前に表示キャッシュを更新中..."))
+            if hasattr(self.main_ui, "_invalidate_vrt_display_caches"):
+                self.main_ui._invalidate_vrt_display_caches(refresh=True, schedule_prefetch=False)
+            QgsMessageLog.logMessage(
+                "EXPORT_PRE_FLUSH display_cache=True screen_shield=True mouse_shield=True custom_cache=True",
+                "OrthoManager",
+                Qgis.MessageLevel.Info,
+            )
+        except Exception as exc:
+            QgsMessageLog.logMessage(
+                f"EXPORT_PRE_FLUSH_WARNING: {exc}",
+                "OrthoManager",
+                Qgis.MessageLevel.Warning,
+            )
 
         if direct_vrt_mode:
             current_name = getattr(self.main_ui, "current_vrt_name", "")
             entry = self.main_ui.vrt_registry.get(current_name, {}) if current_name else {}
             direct_vrt_path = entry.get("path", "") if isinstance(entry, dict) else ""
             if not direct_vrt_path or not os.path.exists(direct_vrt_path):
-                QMessageBox.warning(self, "警告", "選択中VRTのファイルが見つかりません")
+                QMessageBox.warning(self, tr_text("警告"), tr_text("選択中VRTのファイルが見つかりません"))
                 return
             direct_layer = self.main_ui._get_vrt_layer(current_name) if hasattr(self.main_ui, "_get_vrt_layer") else None
             input_layers = [direct_layer] if direct_layer else []
@@ -1591,7 +1654,7 @@ class ExportTabWidget(QWidget):
         else:
             input_layers = self._get_input_layers()
             if not input_layers:
-                QMessageBox.warning(self, "警告", "出力対象のラスタがありません。レイヤパネルでラスタを表示(ON)にしてください。")
+                QMessageBox.warning(self, tr_text("警告"), tr_text("出力対象のラスタがありません。レイヤパネルでラスタを表示(ON)にしてください。"))
                 return
             input_paths = [lyr.source() for lyr in input_layers]
 
@@ -1612,12 +1675,12 @@ class ExportTabWidget(QWidget):
             msg += "\n現在のプロジェクトの座標系を強制的に適用して書き出しを続行しますか？\n（「いいえ」を押して、事前にQGIS上でレイヤの座標系を設定してから再度お試しいただくことをお勧めします）"
             
             reply = QMessageBox.question(
-                self, "座標系未設定の警告", msg, 
+                self, tr_text("座標系未設定の警告"), msg, 
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, 
                 QMessageBox.StandardButton.No
             )
             if reply != QMessageBox.StandardButton.Yes:
-                self.main_ui._set_status("ℹ 座標系未設定のため書き出しをキャンセルしました。")
+                self.main_ui._set_status(tr_text("ℹ 座標系未設定のため書き出しをキャンセルしました。"))
                 return
 
         os.makedirs(out_dir, exist_ok=True)
@@ -1629,12 +1692,13 @@ class ExportTabWidget(QWidget):
             features = list(zlayer.getFeatures())
             
         if not features:
-            QMessageBox.warning(self, "警告", "対象となる図郭フィーチャがありません")
+            QMessageBox.warning(self, tr_text("警告"), tr_text("対象となる図郭フィーチャがありません"))
             return
 
         temp_info_vrt = os.path.join(out_dir, "_temp_info.vrt")
         src_gt = None
         src_datatype = None
+        default_res = self._default_export_resolution(input_paths)
         try:
             build_opts = gdal.BuildVRTOptions(resolution="highest")
             ds_info = gdal.BuildVRT(temp_info_vrt, input_paths, options=build_opts)
@@ -1652,9 +1716,16 @@ class ExportTabWidget(QWidget):
             src_gt = (0, 1, 0, 0, 0, -1)
 
         try: res_x = float(self.res_x_edit.text())
-        except ValueError: res_x = src_gt[1]
+        except ValueError: res_x = default_res[0] if default_res else abs(src_gt[1])
         try: res_y = float(self.res_y_edit.text())
-        except ValueError: res_y = abs(src_gt[5])
+        except ValueError: res_y = default_res[1] if default_res else abs(src_gt[5])
+        if default_res:
+            QgsMessageLog.logMessage(
+                f"EXPORT_RESOLUTION_AUTO x_res={res_x:.12g} y_res={res_y:.12g} "
+                f"input_vrt_grid=({abs(src_gt[1]):.12g},{abs(src_gt[5]):.12g})",
+                "OrthoManager",
+                Qgis.MessageLevel.Info,
+            )
 
         depth_str = self._combo_value(self.depth_combo)
         output_type = None
@@ -1674,8 +1745,8 @@ class ExportTabWidget(QWidget):
         if bg_val[3] == 0 and force_24bit:
             reply = QMessageBox.question(
                 self,
-                "透過設定の確認",
-                "現在のビット設定（24bit 透過なし）では、画像を『透明』にして保存することができません。\n\n透明な背景で出力するために、自動的に『32bit (透過あり)』に変更して出力しますか？",
+                tr_text("透過設定の確認"),
+                tr_text("現在のビット設定（24bit 透過なし）では、画像を『透明』にして保存することができません。\n\n透明な背景で出力するために、自動的に『32bit (透過あり)』に変更して出力しますか？"),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.Yes
             )
@@ -1683,23 +1754,23 @@ class ExportTabWidget(QWidget):
                 force_24bit = False
                 QgsMessageLog.logMessage("ユーザーの選択により透過設定を32bitに変更して出力します。", "OrthoManager", Qgis.MessageLevel.Info)
             else:
-                self.main_ui._set_status("ℹ 書き出しをキャンセルしました。")
+                self.main_ui._set_status(tr_text("ℹ 書き出しをキャンセルしました。"))
                 return
 
         if force_24bit and self._input_layers_have_alpha(input_layers):
             reply = QMessageBox.question(
                 self,
-                "32bit画像が含まれています",
-                "入力ラスタに透過情報を持つ画像が含まれています。\n\n"
+                tr_text("32bit画像が含まれています"),
+                tr_text("入力ラスタに透過情報を持つ画像が含まれています。\n\n"
                 "24bitで出力すると透過情報は失われます。\n\n"
                 "はい: 32bit (RGBA: 透過あり) に変更して出力します。\n"
                 "いいえ: 24bit (RGB: 透過なし) のまま出力します。\n"
-                "キャンセル: 書き出しを中止します。",
+                "キャンセル: 書き出しを中止します。"),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Cancel,
                 QMessageBox.StandardButton.Yes,
             )
             if reply == QMessageBox.StandardButton.Cancel:
-                self.main_ui._set_status("ℹ 書き出しをキャンセルしました。")
+                self.main_ui._set_status(tr_text("ℹ 書き出しをキャンセルしました。"))
                 return
             if reply == QMessageBox.StandardButton.Yes:
                 force_24bit = False
@@ -1742,13 +1813,13 @@ class ExportTabWidget(QWidget):
                     shown += f"\n...他 {len(duplicate_output_names) - 10} 件"
                 QMessageBox.critical(
                     self,
-                    "図郭IDが重複しています",
-                    "同じ出力ファイル名になる図郭があります。\n\n"
+                    tr_text("図郭IDが重複しています"),
+                    tr_text("同じ出力ファイル名になる図郭があります。\n\n"
                     f"{shown}\n\n"
                     "同時書き込みによる破損を防ぐため、書き出しを中止しました。\n"
-                    "図郭IDを重複しない値に修正してから再実行してください。"
+                    "図郭IDを重複しない値に修正してから再実行してください。")
                 )
-                self.main_ui._set_status("❌ 図郭ID重複のため書き出しを中止しました")
+                self.main_ui._set_status(tr_text("❌ 図郭ID重複のため書き出しを中止しました"))
                 return
         
         self.export_progress_bar.setVisible(True)
@@ -1818,7 +1889,7 @@ class ExportTabWidget(QWidget):
                     ds_master.FlushCache()
                     ds_master = None
                 else:
-                    QMessageBox.critical(self, "エラー", "レイヤの合成処理（マスターVRT構築）に失敗しました。")
+                    QMessageBox.critical(self, tr_text("エラー"), tr_text("レイヤの合成処理（マスターVRT構築）に失敗しました。"))
                     return
 
                 if force_24bit and (need_empty_check or need_solid_check):
@@ -1876,13 +1947,13 @@ class ExportTabWidget(QWidget):
                 
                 if os.path.exists(actual_out_path):
                     reply = QMessageBox.question(
-                        self, "上書き確認",
-                        f"ファイル '{os.path.basename(actual_out_path)}' はすでに存在します。\n上書きしますか？",
+                        self, tr_text("上書き確認"),
+                        tr_text(f"ファイル '{os.path.basename(actual_out_path)}' はすでに存在します。\n上書きしますか？"),
                         QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Cancel,
                         QMessageBox.StandardButton.No
                     )
                     if reply == QMessageBox.StandardButton.Cancel:
-                        self.main_ui._set_status("ℹ 書き出しをキャンセルしました。")
+                        self.main_ui._set_status(tr_text("ℹ 書き出しをキャンセルしました。"))
                         return
                     elif reply == QMessageBox.StandardButton.No:
                         skip_reasons["同名ファイルが存在するためスキップ（上書き拒否）"] = 1
@@ -1945,8 +2016,8 @@ class ExportTabWidget(QWidget):
                             continue
                             
                         msg_box = QMessageBox(self)
-                        msg_box.setWindowTitle("上書き確認")
-                        msg_box.setText(f"ファイル '{os.path.basename(actual_out_path)}' はすでに存在します。\n上書きしますか？")
+                        msg_box.setWindowTitle(tr_text("上書き確認"))
+                        msg_box.setText(tr_text(f"ファイル '{os.path.basename(actual_out_path)}' はすでに存在します。\n上書きしますか？"))
                         
                         btn_yes_all = msg_box.addButton("すべて上書き", QMessageBox.ButtonRole.YesRole)
                         btn_yes = msg_box.addButton("上書き", QMessageBox.ButtonRole.AcceptRole)
@@ -1958,7 +2029,7 @@ class ExportTabWidget(QWidget):
                         clicked_btn = msg_box.clickedButton()
                         
                         if clicked_btn == btn_cancel:
-                            self.main_ui._set_status("ℹ 書き出しをキャンセルしました。")
+                            self.main_ui._set_status(tr_text("ℹ 書き出しをキャンセルしました。"))
                             return
                         elif clicked_btn == btn_yes_all:
                             self.overwrite_all = True
@@ -1986,7 +2057,7 @@ class ExportTabWidget(QWidget):
 
                 if not tasks:
                     self.export_progress_bar.setVisible(False)
-                    self.main_ui._set_status("✅ 書き出し完了: すべてスキップされました")
+                    self.main_ui._set_status(tr_text("✅ 書き出し完了: すべてスキップされました"))
                     return
 
                 max_workers = max(1, worker_count)
@@ -2072,7 +2143,7 @@ class ExportTabWidget(QWidget):
 
         except Exception as e:
             export_error = e
-            QMessageBox.critical(self, "エラー", f"書き出し中にエラーが発生しました:\n{e}")
+            QMessageBox.critical(self, tr_text("エラー"), tr_text(f"書き出し中にエラーが発生しました:\n{e}"))
             QgsMessageLog.logMessage(f"Export Error: {e}", "OrthoManager", Qgis.MessageLevel.Critical)
         finally:
             finalize_start = time.perf_counter()
@@ -2137,11 +2208,11 @@ class ExportTabWidget(QWidget):
 
             if export_error is not None:
                 self._hide_export_progress_dialog()
-                self.main_ui._set_status("❌ 書き出し中にエラーが発生しました")
+                self.main_ui._set_status(tr_text("❌ 書き出し中にエラーが発生しました"))
                 return
 
             if cancelled_by_user:
-                self.main_ui._set_status(f"ℹ 書き出しをキャンセルしました: {success_count} 件成功 ({time_str})")
+                self.main_ui._set_status(tr_text(f"ℹ 書き出しをキャンセルしました: {success_count} 件成功 ({time_str})"))
                 cancel_msg = (
                     "書き出しをキャンセルしました。\n\n"
                     f"完了済み: {success_count} 件\n"
@@ -2152,11 +2223,11 @@ class ExportTabWidget(QWidget):
                     for r, count in skip_reasons.items():
                         cancel_msg += f"\n・{r} : {count} 件"
                 self._hide_export_progress_dialog()
-                QMessageBox.information(self, "キャンセル", cancel_msg)
+                QMessageBox.information(self, tr_text("キャンセル"), cancel_msg)
             else:
-                self.main_ui._set_status(f"✅ 書き出し完了: {success_count} 件成功 ({time_str})")
+                self.main_ui._set_status(tr_text(f"✅ 書き出し完了: {success_count} 件成功 ({time_str})"))
                 self._hide_export_progress_dialog()
-                QMessageBox.information(self, "完了", msg)
+                QMessageBox.information(self, tr_text("完了"), msg)
 
 
 

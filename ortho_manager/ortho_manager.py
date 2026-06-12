@@ -5,6 +5,7 @@ from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtCore import Qt
 from qgis.core import QgsProject, QgsMessageLog, Qgis
 from .ortho_manager_dockwidget import OrthoManagerDockWidget
+from .layer_lock import LOCK_PROPERTY, SELECT_LOCK_PROPERTY
 
 
 class OrthoManager:
@@ -36,9 +37,48 @@ class OrthoManager:
 
     def _on_project_read(self, doc):
         self._log_project_start()
-        self.dockwidget.restore_from_project()
-        if self.dockwidget.vrt_registry:
+        restored = self.dockwidget.restore_from_project()
+        if restored or self.dockwidget.vrt_registry or self._project_has_ortho_manager_locks():
             self.dockwidget.show()
+
+    def _project_has_ortho_manager_locks(self):
+        root = QgsProject.instance().layerTreeRoot()
+
+        def truthy(value):
+            if isinstance(value, bool):
+                return value
+            if isinstance(value, (int, float)):
+                return bool(value)
+            return str(value).strip().lower() in ("1", "true", "yes", "on")
+
+        def walk(node):
+            if node is None:
+                return False
+            try:
+                if truthy(node.customProperty(LOCK_PROPERTY, False)) or truthy(node.customProperty(SELECT_LOCK_PROPERTY, False)):
+                    return True
+            except Exception:
+                pass
+            try:
+                layer = node.layer()
+            except Exception:
+                layer = None
+            if layer is not None:
+                try:
+                    if truthy(layer.customProperty(LOCK_PROPERTY, False)) or truthy(layer.customProperty(SELECT_LOCK_PROPERTY, False)):
+                        return True
+                except Exception:
+                    pass
+            try:
+                children = node.children()
+            except Exception:
+                children = []
+            for child in children:
+                if walk(child):
+                    return True
+            return False
+
+        return walk(root)
 
     def _log_project_start(self):
         try:

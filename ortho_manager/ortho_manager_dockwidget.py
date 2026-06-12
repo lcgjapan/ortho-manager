@@ -20,12 +20,12 @@ from qgis.core import (
 
 from qgis.gui import QgsMapCanvas, QgsProjectionSelectionDialog
 
-from .utils import PROJECT_KEY, PROJECT_ENTRY, DEFAULT_MIN_SCALE
+from .utils import PROJECT_KEY, PROJECT_ENTRY, DEFAULT_MIN_SCALE, get_plugin_version, is_supported_raster_path
 from .vrt_tab import VrtTabWidget
 from .export_tab import ExportTabWidget
 from .inspection_tab import InspectionTabWidget
 from .settings_tab import SettingsTabWidget
-from .i18n import current_language, tr
+from .i18n import current_language, tr, tr_text
 from .layer_lock import LayerLockManager
 from .tasks import find_external_vrt_engine_path, run_external_vrt_engine_sync
 
@@ -34,9 +34,10 @@ class OrthoManagerDockWidget(QDockWidget):
     GROUP_CRS_PROPERTY = "OrthoManager/group_crs_authid"
 
     def __init__(self, iface, parent=None):
-        super().__init__("OrthoManager v3.28.1", parent)
+        title = f"OrthoManager v{get_plugin_version('unknown')}"
+        super().__init__(title, parent)
         self.iface = iface
-        self.setWindowTitle("OrthoManager v3.28.1")
+        self.setWindowTitle(title)
         self.setFeatures(
             QDockWidget.DockWidgetFeature.DockWidgetClosable
             | QDockWidget.DockWidgetFeature.DockWidgetMovable
@@ -52,6 +53,8 @@ class OrthoManagerDockWidget(QDockWidget):
         self.current_vrt_name = ""  # 現在アクティブなVRT名
         self._scale_timer = {}      # 縮尺シグナル用の辞書
         self._last_status_message = "準備完了"
+        self._last_reset_completed_log_sec = 0.0
+        self._reset_completed_log_interval_sec = 2.0
         self._crs_alert_label = None
         self._crs_alert_animation = None
         self._crs_alert_timer = None
@@ -146,7 +149,7 @@ class OrthoManagerDockWidget(QDockWidget):
         )
         reply = QMessageBox.question(
             self,
-            "OrthoManagerを閉じますか？",
+            tr_text("OrthoManagerを閉じますか？"),
             message,
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
@@ -258,7 +261,7 @@ class OrthoManagerDockWidget(QDockWidget):
             except Exception:
                 pass
         if show_status:
-            self._set_status("✅ ビューキャッシュ ON" if enabled else "ビューキャッシュ OFF")
+            self._set_status(tr_text("✅ ビューキャッシュ ON") if enabled else tr_text("ビューキャッシュ OFF"))
 
     def load_custom_cache_setting(self):
         try:
@@ -353,7 +356,7 @@ class OrthoManagerDockWidget(QDockWidget):
             except Exception:
                 pass
         if show_status:
-            self._set_status("✅ 独自キャッシュ ON" if enabled else "独自キャッシュ OFF")
+            self._set_status(tr_text("✅ 独自キャッシュ ON") if enabled else tr_text("独自キャッシュ OFF"))
 
     def _schedule_custom_cache_prefetch(self, canvas=None):
         if not self.custom_cache_enabled:
@@ -367,6 +370,79 @@ class OrthoManagerDockWidget(QDockWidget):
                 self._custom_cache_timer.start()
             except RuntimeError:
                 self._custom_cache_timer = None
+
+    def _invalidate_vrt_display_caches(self, refresh=True, schedule_prefetch=False):
+        try:
+            if self._mouse_pan_preview_timer and self._mouse_pan_preview_timer.isActive():
+                self._mouse_pan_preview_timer.stop()
+        except Exception:
+            pass
+        self._mouse_pan_preview_pixmap = None
+        self._mouse_pan_preview_margin = (0, 0)
+        self._mouse_pan_preview_target_size = (0, 0)
+        self._mouse_pan_preview_canvas = None
+        self._mouse_pan_preview_target = None
+        self._mouse_pan_preview_extent_key = None
+        self._mouse_pan_preview_extent = None
+        self._mouse_pan_preview_job_canvas = None
+        self._mouse_pan_preview_job_target = None
+        self._mouse_pan_preview_job_margin = (0, 0)
+        self._mouse_pan_preview_job_size = (0, 0)
+        self._mouse_pan_preview_job_key = None
+        self._mouse_pan_preview_job_extent = None
+        self._mouse_pan_preview_pending = False
+
+        if self._mouse_pan_preview_job:
+            try:
+                self._mouse_pan_preview_job.cancelWithoutBlocking()
+            except Exception:
+                pass
+            self._mouse_pan_preview_job = None
+
+        self._mouse_pan_snapshot_pixmap = None
+        self._mouse_pan_snapshot_start_pos = None
+        self._mouse_pan_snapshot_target = None
+        self._mouse_pan_snapshot_margin = (0, 0)
+        self._mouse_pan_current_pos = None
+        self._mouse_pan_fallback_active = False
+        try:
+            self._hide_screen_shield_overlay()
+        except Exception:
+            pass
+
+        try:
+            if self._custom_cache_timer and self._custom_cache_timer.isActive():
+                self._custom_cache_timer.stop()
+        except Exception:
+            pass
+        self._custom_cache_pending = False
+        self._custom_cache_last_key = None
+        self._custom_cache_canvas = None
+        self._custom_cache_job_canvas = None
+        self._custom_cache_job_layer = None
+        self._custom_cache_job_extent = None
+        self._custom_cache_job_map_to_pixel = None
+        if self._custom_cache_job:
+            try:
+                self._custom_cache_job.cancelWithoutBlocking()
+            except Exception:
+                pass
+            self._custom_cache_job = None
+
+        if refresh:
+            for canvas in self._map_canvases():
+                try:
+                    if hasattr(canvas, "clearCache"):
+                        canvas.clearCache()
+                except Exception:
+                    pass
+                try:
+                    canvas.refresh()
+                except Exception:
+                    pass
+            QApplication.processEvents()
+        if schedule_prefetch and self.custom_cache_enabled:
+            QTimer.singleShot(250, self._schedule_custom_cache_prefetch)
 
     def cleanup_before_unload(self):
         try:
@@ -623,7 +699,7 @@ class OrthoManagerDockWidget(QDockWidget):
             except Exception:
                 pass
         if show_status:
-            self._set_status("✅ 画面シールド ON" if enabled else "画面シールド OFF")
+            self._set_status(tr_text("✅ 画面シールド ON") if enabled else tr_text("画面シールド OFF"))
 
     def load_mouse_shield_setting(self):
         try:
@@ -700,9 +776,9 @@ class OrthoManagerDockWidget(QDockWidget):
                 pass
         if show_status:
             self._set_status(
-                f"✅ マウスシールド {self.mouse_shield_scale}x ON"
+                tr_text(f"✅ マウスシールド {self.mouse_shield_scale}x ON")
                 if enabled
-                else "マウスシールド OFF"
+                else tr_text("マウスシールド OFF")
             )
 
     def _map_canvases(self):
@@ -1064,7 +1140,7 @@ class OrthoManagerDockWidget(QDockWidget):
             except Exception:
                 pass
         if show_status:
-            self._set_status(f"マウスシールド倍率 {self.mouse_shield_scale}x")
+            self._set_status(tr_text(f"マウスシールド倍率 {self.mouse_shield_scale}x"))
 
     def _mouse_pan_wide_settings(self, canvas, target):
         width = max(1, target.width())
@@ -1768,13 +1844,13 @@ class OrthoManagerDockWidget(QDockWidget):
         if duplicate_path_count == 0 and duplicate_name_count == 0:
             return
         msg = (
-            f"{context}に重複TIFが含まれていました。\n\n"
+            f"{context}に重複画像が含まれていました。\n\n"
             f"同じファイル: {duplicate_path_count} 件\n"
-            f"同じTIF名: {duplicate_name_count} 件\n\n"
-            "OrthoManager v2.8では、同じTIF名の登録は禁止です。\n"
-            "安全のため、最初に見つかったTIFだけを残しました。"
+            f"同じ画像ファイル名: {duplicate_name_count} 件\n\n"
+            "OrthoManager v2.8では、同じ画像ファイル名の登録は禁止です。\n"
+            "安全のため、最初に見つかった画像だけを残しました。"
         )
-        QMessageBox.warning(self, "同名TIFを除外しました", msg)
+        QMessageBox.warning(self, tr_text("同名画像を除外しました"), msg)
 
     # ==========================================
     # UI構築
@@ -1843,12 +1919,13 @@ class OrthoManagerDockWidget(QDockWidget):
     def set_status(self, msg):
         self._set_status(msg)
 
-    def _set_status(self, msg):
+    def _set_status(self, msg, log=True):
         self._last_status_message = msg
         self.status_label.setToolTip(msg)
         self.status_label.setText(self._elide_text_for_width(msg, self.status_label, 280))
         QApplication.processEvents()
-        QgsMessageLog.logMessage(msg, "OrthoManager", Qgis.MessageLevel.Info)
+        if log:
+            QgsMessageLog.logMessage(msg, "OrthoManager", Qgis.MessageLevel.Info)
 
     def _elide_text_for_width(self, text, widget, fallback_width):
         width = widget.width() if widget and widget.width() > 20 else fallback_width
@@ -1881,20 +1958,23 @@ class OrthoManagerDockWidget(QDockWidget):
 
     def restore_from_project(self):
         raw, ok = QgsProject.instance().readEntry(PROJECT_KEY, PROJECT_ENTRY)
-        if not ok or not raw: return
+        if not ok or not raw:
+            return False
         try:
             data = json.loads(raw)
         except Exception:
-            return
+            return False
 
         current_name = ""
         if isinstance(data, dict) and "vrt_registry" in data:
             current_name = self.format_vrt_display_name(data.get("current_vrt_name", ""))
             entries = data.get("vrt_registry", {})
             inspection_state = data.get("inspection", {})
+            has_project_state = bool(entries) or self._has_inspection_project_state(inspection_state)
         else:
             entries = data if isinstance(data, dict) else {}
             inspection_state = {}
+            has_project_state = bool(entries)
 
         self._reset_ui()
         for name, entry in entries.items():
@@ -1949,8 +2029,20 @@ class OrthoManagerDockWidget(QDockWidget):
             self.inspection_tab.restore_state(inspection_state)
         if self.layer_lock_manager is not None:
             self.layer_lock_manager.refresh()
-            
-        self._set_status(f"✅ プロジェクトから {len(self.vrt_registry)} 件を復元")
+             
+        self._set_status(tr_text(f"✅ プロジェクトから {len(self.vrt_registry)} 件を復元"))
+        return has_project_state
+
+    def _has_inspection_project_state(self, inspection_state):
+        if not isinstance(inspection_state, dict):
+            return False
+        gpkg_path = str(inspection_state.get("gpkg_path", "") or "").strip()
+        if gpkg_path:
+            return True
+        gpkg_paths = inspection_state.get("gpkg_paths", {})
+        if isinstance(gpkg_paths, dict):
+            return any(str(path or "").strip() for path in gpkg_paths.values())
+        return False
 
     def reset_all(self):
         self._disconnect_all_scale_signals()
@@ -1961,7 +2053,11 @@ class OrthoManagerDockWidget(QDockWidget):
         self._reset_ui()
         self.vrt_registry.clear()
         self.current_vrt_name = ""
-        self._set_status("🆕 リセット完了")
+        now = time.monotonic()
+        should_log = (now - self._last_reset_completed_log_sec) >= self._reset_completed_log_interval_sec
+        self._set_status(tr_text("🆕 リセット完了"), log=should_log)
+        if should_log:
+            self._last_reset_completed_log_sec = now
 
     def _reset_ui(self):
         self.vrt_tab.vrt_combo.blockSignals(True)
@@ -2109,7 +2205,7 @@ class OrthoManagerDockWidget(QDockWidget):
     def _open_group_crs_dialog(self, name, initial_crs=None):
         try:
             dialog = QgsProjectionSelectionDialog(self.iface.mainWindow())
-            dialog.setWindowTitle("グループのCRSを設定")
+            dialog.setWindowTitle(tr_text("グループのCRSを設定"))
             if initial_crs and initial_crs.isValid():
                 try:
                     dialog.setCrs(initial_crs)
@@ -2170,7 +2266,7 @@ class OrthoManagerDockWidget(QDockWidget):
                 files = ds.GetFileList()
                 ds = None
                 if files:
-                    tif_list = [f for f in files[1:] if f.lower().endswith((".tif", ".tiff"))]
+                    tif_list = [f for f in files[1:] if is_supported_raster_path(f)]
                     cleaned, dup_paths, dup_names = self._clean_tif_list_unique_names(tif_list)
                     self._warn_if_tif_duplicates_removed(os.path.basename(vrt_path), dup_paths, dup_names)
                     return cleaned
@@ -2424,7 +2520,8 @@ class OrthoManagerDockWidget(QDockWidget):
                 if not (saved_overlay_crs and saved_overlay_crs.isValid()):
                     saved_overlay_crs = saved_overlay_crs_from_json
 
-            self._set_status("⏳ 外部VRTエンジンで削除更新中...")
+            self._set_status(tr_text("⏳ 外部VRTエンジンで削除更新中..."))
+            self._invalidate_vrt_display_caches(refresh=True, schedule_prefetch=False)
             self._disconnect_scale_signal(display_name)
             self._remove_vrt_group(display_name)
             QApplication.processEvents()
@@ -2462,6 +2559,7 @@ class OrthoManagerDockWidget(QDockWidget):
                 insert_index=insert_index,
             )
             self._handle_group_crs_after_vrt_update(display_name)
+            self._invalidate_vrt_display_caches(refresh=True, schedule_prefetch=True)
             total_sec = time.perf_counter() - total_start
             QgsMessageLog.logMessage(
                 "VRT_DELETE_ENGINE_SUMMARY "
@@ -2500,7 +2598,7 @@ class OrthoManagerDockWidget(QDockWidget):
                     )
             except Exception:
                 pass
-            self.iface.mapCanvas().refresh()
+            self._invalidate_vrt_display_caches(refresh=True, schedule_prefetch=True)
             QgsMessageLog.logMessage(f"外部VRT削除更新エラー: {e}", "OrthoManager", Qgis.MessageLevel.Warning)
             return False, str(e)
     def update_vrt_contents_after_tif_removal(self, name, paths_to_remove=None, clear_all=False):
@@ -2526,6 +2624,7 @@ class OrthoManagerDockWidget(QDockWidget):
         vrt_layer_state = None
 
         try:
+            self._invalidate_vrt_display_caches(refresh=True, schedule_prefetch=False)
             if vrt_layer:
                 vrt_layer_state = self._detach_vrt_raster_layer_for_xml_update(display_name, vrt_layer, vrt_path)
                 vrt_layer = None
@@ -2542,13 +2641,7 @@ class OrthoManagerDockWidget(QDockWidget):
             if overlay_layer:
                 overlay_layer.triggerRepaint()
 
-            try:
-                if hasattr(self.iface.mapCanvas(), "clearCache"):
-                    self.iface.mapCanvas().clearCache()
-            except Exception:
-                pass
-            self.iface.mapCanvas().refresh()
-            QApplication.processEvents()
+            self._invalidate_vrt_display_caches(refresh=True, schedule_prefetch=True)
             return True, ""
         except Exception as e:
             if original_xml is not None and vrt_path:
@@ -2566,7 +2659,7 @@ class OrthoManagerDockWidget(QDockWidget):
             if overlay_layer:
                 try: overlay_layer.triggerRepaint()
                 except Exception: pass
-            self.iface.mapCanvas().refresh()
+            self._invalidate_vrt_display_caches(refresh=True, schedule_prefetch=True)
             QgsMessageLog.logMessage(f"VRT中身更新エラー: {e}", "OrthoManager", Qgis.MessageLevel.Warning)
             return False, str(e)
 
@@ -2804,7 +2897,7 @@ class OrthoManagerDockWidget(QDockWidget):
             return
         gdal, old_pam_enabled = self._disable_gdal_pam("VRTレイヤ読込")
         gpkg_path = os.path.splitext(vrt_path)[0] + "_tiles.gpkg"
-        self._set_status("⏳ レイヤ読み込み中...")
+        self._set_status(tr_text("⏳ レイヤ読み込み中..."))
         QApplication.processEvents()
         
         gpkg_ok = os.path.exists(gpkg_path)
@@ -2812,7 +2905,7 @@ class OrthoManagerDockWidget(QDockWidget):
         vrt_layer = QgsRasterLayer(vrt_path, layer_name, "gdal")
         if not vrt_layer.isValid():
             self._restore_gdal_pam(gdal, old_pam_enabled)
-            self._set_status("❌ VRTレイヤの読み込みに失敗しました")
+            self._set_status(tr_text("❌ VRTレイヤの読み込みに失敗しました"))
             return
 
         vrt_qml = os.path.splitext(vrt_path)[0] + ".qml"
@@ -2895,7 +2988,7 @@ class OrthoManagerDockWidget(QDockWidget):
         self._restore_gdal_pam(gdal, old_pam_enabled)
         count = len(self.vrt_registry.get(layer_name, {}).get("tif_list", []))
         overlay_msg = "＋オーバーレイ" if overlay_layer else "（オーバーレイなし）"
-        self._set_status(f"✅ 完了: {layer_name} {overlay_msg}（{count} ファイル）")
+        self._set_status(tr_text(f"✅ 完了: {layer_name} {overlay_msg}（{count} ファイル）"))
 
     def _apply_default_overlay_style(self, overlay_layer):
         try:

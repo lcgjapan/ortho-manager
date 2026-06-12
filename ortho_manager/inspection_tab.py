@@ -2,15 +2,17 @@ import math
 import os
 import re
 import sqlite3
+import time
+import json
 
-from qgis.PyQt.QtCore import QObject, Qt, QDateTime, QEvent, QRect, QTimer
-from qgis.PyQt.QtGui import QColor, QCursor, QFont, QPainter, QPen, QPixmap, QKeySequence, QShortcut
+from qgis.PyQt.QtCore import QObject, Qt, QDateTime, QEvent, QRect, QTimer, QVariant
+from qgis.PyQt.QtGui import QColor, QCursor, QFont, QPainter, QPen, QPixmap, QKeySequence, QShortcut, QBrush, QKeyEvent
 from qgis.PyQt.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QPushButton, QLabel,
     QFileDialog, QMessageBox, QGroupBox, QCheckBox, QComboBox, QDialog,
     QDialogButtonBox, QScrollArea, QInputDialog, QColorDialog, QMenu,
     QWidgetAction, QSizePolicy, QRubberBand, QButtonGroup, QTextEdit, QApplication, QLineEdit,
-    QKeySequenceEdit
+    QKeySequenceEdit, QPlainTextEdit
 )
 from qgis.core import (
     QgsProject, QgsVectorLayer, QgsFeature, QgsGeometry, QgsPointXY,
@@ -18,10 +20,28 @@ from qgis.core import (
     QgsSingleSymbolRenderer, QgsFeatureRequest, QgsRectangle,
     QgsVectorFileWriter, QgsCoordinateReferenceSystem, QgsCoordinateTransform,
     QgsPalLayerSettings, QgsTextFormat, QgsVectorLayerSimpleLabeling, QgsSettings,
-    QgsLayerTreeLayer
+    QgsLayerTreeLayer, QgsField
 )
 from qgis.gui import QgsMapTool, QgsRubberBand, QgsVertexMarker, QgsSnapIndicator
-from .i18n import tr
+from .i18n import tr, tr_text
+from .inspection_guide_lines import GUIDE_ROLE_AREA, GUIDE_ROLE_DONE, GUIDE_ROLE_LINE, InspectionGuideLineBuilder
+from .inspection_constants import *
+from .inspection_dialogs import (
+    InspectionExportDialog,
+    InspectionShortcutDialog,
+    MemoDialog,
+    QgisLayerImportDialog,
+    VectorImportOptionsDialog,
+)
+from .inspection_context_menu import InspectionContextMenuMixin
+from .inspection_editing import InspectionEditingMixin
+from .inspection_layer_tree_copy import InspectionLayerTreeCopyMixin
+from .inspection_map_tool import (
+    InspectionActionMenuButton,
+    InspectionGroupMenuButton,
+    InspectionLayerMenuButton,
+    InspectionMapTool,
+)
 try:
     from qgis.gui import QgsProjectionSelectionDialog
 except Exception:
@@ -35,84 +55,6 @@ except Exception:
     OGR_OK = False
 
 
-INSPECTION_PROJECT_KEY = "OrthoManager"
-INSPECTION_PROJECT_ENTRY = "inspection"
-INSPECTION_GROUP = "🔎 オルソ検査"
-FREE_INSPECTION_GROUP = "🔎 自由式検査"
-LEGACY_INSPECTION_GROUP = "🔎 検査"
-INSPECTION_PROP_PREFIX = "OrthoManager/inspection/"
-INSPECTION_TYPE_ORTHO = "ortho"
-INSPECTION_TYPE_FREE = "free"
-GEOM_TYPE_LABELS = {"polygon": "ポリゴン", "line": "ライン", "point": "点"}
-SHP_EXPORT_PER_LAYER = "shp_per_layer"
-SHP_EXPORT_MERGED = "shp_merged"
-DXF_EXPORT_ONE_FILE = "dxf_one_file"
-DXF_EXPORT_PER_LAYER = "dxf_per_layer"
-TEST_DXF_EXPORT_ONE_FILE = "ac2000_dxf_one_file"
-TEST_DXF_EXPORT_PER_LAYER = "ac2000_dxf_per_layer"
-DGN_EXPORT_ONE_FILE = "dgn_one_file"
-DGN_EXPORT_PER_LAYER = "dgn_per_layer"
-DGN_LEGACY_EXPORT_ONE_FILE = "dgn_legacy_one_file"
-DGN_LEGACY_EXPORT_PER_LAYER = "dgn_legacy_per_layer"
-CONTEXT_ACTION_ORDER_KEY = "OrthoManager/inspection/context_action_order"
-CONTEXT_ACTION_BUTTON_WIDTH = 48
-CONTEXT_ACTION_DEFAULT_ORDER = ["pan", "select", "layer_change", "delete", "edit", "move", "merge"]
-INSPECTION_SHORTCUTS_KEY_PREFIX = "OrthoManager/inspection/shortcuts/"
-INSPECTION_DELETE_CONFIRM_KEY = "OrthoManager/inspection/delete_confirm"
-INSPECTION_SHORTCUT_DEFINITIONS = [
-    ("pan", "パン", ""),
-    ("select", "選択", ""),
-    ("layer_change", "移層", ""),
-    ("delete", "削除", "Del"),
-    ("edit", "編集", ""),
-    ("move", "移動", ""),
-    ("merge", "統合", ""),
-    ("continuous", "連続", ""),
-    ("shape_polygon", "多角", ""),
-    ("shape_rectangle", "矩形", ""),
-    ("shape_ellipse", "楕円", ""),
-    ("shape_circle", "正円", ""),
-    ("shape_line", "ライン", ""),
-    ("shape_point", "点", ""),
-]
-
-
-ROUND_ITEMS = {
-    1: [
-        ("01", "歪み", "ff0000"),
-        ("02", "ズレ", "ff00ff"),
-        ("03", "ハレーション", "ff8000"),
-        ("04", "伸び", "00ff00"),
-        ("05", "BLズレ", "ffff00"),
-        ("06", "BL交差", "808000"),
-        ("07", "GCPズレ", "00ffff"),
-        ("08", "その他", "8000ff"),
-        ("09", "隣接地区接合", "8080ff"),
-    ],
-    2: [
-        ("21", "修正漏れ", "ff0000"),
-        ("22", "修正不可", "0000ff"),
-        ("23", "とりあえずOK", "808080"),
-        ("24", "修正OK", "c0c0c0"),
-        ("25", "再修正", "ff0000"),
-    ],
-    3: [
-        ("31", "修正漏れ", "ff0000"),
-        ("32", "修正不可", "0000ff"),
-        ("33", "とりあえずOK", "808080"),
-        ("34", "修正OK", "c0c0c0"),
-        ("35", "再修正", "ff0000"),
-    ],
-    4: [
-        ("41", "修正漏れ", "ff0000"),
-        ("42", "修正不可", "0000ff"),
-        ("43", "とりあえずOK", "808080"),
-        ("44", "修正OK", "c0c0c0"),
-        ("45", "再修正", "ff0000"),
-    ],
-}
-
-
 def _safe_layer_name(text):
     text = re.sub(r'[\\/:*?"<>|]+', "_", text.strip())
     return text[:80] if text else "inspection"
@@ -122,995 +64,17 @@ def _base_name(code, name):
     return f"{code}_{name}" if code else name
 
 
-class InspectionLayerMenuButton(QPushButton):
-    def __init__(self, text, tab, source_name, menu, menu_pos, parent=None):
-        super().__init__(text, parent)
-        self.tab = tab
-        self.source_name = source_name
-        self.menu = menu
-        self.menu_pos = menu_pos
-        self.press_pos = None
-        self.right_press_pos = None
-        self.dragging = False
-        self.setProperty("inspection_source", source_name)
 
-    def _event_global_pos(self, event):
-        try:
-            return event.globalPosition().toPoint()
-        except Exception:
-            return event.globalPos()
-
-    def mousePressEvent(self, event):
-        if event.button() == Qt.MouseButton.RightButton:
-            event.accept()
-            self.right_press_pos = event.pos()
-            return
-        if event.button() == Qt.MouseButton.LeftButton:
-            self.press_pos = event.pos()
-            self.dragging = False
-        super().mousePressEvent(event)
-
-    def mouseMoveEvent(self, event):
-        if self.press_pos is not None and event.buttons() & Qt.MouseButton.LeftButton:
-            delta = event.pos() - self.press_pos
-            if delta.manhattanLength() >= QApplication.startDragDistance():
-                self.dragging = True
-                self.setCursor(Qt.CursorShape.ClosedHandCursor)
-                self.tab.update_layer_drag_target(self.source_name, self._event_global_pos(event), self)
-        super().mouseMoveEvent(event)
-
-    def mouseReleaseEvent(self, event):
-        if event.button() == Qt.MouseButton.RightButton and self.right_press_pos is not None:
-            event.accept()
-            global_pos = self._event_global_pos(event)
-            self.right_press_pos = None
-            QTimer.singleShot(0, lambda: self.tab.show_layer_management_menu(self.source_name, global_pos))
-            return
-        if event.button() == Qt.MouseButton.LeftButton and self.dragging:
-            event.accept()
-            self.unsetCursor()
-            target_source = self.tab.layer_source_at_global_pos(self._event_global_pos(event))
-            self.tab.clear_layer_drag_visual()
-            QTimer.singleShot(0, lambda: self.tab.handle_layer_button_drop(self.source_name, target_source, self.menu_pos, self.menu))
-            self.press_pos = None
-            self.dragging = False
-            return
-        self.unsetCursor()
-        self.press_pos = None
-        self.right_press_pos = None
-        self.dragging = False
-        super().mouseReleaseEvent(event)
-
-
-class InspectionGroupMenuButton(QPushButton):
-    def __init__(self, text, tab, group_name, menu, menu_pos, parent=None):
-        super().__init__(text, parent)
-        self.tab = tab
-        self.group_name = group_name or ""
-        self.menu = menu
-        self.menu_pos = menu_pos
-        self.press_pos = None
-        self.right_press_pos = None
-        self.dragging = False
-        self.setProperty("inspection_drop_target", f"__free_group_bottom__:{self.group_name}")
-        self.setProperty("inspection_group_name", self.group_name)
-
-    def _event_global_pos(self, event):
-        try:
-            return event.globalPosition().toPoint()
-        except Exception:
-            return event.globalPos()
-
-    def mousePressEvent(self, event):
-        if event.button() == Qt.MouseButton.RightButton:
-            event.accept()
-            self.right_press_pos = event.pos()
-            return
-        if event.button() == Qt.MouseButton.LeftButton:
-            self.press_pos = event.pos()
-            self.dragging = False
-        super().mousePressEvent(event)
-
-    def mouseMoveEvent(self, event):
-        if self.group_name and self.press_pos is not None and event.buttons() & Qt.MouseButton.LeftButton:
-            delta = event.pos() - self.press_pos
-            if delta.manhattanLength() >= QApplication.startDragDistance():
-                self.dragging = True
-                self.setCursor(Qt.CursorShape.ClosedHandCursor)
-                self.tab.update_free_group_drag_target(self.group_name, self._event_global_pos(event), self)
-        super().mouseMoveEvent(event)
-
-    def mouseReleaseEvent(self, event):
-        if event.button() == Qt.MouseButton.RightButton and self.right_press_pos is not None:
-            event.accept()
-            global_pos = self._event_global_pos(event)
-            self.right_press_pos = None
-            QTimer.singleShot(0, lambda: self.tab.show_free_group_management_menu(self.group_name, global_pos, self.menu_pos))
-            return
-        if event.button() == Qt.MouseButton.LeftButton and self.dragging:
-            event.accept()
-            self.unsetCursor()
-            target_group, position, _button = self.tab.free_group_drop_target_at_global_pos(self._event_global_pos(event))
-            self.tab.clear_free_group_drag_visual()
-            QTimer.singleShot(0, lambda: self.tab.handle_free_group_button_drop(self.group_name, target_group, position, self.menu_pos, self.menu))
-            self.press_pos = None
-            self.right_press_pos = None
-            self.dragging = False
-            return
-        self.unsetCursor()
-        self.press_pos = None
-        self.right_press_pos = None
-        self.dragging = False
-        super().mouseReleaseEvent(event)
-
-
-class InspectionActionMenuButton(QPushButton):
-    def __init__(self, text, tab, action_key, menu, menu_pos, parent=None):
-        super().__init__(text, parent)
-        self.tab = tab
-        self.action_key = action_key
-        self.menu = menu
-        self.menu_pos = menu_pos
-        self.press_pos = None
-        self.dragging = False
-        self.setProperty("inspection_action_key", action_key)
-
-    def _event_global_pos(self, event):
-        try:
-            return event.globalPosition().toPoint()
-        except Exception:
-            return event.globalPos()
-
-    def mousePressEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton:
-            self.press_pos = event.pos()
-            self.dragging = False
-        super().mousePressEvent(event)
-
-    def mouseMoveEvent(self, event):
-        if self.press_pos is not None and event.buttons() & Qt.MouseButton.LeftButton:
-            delta = event.pos() - self.press_pos
-            if delta.manhattanLength() >= QApplication.startDragDistance():
-                self.dragging = True
-                self.setCursor(Qt.CursorShape.ClosedHandCursor)
-                self.tab.update_action_drag_target(self.action_key, self._event_global_pos(event), self)
-                event.accept()
-                return
-        super().mouseMoveEvent(event)
-
-    def mouseReleaseEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton and self.dragging:
-            event.accept()
-            self.unsetCursor()
-            target_key, _target_widget = self.tab.action_drop_target_at_global_pos(self._event_global_pos(event))
-            if not target_key:
-                target_key = self.tab.action_drag_highlight_target
-            self.tab.clear_action_drag_visual()
-            QTimer.singleShot(0, lambda: self.tab.handle_action_button_drop(self.action_key, target_key, self.menu_pos, self.menu))
-            self.press_pos = None
-            self.dragging = False
-            return
-        self.unsetCursor()
-        self.press_pos = None
-        self.dragging = False
-        super().mouseReleaseEvent(event)
-
-
-class InspectionMapTool(QgsMapTool):
-    def __init__(self, canvas, tab):
-        super().__init__(canvas)
-        self.canvas = canvas
-        self.tab = tab
-        self.points = []
-        self.rubber_band = None
-        self.vertex_markers = []
-        self.select_start_point = None
-        self.select_start_pixel = None
-        self.select_band = None
-        self.shape_start_point = None
-        self.shape_start_pixel = None
-        self.last_shape_preview_pixel = None
-        self.move_start_point = None
-        self.move_start_pixel = None
-        self.move_dragging = False
-        self.snap_indicator = QgsSnapIndicator(canvas)
-        self.snap_indicator.setVisible(False)
-
-    def deactivate(self):
-        self._clear_rubber_band()
-        self._clear_select_band()
-        self._clear_move_state()
-        self._clear_snap_indicator()
-        super().deactivate()
-
-    def flags(self):
-        if getattr(self.tab, "operation_mode", "") in ("create", "edit", "move"):
-            return QgsMapTool.Flag.EditTool
-        return super().flags()
-
-    def _clear_rubber_band(self):
-        if self.rubber_band:
-            try:
-                self.canvas.scene().removeItem(self.rubber_band)
-            except Exception:
-                pass
-            self.rubber_band = None
-        self._clear_vertex_markers()
-        self.points = []
-        self.shape_start_point = None
-        self.shape_start_pixel = None
-        self.last_shape_preview_pixel = None
-        self._clear_snap_indicator()
-
-    def _clear_vertex_markers(self):
-        for marker in self.vertex_markers:
-            try:
-                self.canvas.scene().removeItem(marker)
-            except Exception:
-                pass
-        self.vertex_markers = []
-
-    def _clear_select_band(self):
-        if self.select_band:
-            try:
-                self.select_band.hide()
-                self.select_band.deleteLater()
-            except Exception:
-                pass
-            self.select_band = None
-        self.select_start_point = None
-        self.select_start_pixel = None
-
-    def _clear_move_state(self):
-        self.tab.clear_feature_move_preview()
-        self.move_start_point = None
-        self.move_start_pixel = None
-        self.move_dragging = False
-
-    def _clear_snap_indicator(self):
-        try:
-            self.snap_indicator.setVisible(False)
-        except Exception:
-            pass
-
-    def _snap_match(self, event):
-        try:
-            utils = self.canvas.snappingUtils()
-            if utils:
-                try:
-                    layer = self.tab.active_layer()
-                    if layer:
-                        utils.setCurrentLayer(layer)
-                except Exception:
-                    pass
-                match = utils.snapToMap(event.pixelPoint())
-                if match and match.isValid():
-                    return match
-        except Exception:
-            pass
-        try:
-            match = event.mapPointMatch()
-            if match and match.isValid():
-                return match
-        except Exception:
-            pass
-        return None
-
-    def _update_snap_indicator(self, match):
-        try:
-            if match and match.isValid():
-                self.snap_indicator.setMatch(match)
-                self.snap_indicator.setVisible(True)
-            else:
-                self.snap_indicator.setVisible(False)
-        except Exception:
-            pass
-
-    def _event_map_point(self, event, use_snap=False):
-        if use_snap:
-            close_point = self._line_close_snap_point(event)
-            if close_point is not None:
-                self._clear_snap_indicator()
-                return close_point
-            match = self._snap_match(event)
-            self._update_snap_indicator(match)
-            if match and match.isValid():
-                try:
-                    return QgsPointXY(match.point())
-                except Exception:
-                    pass
-            try:
-                return QgsPointXY(event.snapPoint())
-            except Exception:
-                pass
-        return QgsPointXY(event.mapPoint())
-
-    def _line_close_snap_point(self, event):
-        if self.tab.operation_mode != "create" or self.tab.active_geom_type != "line":
-            return None
-        if len(self.points) < 2:
-            return None
-        first = QgsPointXY(self.points[0])
-        try:
-            first_pixel = self.canvas.getCoordinateTransform().transform(first)
-            event_pixel = event.pixelPoint()
-            dx = first_pixel.x() - event_pixel.x()
-            dy = first_pixel.y() - event_pixel.y()
-            if (dx * dx + dy * dy) <= 144:
-                return first
-        except Exception:
-            pass
-        return None
-
-    def _ensure_select_band(self):
-        if self.select_band:
-            return
-        self.select_band = QRubberBand(QRubberBand.Shape.Rectangle, self.canvas.viewport())
-
-    def _update_select_band(self, end_pixel):
-        if not self.select_start_pixel:
-            return
-        self._ensure_select_band()
-        rect = QRect(self.select_start_pixel, end_pixel).normalized()
-        self.select_band.setGeometry(rect)
-        self.select_band.show()
-
-    def _ensure_rubber_band(self, layer):
-        if self.rubber_band:
-            return
-        geom_type = Qgis.GeometryType.Line
-        if self.tab.active_geom_type == "polygon":
-            geom_type = Qgis.GeometryType.Polygon
-        self.rubber_band = QgsRubberBand(self.canvas, geom_type)
-        stroke_color = QColor(f"#{self.tab.active_color or 'ff0000'}")
-        stroke_color.setAlpha(220)
-        fill_color = QColor(stroke_color)
-        fill_color.setAlpha(35 if geom_type == Qgis.GeometryType.Polygon else 0)
-        try:
-            self.rubber_band.setStrokeColor(stroke_color)
-            self.rubber_band.setFillColor(fill_color)
-            if geom_type == Qgis.GeometryType.Polygon:
-                self.rubber_band.setBrushStyle(Qt.BrushStyle.SolidPattern)
-        except Exception:
-            self.rubber_band.setColor(stroke_color)
-        self.rubber_band.setWidth(self.tab.preview_rubber_band_width(layer))
-
-    def _has_capture_state(self):
-        return bool(self.points or self.vertex_markers or self.shape_start_point or self.rubber_band)
-
-    def _remove_rubber_band_only(self):
-        if self.rubber_band:
-            try:
-                self.canvas.scene().removeItem(self.rubber_band)
-            except Exception:
-                pass
-            self.rubber_band = None
-
-    def _rebuild_capture_preview(self, preview_point=None):
-        layer = self.tab.active_layer()
-        if not layer or not self.points:
-            return
-        self._ensure_rubber_band(layer)
-        geom_type = Qgis.GeometryType.Polygon if self.tab.active_geom_type == "polygon" else Qgis.GeometryType.Line
-        try:
-            self.rubber_band.reset(geom_type)
-            self.rubber_band.setWidth(self.tab.preview_rubber_band_width(layer))
-        except Exception:
-            self._remove_rubber_band_only()
-            self._ensure_rubber_band(layer)
-        draw_points = [QgsPointXY(point) for point in self.points]
-        if preview_point is not None:
-            draw_points.append(QgsPointXY(preview_point))
-            if self.tab.active_geom_type == "polygon" and len(self.points) >= 2:
-                draw_points.append(QgsPointXY(self.points[0]))
-        last_index = len(draw_points) - 1
-        for index, point in enumerate(draw_points):
-            self.rubber_band.addPoint(QgsPointXY(point), index == last_index)
-        self.rubber_band.show()
-
-    def _remove_last_capture_point(self):
-        if not self.points:
-            return False
-        self.points.pop()
-        if self.vertex_markers:
-            marker = self.vertex_markers.pop()
-            try:
-                self.canvas.scene().removeItem(marker)
-            except Exception:
-                pass
-        self._remove_rubber_band_only()
-        layer = self.tab.active_layer()
-        if layer and self.points:
-            self._rebuild_capture_preview()
-        return True
-
-    def _add_capture_vertex_marker(self, point):
-        marker = QgsVertexMarker(self.canvas)
-        marker.setCenter(QgsPointXY(point))
-        color = QColor(f"#{self.tab.active_color or 'ff0000'}")
-        color.setAlpha(255)
-        marker.setColor(color)
-        marker.setIconSize(11)
-        marker.setPenWidth(3)
-        try:
-            marker.setIconType(QgsVertexMarker.IconType.ICON_CROSS)
-        except Exception:
-            try:
-                marker.setIconType(QgsVertexMarker.ICON_CROSS)
-            except Exception:
-                pass
-        try:
-            marker.setZValue(1000)
-        except Exception:
-            pass
-        self.vertex_markers.append(marker)
-
-    def canvasPressEvent(self, event):
-        if event.button() == Qt.MouseButton.RightButton:
-            if self.tab.operation_mode == "move":
-                try:
-                    event.accept()
-                except Exception:
-                    pass
-                self._clear_move_state()
-                self.tab.switch_to_pan()
-                return
-            if self.tab.operation_mode == "create" and self.points:
-                try:
-                    event.accept()
-                except Exception:
-                    pass
-                self._finish_capture()
-                return
-            if self.tab.operation_mode == "edit":
-                try:
-                    event.accept()
-                except Exception:
-                    pass
-                self.tab.finish_edit_mode(defer_pan=True)
-                return
-            self.tab.show_context_menu(self.canvas.mapToGlobal(event.pixelPoint()))
-            return
-
-        if event.button() != Qt.MouseButton.LeftButton:
-            return
-
-        point = self._event_map_point(event)
-        mode = self.tab.operation_mode
-        if mode in ("select", "layer_change_select"):
-            self.select_start_point = QgsPointXY(point)
-            self.select_start_pixel = event.pixelPoint()
-            self._ensure_select_band()
-            self._update_select_band(self.select_start_pixel)
-            return
-        if mode == "layer_change":
-            self.tab.set_status("移層: 右クリックメニューから移動先項目を選択してください")
-            return
-        if mode == "delete":
-            self.tab.delete_feature_at(point)
-            return
-        if mode == "move":
-            if self.tab.begin_feature_move_at(point):
-                self.tab.update_map_cursor()
-                self.move_start_point = QgsPointXY(point)
-                self.move_start_pixel = event.pixelPoint()
-                self.move_dragging = False
-            return
-        if mode == "edit":
-            self.tab.prepare_edit_layer_at(point)
-            return
-        if mode == "merge":
-            self.tab.toggle_merge_feature_at(point)
-            return
-        if mode != "create":
-            return
-
-        layer = self.tab.active_layer()
-        if not layer:
-            self.tab.select_feature_at(point)
-            return
-
-        geom_type = self.tab.active_geom_type
-        capture_point = self._event_map_point(event, use_snap=True)
-        if geom_type == "point":
-            self.tab.add_geometry_feature(layer, QgsGeometry.fromPointXY(capture_point))
-            return
-
-        if geom_type == "polygon" and self.tab.active_capture_shape != "polygon":
-            self.shape_start_point = QgsPointXY(capture_point)
-            self.shape_start_pixel = event.pixelPoint()
-            self.last_shape_preview_pixel = event.pixelPoint()
-            self._ensure_rubber_band(layer)
-            self._update_shape_preview(capture_point)
-            return
-
-        self._ensure_rubber_band(layer)
-        self.points.append(QgsPointXY(capture_point))
-        self._add_capture_vertex_marker(capture_point)
-        self._rebuild_capture_preview()
-
-    def canvasMoveEvent(self, event):
-        if self.move_start_point and self.tab.operation_mode != "move":
-            self._clear_move_state()
-            return
-        if self.tab.operation_mode in ("select", "layer_change_select") and self.select_start_point:
-            self._clear_snap_indicator()
-            self._update_select_band(event.pixelPoint())
-        elif self.tab.operation_mode == "move" and self.move_start_point:
-            self._clear_snap_indicator()
-            if not self.move_dragging:
-                self.tab.clear_selection_highlight()
-            self.move_dragging = True
-            self.tab.update_feature_move_preview(self.move_start_point, self._event_map_point(event))
-        elif self.tab.operation_mode == "create":
-            snap_point = self._event_map_point(event, use_snap=True)
-            if not self.tab.active_layer():
-                return
-            if self.shape_start_point:
-                try:
-                    pixel = event.pixelPoint()
-                    if self.last_shape_preview_pixel:
-                        if abs(pixel.x() - self.last_shape_preview_pixel.x()) < 2 and abs(pixel.y() - self.last_shape_preview_pixel.y()) < 2:
-                            return
-                    self.last_shape_preview_pixel = pixel
-                except Exception:
-                    pass
-                self._update_shape_preview(snap_point)
-            elif self.points:
-                self._rebuild_capture_preview(snap_point)
-        else:
-            self._clear_snap_indicator()
-
-    def canvasReleaseEvent(self, event):
-        if self.move_start_point and self.tab.operation_mode != "move":
-            self._clear_move_state()
-            return
-        if self.tab.operation_mode == "move" and self.move_start_point:
-            self._clear_snap_indicator()
-            start_pixel = self.move_start_pixel
-            end_pixel = event.pixelPoint()
-            moved = False
-            try:
-                moved = abs(end_pixel.x() - start_pixel.x()) > 4 or abs(end_pixel.y() - start_pixel.y()) > 4
-            except Exception:
-                moved = self.move_dragging
-            start_point = self.move_start_point
-            end_point = self._event_map_point(event)
-            self.move_start_point = None
-            self.move_start_pixel = None
-            self.move_dragging = False
-            if moved:
-                self.tab.finish_feature_move(start_point, end_point)
-            else:
-                self.tab.clear_feature_move_preview()
-                self.tab.refresh_selection_highlight()
-                self.tab.set_status("移動: ドラッグすると選択データを移動します")
-            return
-        if self.shape_start_point and self.tab.operation_mode == "create":
-            start_pixel = self.shape_start_pixel
-            end_pixel = event.pixelPoint()
-            moved = abs(end_pixel.x() - start_pixel.x()) > 4 or abs(end_pixel.y() - start_pixel.y()) > 4
-            if moved:
-                layer = self.tab.active_layer()
-                geometry = self.tab.geometry_from_shape(
-                    self.tab.active_capture_shape,
-                    self.shape_start_point,
-                    self._event_map_point(event, use_snap=True),
-                )
-                if layer and geometry:
-                    self.tab.add_geometry_feature(layer, geometry)
-            self._clear_rubber_band()
-            return
-        if self.tab.operation_mode not in ("select", "layer_change_select") or not self.select_start_point:
-            return
-        start_pixel = self.select_start_pixel
-        end_pixel = event.pixelPoint()
-        start_point = self.select_start_point
-        end_point = self._event_map_point(event)
-        moved = False
-        try:
-            moved = abs(end_pixel.x() - start_pixel.x()) > 4 or abs(end_pixel.y() - start_pixel.y()) > 4
-        except Exception:
-            moved = True
-        modifiers = event.modifiers()
-        self._clear_select_band()
-        if moved:
-            self.tab.select_features_in_rect(self.tab.rectangle_from_points(start_point, end_point), modifiers)
-        else:
-            self.tab.select_feature_at(end_point, modifiers)
-
-    def canvasDoubleClickEvent(self, event):
-        if self.tab.operation_mode == "edit":
-            return
-        if self.points:
-            try:
-                event.accept()
-            except Exception:
-                pass
-            return
-        else:
-            if self.tab.operation_mode != "edit":
-                self.tab.edit_memo_at(event.mapPoint())
-
-    def keyPressEvent(self, event):
-        key = event.key()
-        if self.tab.operation_mode == "create":
-            if key == Qt.Key.Key_Escape:
-                if self._has_capture_state():
-                    self._clear_rubber_band()
-                    self.tab.set_status("作成をキャンセルしました")
-                    event.accept()
-                    return
-            elif key == Qt.Key.Key_Backspace:
-                if self.shape_start_point:
-                    self._clear_rubber_band()
-                    self.tab.set_status("作成開始前に戻しました")
-                    event.accept()
-                    return
-                if self._remove_last_capture_point():
-                    message = "1つ前の点に戻しました" if self.points else "作成開始前に戻しました"
-                    self.tab.set_status(message)
-                    event.accept()
-                    return
-        if self.tab.operation_mode == "move":
-            is_undo = key == Qt.Key.Key_Backspace
-            try:
-                is_undo = is_undo or (
-                    key == Qt.Key.Key_Z
-                    and event.modifiers() & Qt.KeyboardModifier.ControlModifier
-                )
-            except Exception:
-                pass
-            if is_undo:
-                if self.tab.undo_last_feature_move():
-                    event.accept()
-                    return
-        if self.tab.handle_shortcut_key(event):
-            event.accept()
-            return
-        super().keyPressEvent(event)
-
-    def _finish_capture(self):
-        layer = self.tab.active_layer()
-        if not layer:
-            self._clear_rubber_band()
-            return
-        geom_type = self.tab.active_geom_type
-        if geom_type == "polygon":
-            if len(self.points) < 3:
-                self.tab.set_status("ポリゴンは3点以上必要です")
-                self._clear_rubber_band()
-                return
-            pts = list(self.points)
-            if pts[0] != pts[-1]:
-                pts.append(pts[0])
-            geometry = QgsGeometry.fromPolygonXY([pts])
-        else:
-            if len(self.points) < 2:
-                self.tab.set_status("ラインは2点以上必要です")
-                self._clear_rubber_band()
-                return
-            geometry = QgsGeometry.fromPolylineXY(list(self.points))
-        self.tab.add_geometry_feature(layer, geometry)
-        self._clear_rubber_band()
-
-    def _update_shape_preview(self, end_point):
-        if not self.shape_start_point or not self.rubber_band:
-            return
-        geometry = self.tab.geometry_from_shape(self.tab.active_capture_shape, self.shape_start_point, end_point)
-        if not geometry:
-            return
-        try:
-            self.rubber_band.setToGeometry(geometry, None)
-            self.rubber_band.show()
-            return
-        except Exception:
-            pass
-        polygons = geometry.asPolygon()
-        if not polygons:
-            return
-        self.rubber_band.reset(Qgis.GeometryType.Polygon)
-        for point in polygons[0]:
-            self.rubber_band.addPoint(QgsPointXY(point), False)
-        self.rubber_band.show()
-
-
-
-class InspectionExportDialog(QDialog):
-    def __init__(self, tab, layers, parent=None):
-        super().__init__(parent)
-        self.tab = tab
-        self.layers = layers
-        self.layer_checks = []
-        self.setWindowTitle("検査書出")
-        self.resize(460, 500)
-
-        layout = QVBoxLayout(self)
-        fmt_row = QHBoxLayout()
-        fmt_row.addWidget(QLabel("形式:"))
-        self.format_combo = QComboBox()
-        self.format_combo.addItems(["SHP", "DXF（R12）", "DXF（AutoCAD 2000系）", "DGN V7"])
-        self.format_combo.currentTextChanged.connect(self.update_export_modes)
-        fmt_row.addWidget(self.format_combo)
-        layout.addLayout(fmt_row)
-
-        mode_row = QHBoxLayout()
-        mode_row.addWidget(QLabel("出力方法:"))
-        self.mode_combo = QComboBox()
-        mode_row.addWidget(self.mode_combo)
-        layout.addLayout(mode_row)
-        self.update_export_modes(self.format_combo.currentText())
-
-        layout.addWidget(QLabel("書き出す検査レイヤ:"))
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        inner = QWidget()
-        inner_layout = QVBoxLayout(inner)
-        for layer in layers:
-            count = layer.featureCount()
-            geom_label = tab.layer_geom_type_label(layer)
-            label = f"{tab.layer_base_name(layer)}（{geom_label} / {count}）"
-            chk = QCheckBox(label)
-            chk.setChecked(True)
-            chk.setProperty("layer_id", layer.id())
-            inner_layout.addWidget(chk)
-            self.layer_checks.append(chk)
-        inner_layout.addStretch()
-        scroll.setWidget(inner)
-        layout.addWidget(scroll)
-
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
-
-    def update_export_modes(self, fmt):
-        self.mode_combo.clear()
-        if fmt == "SHP":
-            self.mode_combo.addItem("レイヤごとにSHP作成", SHP_EXPORT_PER_LAYER)
-            self.mode_combo.addItem("同じ図形タイプなら1つのSHPにまとめる", SHP_EXPORT_MERGED)
-        elif fmt == "DXF（R12）":
-            self.mode_combo.addItem("1つのDXF（R12）にまとめる", DXF_EXPORT_ONE_FILE)
-            self.mode_combo.addItem("レイヤごとにDXF（R12）作成", DXF_EXPORT_PER_LAYER)
-        elif fmt == "DXF（AutoCAD 2000系）":
-            self.mode_combo.addItem("1つのDXF（AutoCAD 2000系）にまとめる", TEST_DXF_EXPORT_ONE_FILE)
-            self.mode_combo.addItem("レイヤごとにDXF（AutoCAD 2000系）作成", TEST_DXF_EXPORT_PER_LAYER)
-        else:
-            self.mode_combo.addItem("1つのDGN V7にまとめる（Level分け）", DGN_LEGACY_EXPORT_ONE_FILE)
-            self.mode_combo.addItem("レイヤごとにDGN V7作成", DGN_LEGACY_EXPORT_PER_LAYER)
-
-    def selected_layers(self):
-        result = []
-        for chk in self.layer_checks:
-            if chk.isChecked():
-                layer = QgsProject.instance().mapLayer(chk.property("layer_id"))
-                if layer and layer.featureCount() > 0:
-                    result.append(layer)
-        return result
-
-    def selected_format(self):
-        return self.format_combo.currentText()
-
-    def selected_output_mode(self):
-        return self.mode_combo.currentData()
-
-
-class MemoTextEdit(QTextEdit):
-    def __init__(self, dialog, parent=None):
-        super().__init__(parent)
-        self.dialog = dialog
-
-    def keyPressEvent(self, event):
-        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
-            if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
-                self.insertPlainText("\n")
-            else:
-                self.dialog.accept()
-            return
-        super().keyPressEvent(event)
-
-
-class MemoDialog(QDialog):
-    def __init__(self, text="", parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("検査メモ")
-        self.resize(360, 220)
-        layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("Enter: OK / Ctrl+Enter: 改行"))
-        self.text_edit = MemoTextEdit(self)
-        self.text_edit.setPlainText(text or "")
-        layout.addWidget(self.text_edit)
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
-        self.text_edit.setFocus()
-
-    def text(self):
-        return self.text_edit.toPlainText()
-
-class InspectionShortcutDialog(QDialog):
-    def __init__(self, tab, parent=None):
-        super().__init__(parent)
-        self.tab = tab
-        self.editors = {}
-        self.setWindowTitle("検査ショートカット設定")
-        self.resize(420, 460)
-        layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("検査ONでOrthoManagerの検査マップ操作中だけ有効です。"))
-        grid = QGridLayout()
-        grid.setColumnStretch(1, 1)
-        row = 0
-        shortcuts = tab.inspection_shortcuts()
-        for key, label, default_value in INSPECTION_SHORTCUT_DEFINITIONS:
-            grid.addWidget(QLabel(label), row, 0)
-            editor = QKeySequenceEdit()
-            current = shortcuts.get(key, default_value) or ""
-            if current:
-                editor.setKeySequence(QKeySequence(current))
-            editor.setToolTip("空欄にすると未設定になります。")
-            clear_btn = QPushButton("クリア")
-            clear_btn.setFixedWidth(56)
-            clear_btn.clicked.connect(lambda _=False, e=editor: e.clear())
-            grid.addWidget(editor, row, 1)
-            grid.addWidget(clear_btn, row, 2)
-            self.editors[key] = editor
-            row += 1
-        layout.addLayout(grid)
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel | QDialogButtonBox.StandardButton.RestoreDefaults
-        )
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        buttons.button(QDialogButtonBox.StandardButton.RestoreDefaults).clicked.connect(self.restore_defaults)
-        layout.addWidget(buttons)
-
-    def restore_defaults(self):
-        for key, _label, default_value in INSPECTION_SHORTCUT_DEFINITIONS:
-            self.editors[key].setKeySequence(QKeySequence(default_value or ""))
-
-    def values(self):
-        result = {}
-        used = {}
-        for key, label, _default_value in INSPECTION_SHORTCUT_DEFINITIONS:
-            text = self.editors[key].keySequence().toString(QKeySequence.SequenceFormat.PortableText).strip()
-            if not text:
-                result[key] = ""
-                continue
-            norm = self.tab.normalize_shortcut_text(text)
-            if norm in used:
-                QMessageBox.warning(self, "ショートカット重複", f"「{used[norm]}」と「{label}」に同じキーが設定されています。")
-                return None
-            used[norm] = label
-            result[key] = text
-        return result
-
-class VectorImportOptionsDialog(QDialog):
-    def __init__(self, paths, parent=None):
-        super().__init__(parent)
-        self.paths = list(paths or [])
-        self.setWindowTitle("ベクタ取込")
-        self.resize(420, 170)
-        layout = QVBoxLayout(self)
-
-        file_count = len(self.paths)
-        dxf_count = sum(1 for path in self.paths if os.path.splitext(path)[1].lower() == ".dxf")
-        shp_count = sum(1 for path in self.paths if os.path.splitext(path)[1].lower() == ".shp")
-        single_dxf = file_count == 1 and dxf_count == 1
-        default_name = ""
-        if single_dxf:
-            default_name = os.path.splitext(os.path.basename(self.paths[0]))[0]
-        elif file_count > 1:
-            default_name = "取込ベクタグループ"
-
-        self.group_check = QCheckBox("1つのグループとして読み込む")
-        self.group_check.setChecked(single_dxf or file_count > 1)
-        layout.addWidget(self.group_check)
-
-        grid = QGridLayout()
-        grid.addWidget(QLabel("グループ名:"), 0, 0)
-        self.name_mode_combo = QComboBox()
-        if single_dxf:
-            self.name_mode_combo.addItem("DXFファイル名を使う", "file")
-            self.name_mode_combo.addItem("手動入力", "manual")
-        else:
-            self.name_mode_combo.addItem("手動入力", "manual")
-        grid.addWidget(self.name_mode_combo, 0, 1)
-        self.group_name_edit = QLineEdit(default_name)
-        grid.addWidget(self.group_name_edit, 1, 1)
-        layout.addLayout(grid)
-
-        info = "DXF内のLayerは検査レイヤとして分けて読み込みます。"
-        if shp_count > 1:
-            info = "複数SHPは選択したグループ内にまとめて読み込みます。"
-        layout.addWidget(QLabel(info))
-
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
-        self.name_mode_combo.currentIndexChanged.connect(self._sync_group_name)
-        self.group_check.toggled.connect(self._sync_enabled)
-        self._sync_group_name()
-        self._sync_enabled()
-
-    def _sync_group_name(self):
-        if self.name_mode_combo.currentData() == "file" and self.paths:
-            self.group_name_edit.setText(os.path.splitext(os.path.basename(self.paths[0]))[0])
-
-    def _sync_enabled(self):
-        enabled = self.group_check.isChecked()
-        self.name_mode_combo.setEnabled(enabled)
-        self.group_name_edit.setEnabled(enabled)
-
-    def options(self):
-        use_group = self.group_check.isChecked()
-        name = self.group_name_edit.text().strip() if use_group else ""
-        return {"use_group": use_group, "group_name": name}
-
-
-class QgisLayerImportDialog(QDialog):
-    def __init__(self, layers, parent=None):
-        super().__init__(parent)
-        self.layers = list(layers or [])
-        self.checks = []
-        self.owner = parent
-        self.setWindowTitle("QGISレイヤ取込")
-        self.resize(460, 420)
-        layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("検査GPKGへコピーするQGISレイヤを選択してください。"))
-
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        inner = QWidget()
-        inner_layout = QVBoxLayout(inner)
-        for layer in self.layers:
-            group_name = self._group_name(layer)
-            group_label = group_name if group_name else "グループなし"
-            label = f"[{group_label}] {layer.name()}（{GEOM_TYPE_LABELS.get(self._geom_type(layer), 'ベクタ')} / {layer.featureCount()}）"
-            chk = QCheckBox(label)
-            chk.setChecked(True)
-            chk.setProperty("layer_id", layer.id())
-            inner_layout.addWidget(chk)
-            self.checks.append(chk)
-        inner_layout.addStretch()
-        scroll.setWidget(inner)
-        layout.addWidget(scroll)
-
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
-
-    def _geom_type(self, layer):
-        if layer.geometryType() == Qgis.GeometryType.Line:
-            return "line"
-        if layer.geometryType() == Qgis.GeometryType.Point:
-            return "point"
-        if layer.geometryType() == Qgis.GeometryType.Polygon:
-            return "polygon"
-        return ""
-
-    def _group_name(self, layer):
-        try:
-            if self.owner and hasattr(self.owner, "qgis_layer_source_group_name"):
-                return self.owner.qgis_layer_source_group_name(layer)
-        except Exception:
-            pass
-        return ""
-
-    def selected_layer_ids(self):
-        return [chk.property("layer_id") for chk in self.checks if chk.isChecked()]
-
-
-class InspectionTabWidget(QWidget):
+class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, InspectionContextMenuMixin, QWidget):
     def __init__(self, main_ui):
         super().__init__()
         self.main_ui = main_ui
         self.iface = main_ui.iface
         self.gpkg_path = ""
+        self.gpkg_paths = {inspection_type: "" for inspection_type in INSPECTION_TYPES}
         self.layers = {}
-        self.active_inspection_type = INSPECTION_TYPE_ORTHO
+        self.trash_layer_ids = {}
+        self.active_inspection_type = INSPECTION_TYPE_FREE
         self.last_free_geom_type = "line"
         self.free_groups = []
         self.active_free_group_name = ""
@@ -1118,6 +82,8 @@ class InspectionTabWidget(QWidget):
         self.active_geom_type = "polygon"
         self.active_color = "ff0000"
         self.operation_mode = "create"
+        self.last_selection_mode = "select"
+        self.create_return_mode = "pan"
         self.map_tool = None
         self.buttons_by_source = {}
         self.round_buttons = {}
@@ -1125,11 +91,14 @@ class InspectionTabWidget(QWidget):
         self.continuous_capture_enabled = False
         self.active_capture_shape = "polygon"
         self.context_filter_canvas = None
+        self.current_context_menu = None
         self.right_button_guard_active = False
+        self.suppress_next_context_menu = False
         self.round_menu_expanded = {}
         self.free_group_menu_expanded = {}
         self._original_selection_colors = {}
         self.selection_highlight_items = []
+        self.paste_flash_highlight_items = []
         self.drag_highlight_button = None
         self.drag_highlight_target = ""
         self.drag_source_button = None
@@ -1139,18 +108,38 @@ class InspectionTabWidget(QWidget):
         self.action_drag_source_button = None
         self.action_drag_preview_label = None
         self.group_drag_highlight_button = None
+        self._guide_refresh_pending = False
         self.group_drag_highlight_target = ""
         self.group_drag_source_button = None
         self.group_drag_preview_label = None
+        self.guide_layer_ids = []
         self.feature_move_targets = []
         self.feature_move_preview_bands = []
         self.feature_move_undo_stack = []
         self._layers_needing_edit_refresh = set()
         self._refresh_counts_pending = False
+        self._gpkg_management_sync_pending = False
+        self._gpkg_management_sync_blocked = False
+        self._layer_lock_rebuild_pending = False
+        self._layer_tree_copy_manager = None
         self._edit_preview_width_overridden = False
         self._original_digitizing_line_width = None
         self._original_digitizing_line_width_had_key = False
+        self.edit_overlap_candidates = []
+        self.edit_overlap_index = -1
+        self.edit_overlap_point = None
+        self.edit_overlap_vertex_candidates = []
+        self.edit_overlap_vertex_index = -1
+        self.edit_overlap_vertex_marker = None
+        self.edit_overlap_vertex_preview_band = None
+        self.edit_overlap_anchor_point = None
+        self.edit_overlap_anchor_candidates = []
+        self.edit_overlap_anchor_index = -1
+        self.ignore_next_direct_overlap_release = False
+        self.just_finished_direct_overlap_vertex_edit = False
+        self.suspend_edit_hover_prepare = False
         self._build_ui()
+        self.install_layer_tree_copy_menu()
         self.refresh_texts()
 
     def _btn_style(self, color, active=False):
@@ -1175,23 +164,6 @@ class InspectionTabWidget(QWidget):
         path_row.addWidget(self.path_label)
         top_layout.addLayout(path_row)
 
-        type_row = QHBoxLayout()
-        self.inspection_type_buttons = QButtonGroup(self)
-        self.inspection_type_buttons.setExclusive(True)
-        self.btn_type_ortho = QPushButton()
-        self.btn_type_free = QPushButton()
-        for button, inspection_type in (
-            (self.btn_type_ortho, INSPECTION_TYPE_ORTHO),
-            (self.btn_type_free, INSPECTION_TYPE_FREE),
-        ):
-            button.setCheckable(True)
-            button.setMinimumWidth(0)
-            button.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
-            button.clicked.connect(lambda _=False, t=inspection_type: self.set_inspection_type(t))
-            self.inspection_type_buttons.addButton(button)
-            type_row.addWidget(button)
-        top_layout.addLayout(type_row)
-
         row = QGridLayout()
         self.btn_new = QPushButton()
         self.btn_new.clicked.connect(self.create_new_inspection)
@@ -1212,6 +184,21 @@ class InspectionTabWidget(QWidget):
         top_layout.addLayout(row)
         layout.addWidget(self.top_group)
 
+        self.module_box = QGroupBox()
+        module_layout = QHBoxLayout(self.module_box)
+        module_layout.setContentsMargins(8, 8, 8, 8)
+        module_layout.setSpacing(6)
+        self.module_combo = QComboBox()
+        self.populate_module_combo()
+        self.module_combo.currentIndexChanged.connect(lambda *_: self.refresh_ui())
+        self.module_create_btn = QPushButton()
+        self.module_create_btn.clicked.connect(self.create_inspection_module)
+        self.module_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.module_create_btn.setMinimumWidth(72)
+        module_layout.addWidget(self.module_combo)
+        module_layout.addWidget(self.module_create_btn)
+        layout.addWidget(self.module_box)
+
         self.rounds_box = QGroupBox()
         rounds_layout = QHBoxLayout(self.rounds_box)
         for round_no in (2, 3, 4):
@@ -1219,7 +206,67 @@ class InspectionTabWidget(QWidget):
             button.clicked.connect(lambda _=False, r=round_no: self.add_round(r))
             self.round_buttons[round_no] = button
             rounds_layout.addWidget(button)
-        layout.addWidget(self.rounds_box)
+
+        self.guide_box = QGroupBox()
+        guide_layout = QGridLayout(self.guide_box)
+        guide_layout.setColumnStretch(1, 1)
+        self.guide_mode_combo = QComboBox()
+        self.guide_mode_combo.addItem(tr_text("検査範囲ポリゴンを使う"), "area")
+        self.guide_mode_combo.addItem(tr_text("図郭ポリゴンから作る"), "tile")
+        self.guide_mode_combo.currentIndexChanged.connect(self.refresh_guide_layer_combo)
+        self.guide_layer_combo = QComboBox()
+        self.guide_layer_combo.currentIndexChanged.connect(self.refresh_guide_id_field_combo)
+        self.guide_width_combo = QComboBox()
+        for width in (100, 125, 150, 200):
+            self.guide_width_combo.addItem(f"{width}m", width)
+        self.guide_width_combo.currentIndexChanged.connect(self.apply_guide_width_preset)
+        self.guide_width_edit = QLineEdit("100")
+        self.guide_width_edit.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self.guide_width_edit.setFixedWidth(72)
+        self.guide_create_btn = QPushButton()
+        self.guide_create_btn.clicked.connect(self.create_guide_lines)
+        guide_layout.addWidget(self.guide_mode_combo, 0, 0)
+        guide_layout.addWidget(self.guide_layer_combo, 0, 1)
+        width_row = QWidget()
+        width_layout = QHBoxLayout(width_row)
+        width_layout.setContentsMargins(0, 0, 0, 0)
+        width_layout.setSpacing(6)
+        self.guide_width_label = QLabel(tr_text("幅(m)"))
+        width_layout.addWidget(self.guide_width_label)
+        width_layout.addWidget(self.guide_width_combo)
+        width_layout.addWidget(self.guide_width_edit)
+        width_layout.addWidget(self.guide_create_btn)
+        width_layout.addStretch()
+        guide_layout.addWidget(width_row, 1, 0, 1, 2)
+
+        mesh_row = QWidget()
+        mesh_layout = QHBoxLayout(mesh_row)
+        mesh_layout.setContentsMargins(0, 0, 0, 0)
+        mesh_layout.setSpacing(4)
+        self.guide_mesh_label = QLabel(tr_text("メッシュ"))
+        self.guide_mesh_cols_label = QLabel(tr_text("横"))
+        mesh_layout.addWidget(self.guide_mesh_label)
+        mesh_layout.addWidget(self.guide_mesh_cols_label)
+        self.guide_mesh_cols_edit = QLineEdit("7")
+        self.guide_mesh_cols_edit.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self.guide_mesh_cols_edit.setFixedWidth(34)
+        mesh_layout.addWidget(self.guide_mesh_cols_edit)
+        self.guide_mesh_rows_label = QLabel(tr_text("縦"))
+        mesh_layout.addWidget(self.guide_mesh_rows_label)
+        self.guide_mesh_rows_edit = QLineEdit("3")
+        self.guide_mesh_rows_edit.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self.guide_mesh_rows_edit.setFixedWidth(34)
+        mesh_layout.addWidget(self.guide_mesh_rows_edit)
+        mesh_layout.addWidget(QLabel("ID"))
+        self.guide_id_field_combo = QComboBox()
+        self.guide_id_field_combo.setMinimumWidth(80)
+        mesh_layout.addWidget(self.guide_id_field_combo, 1)
+        self.guide_mesh_create_btn = QPushButton(tr_text("作成"))
+        self.guide_mesh_create_btn.setFixedWidth(46)
+        self.guide_mesh_create_btn.clicked.connect(self.create_guide_mesh)
+        mesh_layout.addWidget(self.guide_mesh_create_btn)
+        guide_layout.addWidget(mesh_row, 2, 0, 1, 2)
+        layout.addWidget(self.guide_box)
 
         self.items_box = QGroupBox()
         self.items_layout = QGridLayout(self.items_box)
@@ -1241,6 +288,9 @@ class InspectionTabWidget(QWidget):
         self.chk_delete_confirm = QCheckBox()
         self.chk_delete_confirm.setChecked(self.delete_confirm_enabled())
         self.chk_delete_confirm.toggled.connect(self.set_delete_confirm_enabled)
+        self.chk_layer_change_confirm = QCheckBox()
+        self.chk_layer_change_confirm.setChecked(self.layer_change_confirm_enabled())
+        self.chk_layer_change_confirm.toggled.connect(self.set_layer_change_confirm_enabled)
         for button in (self.btn_select, self.btn_delete, self.btn_edit, self.btn_merge, self.btn_shortcut_settings):
             button.setMinimumWidth(0)
             button.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
@@ -1249,7 +299,8 @@ class InspectionTabWidget(QWidget):
         action_layout.addWidget(self.btn_edit, 1, 0)
         action_layout.addWidget(self.btn_merge, 1, 1)
         action_layout.addWidget(self.btn_shortcut_settings, 2, 0, 1, 2)
-        action_layout.addWidget(self.chk_delete_confirm, 3, 0, 1, 2)
+        action_layout.addWidget(self.chk_delete_confirm, 3, 0)
+        action_layout.addWidget(self.chk_layer_change_confirm, 3, 1)
         layout.addWidget(self.action_box)
 
         self.maintenance_box = QGroupBox()
@@ -1305,24 +356,35 @@ class InspectionTabWidget(QWidget):
         maintenance_layout.addWidget(self.btn_delete_inspection_type, 3, 1)
         maintenance_layout.addWidget(self.btn_organize_layers, 3, 2)
         layout.addWidget(self.maintenance_box)
+        layout.addWidget(self.rounds_box)
         layout.addStretch()
         self.inspection_qshortcuts = []
         self.refresh_inspection_qshortcuts()
+        self.connect_guide_layer_refresh_signals()
         self.refresh_ui()
 
     def refresh_texts(self):
         if not hasattr(self, "top_group"):
             return
         self.top_group.setTitle(tr("inspection.group.management"))
-        self.btn_type_ortho.setText(tr("inspection.type.ortho"))
-        self.btn_type_free.setText(tr("inspection.type.free"))
         self.btn_new.setText(tr("inspection.btn.new"))
         self.btn_load.setText(tr("inspection.btn.load"))
         self.btn_export.setText(tr("inspection.btn.export"))
         self.btn_on.setText(tr("inspection.btn.on"))
+        self.module_box.setTitle(tr_text("定型検査セット作成"))
+        self.module_create_btn.setText(tr_text("作成"))
         self.rounds_box.setTitle(tr("inspection.group.rounds"))
         for round_no, button in self.round_buttons.items():
             button.setText(tr("inspection.btn.round_add").format(round=round_no))
+        self.guide_box.setTitle(tr("inspection.guide.group"))
+        self.guide_mode_combo.setItemText(0, tr_text("検査範囲ポリゴンを使う"))
+        self.guide_mode_combo.setItemText(1, tr_text("図郭ポリゴンから作る"))
+        self.guide_width_label.setText(tr_text("幅(m)"))
+        self.guide_create_btn.setText(tr("inspection.guide.create"))
+        self.guide_mesh_label.setText(tr_text("メッシュ"))
+        self.guide_mesh_cols_label.setText(tr_text("横"))
+        self.guide_mesh_rows_label.setText(tr_text("縦"))
+        self.guide_mesh_create_btn.setText(tr_text("作成"))
         self.items_box.setTitle(tr("inspection.group.items"))
         self.action_box.setTitle(tr("inspection.group.edit"))
         self.btn_select.setText(tr("inspection.btn.select_feature"))
@@ -1331,6 +393,7 @@ class InspectionTabWidget(QWidget):
         self.btn_merge.setText(tr("inspection.btn.merge"))
         self.btn_shortcut_settings.setText(tr("inspection.btn.shortcut"))
         self.chk_delete_confirm.setText(tr("inspection.chk.delete_confirm"))
+        self.chk_layer_change_confirm.setText(tr_text("移層確認"))
         self.maintenance_box.setTitle(tr("inspection.group.layers"))
         self.btn_add_layer.setText(tr("inspection.btn.layer_add"))
         self.btn_import_vector.setText(tr("inspection.btn.vector_import"))
@@ -1348,6 +411,219 @@ class InspectionTabWidget(QWidget):
         self._refresh_delete_inspection_type_text()
         self.refresh_ui()
 
+    def populate_module_combo(self):
+        self.module_combo.clear()
+        self.add_module_header("オルソ検査用")
+        for round_no in sorted(ROUND_ITEMS.keys()):
+            self.add_module_item(f"  └ {self.round_title(round_no)}", {"kind": "ortho_round", "round_no": round_no})
+        self.add_module_header("LP検査用")
+        self.module_combo.addItem(tr_text("未設定"), {"kind": "disabled"})
+        item = self.module_combo.model().item(self.module_combo.count() - 1)
+        if item is not None:
+            item.setEnabled(False)
+            item.setForeground(QBrush(QColor("#8a8a8a")))
+        self.module_combo.setCurrentIndex(1 if self.module_combo.count() > 1 else 0)
+
+    def add_module_header(self, text):
+        self.module_combo.addItem(text, {"kind": "header"})
+        item = self.module_combo.model().item(self.module_combo.count() - 1)
+        if item is None:
+            return
+        item.setEnabled(False)
+        font = QFont(item.font())
+        font.setBold(True)
+        item.setFont(font)
+        item.setForeground(QBrush(QColor("#202020")))
+
+    def add_module_item(self, text, data):
+        self.module_combo.addItem(text, data)
+        item = self.module_combo.model().item(self.module_combo.count() - 1)
+        if item is not None:
+            item.setForeground(QBrush(QColor("#0645ad")))
+
+    def selected_module_data(self):
+        data = self.module_combo.currentData() if hasattr(self, "module_combo") else None
+        return data if isinstance(data, dict) else {}
+
+    def selected_module_round_no(self):
+        data = self.selected_module_data()
+        if data.get("kind") != "ortho_round":
+            return 0
+        try:
+            return int(data.get("round_no", 0) or 0)
+        except Exception:
+            return 0
+
+    def refresh_guide_layer_combo(self):
+        if not hasattr(self, "guide_layer_combo"):
+            return
+        self._guide_refresh_pending = False
+        current_id = self.guide_layer_combo.currentData()
+        self.guide_layer_combo.blockSignals(True)
+        self.guide_layer_combo.clear()
+        self.guide_layer_ids = []
+        for layer in InspectionGuideLineBuilder(self).polygon_layer_candidates():
+            self.guide_layer_combo.addItem(layer.name(), layer.id())
+            self.guide_layer_ids.append(layer.id())
+        if current_id:
+            index = self.guide_layer_combo.findData(current_id)
+            if index >= 0:
+                self.guide_layer_combo.setCurrentIndex(index)
+        self.guide_layer_combo.blockSignals(False)
+        self.guide_create_btn.setEnabled(bool(self.guide_layer_ids))
+        self.refresh_guide_id_field_combo()
+
+    def refresh_guide_id_field_combo(self, *args):
+        if not hasattr(self, "guide_id_field_combo"):
+            return
+        current = self.guide_id_field_combo.currentData()
+        self.guide_id_field_combo.blockSignals(True)
+        self.guide_id_field_combo.clear()
+        layer = self.selected_guide_source_layer()
+        if layer:
+            try:
+                preferred = ("NAME", "name", "ID", "id", "図郭名", "図郭ID", "tile_id", "map_name")
+                fields = list(layer.fields())
+                ordered = []
+                for key in preferred:
+                    for field in fields:
+                        if field.name() == key and field.name() not in ordered:
+                            ordered.append(field.name())
+                for field in fields:
+                    if field.name() not in ordered:
+                        ordered.append(field.name())
+                for name in ordered:
+                    self.guide_id_field_combo.addItem(name, name)
+            except Exception:
+                pass
+        index = self.guide_id_field_combo.findData(current)
+        if index >= 0:
+            self.guide_id_field_combo.setCurrentIndex(index)
+        self.guide_id_field_combo.blockSignals(False)
+        enabled = bool(layer and self.guide_id_field_combo.count())
+        self.guide_id_field_combo.setEnabled(enabled)
+        if hasattr(self, "guide_mesh_create_btn"):
+            self.guide_mesh_create_btn.setEnabled(enabled)
+
+    def schedule_guide_layer_combo_refresh(self, *args):
+        if self._guide_refresh_pending:
+            return
+        self._guide_refresh_pending = True
+        QTimer.singleShot(0, self.refresh_guide_layer_combo)
+
+    def connect_guide_layer_refresh_signals(self):
+        project = QgsProject.instance()
+        try:
+            project.layersAdded.connect(self.schedule_guide_layer_combo_refresh)
+        except Exception:
+            pass
+        try:
+            project.layersRemoved.connect(self.schedule_guide_layer_combo_refresh)
+        except Exception:
+            pass
+
+    def disconnect_guide_layer_refresh_signals(self):
+        project = QgsProject.instance()
+        try:
+            project.layersAdded.disconnect(self.schedule_guide_layer_combo_refresh)
+        except Exception:
+            pass
+        try:
+            project.layersRemoved.disconnect(self.schedule_guide_layer_combo_refresh)
+        except Exception:
+            pass
+
+    def selected_guide_source_layer(self):
+        layer_id = self.guide_layer_combo.currentData() if hasattr(self, "guide_layer_combo") else ""
+        return QgsProject.instance().mapLayer(layer_id) if layer_id else None
+
+    def selected_guide_id_field(self):
+        if not hasattr(self, "guide_id_field_combo"):
+            return ""
+        return self.guide_id_field_combo.currentData() or ""
+
+    def guide_mesh_split_values(self):
+        try:
+            cols = int(self.guide_mesh_cols_edit.text().strip())
+        except Exception:
+            cols = 0
+        try:
+            rows = int(self.guide_mesh_rows_edit.text().strip())
+        except Exception:
+            rows = 0
+        return cols, rows
+
+    def set_guide_width(self, width):
+        self.guide_width_edit.setText(str(width))
+
+    def apply_guide_width_preset(self, *args):
+        if not hasattr(self, "guide_width_combo"):
+            return
+        width = self.guide_width_combo.currentData()
+        if width:
+            self.set_guide_width(width)
+
+    def guide_width_value(self):
+        text = self.guide_width_edit.text().strip().replace("ｍ", "").replace("m", "")
+        try:
+            return float(text)
+        except Exception:
+            return 0.0
+
+    def create_guide_lines(self):
+        self.refresh_guide_layer_combo()
+        if not self.inspection_gpkg_path(self.active_inspection_type) or not self.inspection_root_groups(self.active_inspection_type):
+            QMessageBox.information(self, tr_text("検査線作成"), tr_text("先に検査を作成してください。"))
+            self.set_status(tr_text("検査線作成: 先に検査を作成してください"))
+            return
+        source_layer = self.selected_guide_source_layer()
+        mode = self.guide_mode_combo.currentData() or "area"
+        width_m = self.guide_width_value()
+        message_item = None
+        if source_layer and width_m > 0:
+            try:
+                message_item = self.iface.messageBar().pushMessage(
+                    tr_text("検査線作成中"),
+                    tr_text("検査線を作成しています。完了まで操作しないでください。"),
+                    level=Qgis.MessageLevel.Warning,
+                    duration=0,
+                )
+            except Exception:
+                message_item = None
+            QApplication.processEvents()
+        try:
+            InspectionGuideLineBuilder(self).create(source_layer, mode, width_m)
+            self.write_gpkg_management_state()
+        finally:
+            self.clear_message_bar_item(message_item, "検査線作成中")
+
+    def create_guide_mesh(self):
+        self.refresh_guide_id_field_combo()
+        if not self.inspection_gpkg_path(self.active_inspection_type) or not self.inspection_root_groups(self.active_inspection_type):
+            QMessageBox.information(self, tr_text("検査メッシュ作成"), tr_text("先に検査を作成してください。"))
+            self.set_status(tr_text("検査メッシュ作成: 先に検査を作成してください"))
+            return
+        source_layer = self.selected_guide_source_layer()
+        id_field = self.selected_guide_id_field()
+        cols, rows = self.guide_mesh_split_values()
+        message_item = None
+        if source_layer and id_field and cols > 0 and rows > 0:
+            try:
+                message_item = self.iface.messageBar().pushMessage(
+                    tr_text("検査メッシュ作成中"),
+                    tr_text("検査メッシュを作成しています。完了まで操作しないでください。"),
+                    level=Qgis.MessageLevel.Warning,
+                    duration=0,
+                )
+            except Exception:
+                message_item = None
+            QApplication.processEvents()
+        try:
+            InspectionGuideLineBuilder(self).create_mesh(source_layer, id_field, cols, rows)
+            self.write_gpkg_management_state()
+        finally:
+            self.clear_message_bar_item(message_item, "検査メッシュ作成中")
+
     def _refresh_delete_inspection_type_text(self):
         key = "inspection.btn.type_delete.free" if self.is_free_inspection() else "inspection.btn.type_delete.ortho"
         self.btn_delete_inspection_type.setText(tr(key))
@@ -1357,6 +633,42 @@ class InspectionTabWidget(QWidget):
             self.main_ui._set_status(text)
         else:
             QgsMessageLog.logMessage(text, "OrthoManager", Qgis.MessageLevel.Info)
+
+    def clear_message_bar_item(self, message_item=None, title_text=""):
+        bar = None
+        try:
+            bar = self.iface.messageBar()
+        except Exception:
+            bar = None
+        if not bar:
+            return
+        if message_item is not None:
+            try:
+                bar.popWidget(message_item)
+                return
+            except Exception:
+                try:
+                    if hasattr(message_item, "close"):
+                        message_item.close()
+                except Exception:
+                    pass
+        try:
+            if hasattr(bar, "clearWidgets"):
+                bar.clearWidgets()
+                return
+        except Exception:
+            pass
+        if not title_text:
+            return
+        try:
+            for child in bar.findChildren(QWidget):
+                try:
+                    if title_text in child.text():
+                        child.close()
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
     def project_home(self):
         project = QgsProject.instance()
@@ -1368,100 +680,584 @@ class InspectionTabWidget(QWidget):
             return os.path.dirname(path)
         return ""
 
-    def default_gpkg_path(self):
-        home = self.project_home()
+    def inspection_type_label(self, inspection_type=None):
+        return "検査"
+
+    def normalize_file_path(self, path):
+        if not path:
+            return ""
+        try:
+            return os.path.normcase(os.path.abspath(os.fspath(path)))
+        except Exception:
+            return os.path.normcase(str(path))
+
+    def same_file_path(self, left, right):
+        return bool(left and right and self.normalize_file_path(left) == self.normalize_file_path(right))
+
+    def layer_source_path(self, layer):
+        if not layer:
+            return ""
+        prop_path = layer.customProperty(INSPECTION_PROP_PREFIX + "gpkg_path", "")
+        if prop_path:
+            return prop_path
+        try:
+            uri = layer.dataProvider().dataSourceUri()
+            return str(uri).split("|", 1)[0]
+        except Exception:
+            return ""
+
+    def inspection_gpkg_path(self, inspection_type=None):
+        return self.gpkg_path or self.gpkg_paths.get(INSPECTION_TYPE_FREE, "") or self.gpkg_paths.get(INSPECTION_TYPE_ORTHO, "") or ""
+
+    def set_inspection_gpkg_path(self, inspection_type, path):
+        path = path or ""
+        self.gpkg_path = path
+        for key in INSPECTION_TYPES:
+            self.gpkg_paths[key] = path
+
+    def sync_active_gpkg_path(self):
+        path = self.inspection_gpkg_path()
+        self.gpkg_path = path
+        for key in INSPECTION_TYPES:
+            self.gpkg_paths[key] = path
+        return self.gpkg_path
+
+    def default_gpkg_path(self, inspection_type=None):
+        home = self.default_inspection_gpkg_dir()
         project = QgsProject.instance()
         base = os.path.splitext(os.path.basename(project.fileName() or ""))[0]
         if not base:
             base = "ortho_project"
-        return os.path.join(home, f"{base}_inspection.gpkg") if home else ""
+        return os.path.join(home, f"{base}_inspection.gpkg")
 
-    def ensure_gpkg_path(self):
-        if self.gpkg_path:
-            return self.gpkg_path
-        default_path = self.default_gpkg_path()
-        if default_path:
-            self.gpkg_path = default_path
-            return self.gpkg_path
+    def default_inspection_gpkg_dir(self):
+        for folder in (
+            self.last_inspection_gpkg_dir(),
+            self.project_home(),
+            os.path.join(os.path.expanduser("~"), "Documents"),
+            os.path.expanduser("~"),
+        ):
+            folder = str(folder or "").strip()
+            if folder and os.path.isdir(folder):
+                return folder
+        return os.getcwd()
+
+    def last_inspection_gpkg_dir(self):
+        try:
+            folder = str(QgsSettings().value(INSPECTION_LAST_GPKG_DIR_KEY, "") or "").strip()
+        except Exception:
+            folder = ""
+        return folder if folder and os.path.isdir(folder) else ""
+
+    def remember_inspection_gpkg_dir(self, path):
+        folder = path if os.path.isdir(path) else os.path.dirname(path or "")
+        if not folder:
+            return
+        try:
+            QgsSettings().setValue(INSPECTION_LAST_GPKG_DIR_KEY, folder)
+        except Exception:
+            pass
+
+    def unique_gpkg_path_in_folder(self, folder, preferred_name):
+        preferred_name = preferred_name or "ortho_project_inspection.gpkg"
+        base, ext = os.path.splitext(preferred_name)
+        if not ext:
+            ext = ".gpkg"
+        path = os.path.join(folder, base + ext)
+        if not os.path.exists(path):
+            return path
+        counter = 2
+        while True:
+            candidate = os.path.join(folder, f"{base}_{counter}{ext}")
+            if not os.path.exists(candidate):
+                return candidate
+            counter += 1
+
+    def initial_new_gpkg_path(self):
+        default_path = self.available_new_gpkg_path()
+        remembered = self.last_inspection_gpkg_dir()
+        if remembered:
+            return self.unique_gpkg_path_in_folder(remembered, os.path.basename(default_path))
+        return default_path
+
+    def ensure_gpkg_path(self, inspection_type=None):
+        current = self.inspection_gpkg_path()
+        if current:
+            self.set_inspection_gpkg_path(self.active_inspection_type, current)
+            return current
         path, _ = QFileDialog.getSaveFileName(
-            self, "検査GPKGの保存先", "", "GeoPackage (*.gpkg)"
+            self,
+            "検査GPKGの保存先",
+            self.default_gpkg_path(),
+            "GeoPackage (*.gpkg)",
         )
         if not path:
             return ""
         if not path.lower().endswith(".gpkg"):
             path += ".gpkg"
-        self.gpkg_path = path
+        if not self.prepare_inspection_gpkg_for_type(path, self.active_inspection_type, allow_assign=True):
+            return ""
+        self.remember_inspection_gpkg_dir(path)
+        self.set_inspection_gpkg_path(self.active_inspection_type, path)
         return path
 
+    def inspection_gpkg_type(self, path):
+        if not path or not os.path.exists(path):
+            return ""
+        con = None
+        try:
+            con = sqlite3.connect(path)
+            table_exists = con.execute(
+                "select 1 from sqlite_master where type='table' and name=?",
+                (INSPECTION_GPKG_META_TABLE,),
+            ).fetchone()
+            if not table_exists:
+                return ""
+            row = con.execute(
+                f"select value from {INSPECTION_GPKG_META_TABLE} where key=?",
+                (INSPECTION_GPKG_TYPE_KEY,),
+            ).fetchone()
+            value = str(row[0] or "") if row else ""
+            return value if value in INSPECTION_TYPES else ""
+        except Exception as exc:
+            QgsMessageLog.logMessage(f"検査GPKG種別読込エラー: {path} / {exc}", "OrthoManager", Qgis.MessageLevel.Warning)
+            return ""
+        finally:
+            if con is not None:
+                con.close()
+
+    def write_inspection_gpkg_type(self, path, inspection_type):
+        if not path or not os.path.exists(path):
+            return False
+        con = None
+        try:
+            con = sqlite3.connect(path)
+            con.execute(f"create table if not exists {INSPECTION_GPKG_META_TABLE} (key text primary key, value text)")
+            con.execute(
+                f"insert or replace into {INSPECTION_GPKG_META_TABLE} (key, value) values (?, ?)",
+                (INSPECTION_GPKG_TYPE_KEY, "inspection"),
+            )
+            con.commit()
+            return True
+        except Exception as exc:
+            QgsMessageLog.logMessage(f"検査GPKG種別保存エラー: {path} / {exc}", "OrthoManager", Qgis.MessageLevel.Warning)
+            return False
+        finally:
+            if con is not None:
+                con.close()
+
+    def schedule_gpkg_management_sync(self, delay_ms=250):
+        if self._gpkg_management_sync_blocked:
+            return
+        if not self.gpkg_path or not os.path.exists(self.gpkg_path):
+            return
+        if self._gpkg_management_sync_pending:
+            return
+        self._gpkg_management_sync_pending = True
+        QTimer.singleShot(delay_ms, self.flush_gpkg_management_sync)
+
+    def flush_gpkg_management_sync(self):
+        self._gpkg_management_sync_pending = False
+        if self._gpkg_management_sync_blocked:
+            return
+        self.write_gpkg_management_state()
+
+    def read_gpkg_management_state(self, path=None):
+        path = path or self.gpkg_path
+        if not path or not os.path.exists(path):
+            return None
+        con = None
+        try:
+            con = sqlite3.connect(path)
+            table_exists = con.execute(
+                "select 1 from sqlite_master where type='table' and name=?",
+                (INSPECTION_GPKG_META_TABLE,),
+            ).fetchone()
+            if not table_exists:
+                return None
+            row = con.execute(
+                f"select value from {INSPECTION_GPKG_META_TABLE} where key=?",
+                (INSPECTION_GPKG_STATE_KEY,),
+            ).fetchone()
+            if not row or not row[0]:
+                return None
+            state = json.loads(row[0])
+            return state if isinstance(state, dict) else None
+        except Exception as exc:
+            QgsMessageLog.logMessage(f"検査GPKG管理情報読込エラー: {path} / {exc}", "OrthoManager", Qgis.MessageLevel.Warning)
+            return None
+        finally:
+            if con is not None:
+                con.close()
+
+    def write_gpkg_management_state(self):
+        if self._gpkg_management_sync_blocked:
+            return False
+        path = self.gpkg_path
+        if not path or not os.path.exists(path):
+            return False
+        con = None
+        try:
+            state = self.inspection_gpkg_management_state()
+            con = sqlite3.connect(path)
+            con.execute(f"create table if not exists {INSPECTION_GPKG_META_TABLE} (key text primary key, value text)")
+            con.execute(
+                f"insert or replace into {INSPECTION_GPKG_META_TABLE} (key, value) values (?, ?)",
+                (INSPECTION_GPKG_TYPE_KEY, "inspection"),
+            )
+            con.execute(
+                f"insert or replace into {INSPECTION_GPKG_META_TABLE} (key, value) values (?, ?)",
+                (INSPECTION_GPKG_STATE_KEY, json.dumps(state, ensure_ascii=False, separators=(",", ":"))),
+            )
+            con.commit()
+            return True
+        except Exception as exc:
+            QgsMessageLog.logMessage(f"検査GPKG管理情報保存エラー: {path} / {exc}", "OrthoManager", Qgis.MessageLevel.Warning)
+            return False
+        finally:
+            if con is not None:
+                con.close()
+
+    def inspection_gpkg_management_state(self):
+        try:
+            self.sync_free_layer_groups_from_layer_tree()
+        except Exception:
+            pass
+        seen_ids = set()
+        layers = []
+        for root_group in self.inspection_root_groups():
+            layers.extend(self.layer_descriptors_from_tree(root_group, seen_ids))
+        for layer in self.inspection_layers():
+            if layer.id() in seen_ids:
+                continue
+            descriptor = self.layer_descriptor(layer)
+            if self.gpkg_path:
+                descriptor["gpkg_path"] = self.gpkg_path
+            layers.append(descriptor)
+            seen_ids.add(layer.id())
+        return {
+            "schema_version": INSPECTION_GPKG_STATE_VERSION,
+            "saved_at": QDateTime.currentDateTime().toString(Qt.DateFormat.ISODate),
+            "gpkg_path": self.gpkg_path,
+            "last_free_geom_type": self.last_free_geom_type,
+            "active_free_group_name": self.active_free_group_name,
+            "free_groups": self.free_group_names(),
+            "free_root_order": self.free_root_order_state(),
+            "layers": layers,
+        }
+
+    def layer_descriptors_from_tree(self, group, seen_ids):
+        result = []
+        try:
+            children = list(group.children())
+        except Exception:
+            return result
+        for child in children:
+            layer = None
+            try:
+                layer = child.layer()
+            except Exception:
+                layer = None
+            if layer and isinstance(layer, QgsVectorLayer):
+                source = layer.customProperty(INSPECTION_PROP_PREFIX + "source_name", "")
+                if source and layer.id() not in seen_ids:
+                    descriptor = self.layer_descriptor(layer)
+                    if (
+                        self.layer_inspection_type(layer) == INSPECTION_TYPE_FREE
+                        and descriptor.get("guide_role", "") not in (GUIDE_ROLE_AREA, GUIDE_ROLE_DONE, GUIDE_ROLE_LINE)
+                    ):
+                        preferred_parent, preferred_group = self.preferred_free_layer_parent_for_save(layer)
+                        if preferred_parent is not None and not self.same_layer_tree_group(group, preferred_parent):
+                            continue
+                        descriptor["group_name"] = preferred_group
+                        self.set_layer_group_name(layer, preferred_group)
+                    if self.gpkg_path:
+                        descriptor["gpkg_path"] = self.gpkg_path
+                    result.append(descriptor)
+                    seen_ids.add(layer.id())
+                continue
+            result.extend(self.layer_descriptors_from_tree(child, seen_ids))
+        return result
+
+    def load_layers_from_gpkg_management(self, show_warning=False):
+        state = self.read_gpkg_management_state()
+        if not state:
+            if show_warning:
+                QMessageBox.warning(
+                    self,
+                    tr_text("検査GPKG読込"),
+                    tr_text("この検査GPKGにはOrthoManagerの管理情報がありません。\n"
+                    "v3.71以降で作成した検査GPKGを選択してください。"),
+                )
+            return False
+        layers = state.get("layers", [])
+        if not isinstance(layers, list):
+            if show_warning:
+                QMessageBox.warning(self, tr_text("検査GPKG読込"), tr_text("検査GPKGの管理情報が壊れています。"))
+            return False
+        saved_free_groups = [
+            self.normalize_free_group_path(name)
+            for name in state.get("free_groups", [])
+            if self.normalize_free_group_path(name)
+        ]
+        if saved_free_groups and layers and not any(
+            self.normalize_free_group_path(descriptor.get("group_name", ""))
+            for descriptor in layers
+            if isinstance(descriptor, dict)
+        ):
+            QgsMessageLog.logMessage(
+                "INSPECTION_GPKG_GROUP_MEMBERSHIP_MISSING "
+                f"path={self.gpkg_path} free_groups={len(saved_free_groups)} layers={len(layers)}",
+                "OrthoManager",
+                Qgis.MessageLevel.Warning,
+            )
+        self._gpkg_management_sync_blocked = True
+        try:
+            self.last_free_geom_type = state.get("last_free_geom_type", "line") or "line"
+            self.active_free_group_name = self.normalize_free_group_path(state.get("active_free_group_name", ""))
+            self.free_groups = saved_free_groups
+            self.ensure_inspection_root_group()
+            for group_name in self.free_group_names():
+                self.ensure_free_group(group_name)
+            for descriptor in layers:
+                if not isinstance(descriptor, dict):
+                    continue
+                source_name = descriptor.get("source_name", "")
+                if not source_name:
+                    continue
+                descriptor = dict(descriptor)
+                descriptor["gpkg_path"] = self.gpkg_path
+                self.load_layer(source_name, descriptor)
+            self.restore_free_root_order(state.get("free_root_order", []))
+            if OGR_OK:
+                ds = self.open_inspection_gpkg_readonly(self.gpkg_path)
+                if ds:
+                    for source_name in TRASH_LAYER_SOURCES.values():
+                        if ds.GetLayerByName(source_name):
+                            self.load_trash_layer(source_name, visible=False)
+                    ds = None
+            return True
+        finally:
+            self._gpkg_management_sync_blocked = False
+
+    def prepare_inspection_gpkg_for_type(self, path, inspection_type, allow_assign=False):
+        if not path:
+            return False
+        driver = ogr.GetDriverByName("GPKG") if OGR_OK else None
+        if driver is None:
+            return False
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+        except Exception:
+            pass
+        ds = self.open_or_create_inspection_gpkg(path, driver)
+        if ds is None:
+            QMessageBox.critical(self, tr_text("検査GPKG"), tr_text("検査GPKGを開けません。"))
+            return False
+        ds = None
+        self.write_inspection_gpkg_type(path, inspection_type)
+        return True
+
+    def choose_new_inspection_gpkg_path(self, inspection_type):
+        while True:
+            path, _ = QFileDialog.getSaveFileName(
+                self,
+                "検査GPKGの作成先",
+                self.initial_new_gpkg_path(),
+                "GeoPackage (*.gpkg)",
+            )
+            if not path:
+                return ""
+            if not path.lower().endswith(".gpkg"):
+                path += ".gpkg"
+            if os.path.exists(path):
+                result = QMessageBox.information(
+                    self,
+                    tr_text("検査作成"),
+                    tr_text("既存の検査GPKGは検査作成では使用できません。\n\n"
+                    "既存GPKGを使う場合は「検査読込」を使用してください。\n"
+                    "新しい検査を始める場合は、別名で新しいGPKGを作成してください。"),
+                    QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
+                    QMessageBox.StandardButton.Ok,
+                )
+                if result == QMessageBox.StandardButton.Ok:
+                    continue
+                return ""
+            if self.prepare_inspection_gpkg_for_type(path, inspection_type, allow_assign=True):
+                self.remember_inspection_gpkg_dir(path)
+                return path
+
+    def available_new_gpkg_path(self):
+        path = self.default_gpkg_path()
+        if not path or not os.path.exists(path):
+            return path
+        base, ext = os.path.splitext(path)
+        if not ext:
+            ext = ".gpkg"
+        counter = 2
+        while True:
+            candidate = f"{base}_{counter}{ext}"
+            if not os.path.exists(candidate):
+                return candidate
+            counter += 1
+
+    def confirm_create_new_inspection(self):
+        if not self.inspection_gpkg_path() and not self.inspection_root_groups():
+            return True
+        return QMessageBox.question(
+            self,
+            tr_text("検査作成"),
+            tr_text("現在の検査から新しい検査へ切り替えます。\n\n"
+            "現在の検査データは元のGPKGに残ります。\n"
+            "QGIS上の現在の検査レイヤと検査グループだけを閉じて、"
+            "新しい空の検査GPKGを作成します。\n\n"
+            "新しい検査を作成しますか？"),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        ) == QMessageBox.StandardButton.Yes
+
+    def remove_inspection_root_groups_from_project(self, inspection_type=None):
+        root = QgsProject.instance().layerTreeRoot()
+        for group in list(self.inspection_root_groups(inspection_type)):
+            try:
+                if group.findLayers():
+                    continue
+                parent = group.parent() or root
+                parent.removeChildNode(group)
+            except Exception:
+                pass
+
+    def project_crs_metric_problem(self):
+        try:
+            crs = QgsProject.instance().crs()
+        except Exception:
+            crs = None
+        if not crs or not crs.isValid():
+            return "プロジェクト座標系が未設定です。"
+        try:
+            if crs.isGeographic():
+                return "プロジェクト座標系が緯度経度座標系です。"
+        except Exception:
+            pass
+        return ""
+
+    def ensure_project_metric_crs_for_inspection(self):
+        problem = self.project_crs_metric_problem()
+        if not problem:
+            return True
+        QMessageBox.warning(
+            self,
+            tr_text("プロジェクト座標系"),
+            tr_text(problem
+            + "\n\n検査データはプロジェクト座標系で作成されます。"
+            + "\n先にQGISのプロジェクト座標系を、平面直角座標系などのメートル単位の座標系に設定してください。"),
+        )
+        return False
+
     def set_inspection_type(self, inspection_type):
-        if inspection_type not in (INSPECTION_TYPE_ORTHO, INSPECTION_TYPE_FREE):
-            inspection_type = INSPECTION_TYPE_ORTHO
+        inspection_type = INSPECTION_TYPE_FREE
         if self.active_inspection_type == inspection_type:
+            self.sync_active_gpkg_path()
             self.refresh_ui()
             return
         self.finish_edit_for_mode_switch()
         self.active_inspection_type = inspection_type
+        self.sync_active_gpkg_path()
+        self.trash_layer_ids.clear()
         self.active_layer_id = ""
         self.refresh_ui()
-        label = "オルソ検査" if inspection_type == INSPECTION_TYPE_ORTHO else "自由式検査"
-        self.set_status(f"検査タイプ: {label}")
+        self.set_status(tr_text("検査"))
+
+    def set_inspection_type_from_tab(self, index):
+        self.set_inspection_type(INSPECTION_TYPE_FREE)
 
     def is_free_inspection(self):
-        return self.active_inspection_type == INSPECTION_TYPE_FREE
+        return True
 
     def active_inspection_label(self):
-        return "自由式検査" if self.is_free_inspection() else "オルソ検査"
+        return self.inspection_type_label()
 
     def create_new_inspection(self):
-        path = self.ensure_gpkg_path()
+        if not self.ensure_project_metric_crs_for_inspection():
+            return
+        if not self.confirm_create_new_inspection():
+            return
+        inspection_type = self.active_inspection_type
+        path = self.choose_new_inspection_gpkg_path(inspection_type)
         if not path:
             return
-        if os.path.exists(path):
-            message = "同じ名前の検査GPKGが既にあります。\n既存ファイルに1回目検査レイヤを作成しますか？"
-            if self.is_free_inspection():
-                message = "同じ名前の検査GPKGが既にあります。\nこのGPKGで自由式検査を開始しますか？"
-            reply = QMessageBox.question(
-                self, "検査GPKGを使用しますか？",
-                message
-            )
-            if reply != QMessageBox.StandardButton.Yes:
-                return
-        if self.is_free_inspection():
-            self.ensure_inspection_root_group()
-            self.organize_inspection_layers(silent=True)
-        else:
-            self.add_round(1)
+        self.move_unmanaged_layers_out_of_inspection_group()
+        self.clear_inspection_type_state(inspection_type, remove_layers=True, clear_path=False)
+        self.remove_inspection_root_groups_from_project(inspection_type)
+        self.set_inspection_gpkg_path(inspection_type, path)
+        self.ensure_inspection_root_group()
+        self.organize_inspection_layers(silent=True)
+        self.write_gpkg_management_state()
         self.refresh_ui()
-        self.set_status(f"✅ 新規{self.active_inspection_label()}を作成しました")
+        self.set_status(tr_text("✅ 検査を作成しました"))
 
     def load_inspection_file(self):
         path, _ = QFileDialog.getOpenFileName(self, "検査GPKGを読み込み", "", "GeoPackage (*.gpkg)")
         if not path:
             return
-        self.clear_inspection_state(remove_layers=True)
-        self.gpkg_path = path
+        inspection_type = self.active_inspection_type
+        if not self.prepare_inspection_gpkg_for_type(path, inspection_type, allow_assign=True):
+            return
+        self.clear_inspection_type_state(inspection_type, remove_layers=True, clear_path=False)
+        self.set_inspection_gpkg_path(inspection_type, path)
         self.load_layers_from_gpkg()
         self.refresh_ui()
-        self.set_status("✅ 検査GPKGを読み込みました")
+        self.set_status(tr_text("✅ 検査GPKGを読み込みました"))
+
+    def create_inspection_module(self):
+        round_no = self.selected_module_round_no()
+        if not round_no:
+            QMessageBox.information(self, tr_text("検査グループ作成"), tr_text("作成する検査グループを選択してください。"))
+            return
+        self.add_round(round_no)
 
     def add_round(self, round_no):
-        if self.is_free_inspection():
-            QMessageBox.information(self, "自由式検査", "自由式検査では標準検査回を作成しません。レイヤ追加から作成してください。")
-            return
         if not OGR_OK:
-            QMessageBox.critical(self, "GDAL/OGRエラー", "GDAL/OGRを読み込めないため検査レイヤを作成できません。")
+            QMessageBox.critical(self, tr_text("GDAL/OGRエラー"), tr_text("GDAL/OGRを読み込めないため検査レイヤを作成できません。"))
+            return
+        if not self.ensure_project_metric_crs_for_inspection():
+            return
+        if not self.inspection_gpkg_path() or not self.inspection_root_groups():
+            QMessageBox.information(self, tr_text("検査グループ作成"), tr_text("先に検査を作成してください。"))
+            self.set_status(tr_text("検査グループ作成: 先に検査を作成してください"))
+            return
+        if round_no in self.standard_rounds():
+            QMessageBox.information(self, tr_text("検査グループ作成"), tr_text(f"{self.round_title(round_no)}は既に作成されています。"))
             return
         path = self.ensure_gpkg_path()
         if not path:
             return
         for code, name, color in ROUND_ITEMS.get(round_no, []):
-            self.create_inspection_layer(round_no, code, name, color, "polygon", custom=False, inspection_type=INSPECTION_TYPE_ORTHO)
-        self.load_layers_from_gpkg()
+            source = self.create_inspection_layer(round_no, code, name, color, "polygon", custom=False, inspection_type=INSPECTION_TYPE_ORTHO)
+            descriptor = {
+                "round_no": round_no,
+                "code": code,
+                "name": name,
+                "color": color,
+                "geom_type": "polygon",
+                "stroke_width": self.default_stroke_width("polygon"),
+                "point_size": self.default_point_size(),
+                "source_name": source,
+                "inspection_type": INSPECTION_TYPE_ORTHO,
+                "group_name": "",
+                "custom": False,
+                "gpkg_path": path,
+            }
+            self.load_layer(source, descriptor)
+        self.write_gpkg_management_state()
         self.refresh_ui()
+        self.set_status(tr_text(f"✅ 検査グループ作成: {self.round_title(round_no)}"))
 
     def add_manual_layer(self, insert_above_source=None, free_group_name=None):
         if not isinstance(insert_above_source, str):
             insert_above_source = None
+        if not self.ensure_project_metric_crs_for_inspection():
+            return
         if not self.ensure_gpkg_path():
             return
         target_layer = self.layer_by_source(insert_above_source) if insert_above_source else None
@@ -1478,19 +1274,19 @@ class InspectionTabWidget(QWidget):
         elif inspection_type == INSPECTION_TYPE_FREE:
             active_group = str(self.active_free_group_name or "").strip()
             group_name = active_group if active_group in self.free_group_names() else ""
-        name, ok = QInputDialog.getText(self, "検査レイヤ追加", "レイヤ名:")
+        name, ok = QInputDialog.getText(self, tr_text("検査レイヤ追加"), tr_text("レイヤ名:"))
         if not ok or not name.strip():
             return
         geom_items = ["ポリゴン", "ライン", "点"]
         default_geom_index = 0
         if inspection_type == INSPECTION_TYPE_FREE:
             default_geom_index = {"polygon": 0, "line": 1, "point": 2}.get(self.last_free_geom_type, 1)
-        geom, ok = QInputDialog.getItem(self, "形状選択", "形状:", geom_items, default_geom_index, False)
+        geom, ok = QInputDialog.getItem(self, tr_text("形状選択"), tr_text("形状:"), geom_items, default_geom_index, False)
         if not ok:
             return
         color = QColorDialog.getColor(QColor("#ff0000"), self, "表示色")
         if not color.isValid():
-            color = QColor("#ff0000")
+            return
         color_text = color.name().replace("#", "")
         geom_type = {"ポリゴン": "polygon", "ライン": "line", "点": "point"}.get(geom, "polygon")
         if inspection_type == INSPECTION_TYPE_FREE:
@@ -1509,6 +1305,7 @@ class InspectionTabWidget(QWidget):
             "inspection_type": inspection_type,
             "group_name": group_name,
             "custom": True,
+            "gpkg_path": self.inspection_gpkg_path(inspection_type),
         }
         QgsMessageLog.logMessage(
             f"INSPECTION_ADD_MANUAL_LAYER inspection_type={inspection_type} group={group_name} source={source}",
@@ -1522,6 +1319,7 @@ class InspectionTabWidget(QWidget):
                 self.active_free_group_name = group_name
             if target_layer:
                 self.place_layer_before(layer, target_layer)
+        self.write_gpkg_management_state()
         self.refresh_ui()
 
     def import_qgis_project_layers(self, insert_above_source=None):
@@ -1529,14 +1327,16 @@ class InspectionTabWidget(QWidget):
         if not isinstance(insert_above_source, str):
             insert_above_source = None
         if not OGR_OK:
-            QMessageBox.critical(self, "QGISレイヤ取込", "GDAL/OGRを読み込めないためQGISレイヤを取り込めません。")
+            QMessageBox.critical(self, tr_text("QGISレイヤ取込"), tr_text("GDAL/OGRを読み込めないためQGISレイヤを取り込めません。"))
+            return
+        if not self.ensure_project_metric_crs_for_inspection():
             return
         if not self.ensure_gpkg_path():
             return
 
         candidates = self.qgis_layer_import_candidates()
         if not candidates:
-            QMessageBox.information(self, "QGISレイヤ取込", "取り込めるQGISベクタレイヤがありません。")
+            QMessageBox.information(self, tr_text("QGISレイヤ取込"), tr_text("取り込めるQGISベクタレイヤがありません。"))
             return
         dialog = QgisLayerImportDialog(candidates, self)
         if dialog.exec() != QDialog.DialogCode.Accepted:
@@ -1544,7 +1344,7 @@ class InspectionTabWidget(QWidget):
         selected_ids = set(dialog.selected_layer_ids())
         source_layers = [layer for layer in candidates if layer.id() in selected_ids]
         if not source_layers:
-            QMessageBox.information(self, "QGISレイヤ取込", "取り込むレイヤを選択してください。")
+            QMessageBox.information(self, tr_text("QGISレイヤ取込"), tr_text("取り込むレイヤを選択してください。"))
             return
 
         target_layer = self.layer_by_source(insert_above_source) if insert_above_source else self.active_layer()
@@ -1558,7 +1358,7 @@ class InspectionTabWidget(QWidget):
                 source_layers, inspection_type, fallback_group_name
             )
         except Exception as exc:
-            QMessageBox.critical(self, "QGISレイヤ取込", f"QGISレイヤを取り込めませんでした。\n{exc}")
+            QMessageBox.critical(self, tr_text("QGISレイヤ取込"), tr_text(f"QGISレイヤを取り込めませんでした。\n{exc}"))
             QgsMessageLog.logMessage(f"INSPECTION_QGIS_LAYER_IMPORT_FAILED error={exc}", "OrthoManager", Qgis.MessageLevel.Warning)
             return
 
@@ -1580,6 +1380,7 @@ class InspectionTabWidget(QWidget):
             )
         if created_layers:
             self.active_layer_id = created_layers[0].id()
+        self.write_gpkg_management_state()
         self.refresh_ui()
 
         message = f"✅ QGISレイヤ取込: {len(created_layers)} レイヤ / {feature_count} 地物"
@@ -1590,13 +1391,13 @@ class InspectionTabWidget(QWidget):
             preview = "\n".join(errors[:8])
             if len(errors) > 8:
                 preview += f"\n...ほか {len(errors) - 8} 件"
-            QMessageBox.warning(self, "QGISレイヤ取込", f"一部取り込めませんでした。\n{preview}")
+            QMessageBox.warning(self, tr_text("QGISレイヤ取込"), tr_text(f"一部取り込めませんでした。\n{preview}"))
 
         if created_layers:
             box = QMessageBox(self)
-            box.setWindowTitle("QGISレイヤ取込")
+            box.setWindowTitle(tr_text("QGISレイヤ取込"))
             box.setIcon(QMessageBox.Icon.Question)
-            box.setText("取り込み前のQGISレイヤをレイヤパネルから外しますか？")
+            box.setText(tr_text("取り込み前のQGISレイヤをレイヤパネルから外しますか？"))
             box.setInformativeText("元ファイル自体は削除しません。")
             remove_button = box.addButton("元レイヤを外す", QMessageBox.ButtonRole.AcceptRole)
             box.addButton("そのまま残す", QMessageBox.ButtonRole.RejectRole)
@@ -1679,7 +1480,7 @@ class InspectionTabWidget(QWidget):
         except Exception:
             mtime = 0
         QgsMessageLog.logMessage(
-            f"INSPECTION_IMPORT_CODE_MARKER action={action} marker=fix4 file={__file__} mtime={mtime}",
+            f"INSPECTION_IMPORT_CODE_MARKER action={action} marker=fix5 file={__file__} mtime={mtime}",
             "OrthoManager",
             Qgis.MessageLevel.Info,
         )
@@ -1701,7 +1502,7 @@ class InspectionTabWidget(QWidget):
             name = str(group.name() or "").strip()
             if not name:
                 return False
-            if name in (INSPECTION_GROUP, FREE_INSPECTION_GROUP, LEGACY_INSPECTION_GROUP):
+            if name in (INSPECTION_GROUP, FREE_INSPECTION_GROUP):
                 return False
             return group.parent() is not None
         except Exception:
@@ -1816,9 +1617,10 @@ class InspectionTabWidget(QWidget):
 
     def _import_qgis_layers_to_gpkg(self, source_layers, inspection_type, fallback_group_name):
         driver = ogr.GetDriverByName("GPKG")
-        target_ds = self.open_or_create_inspection_gpkg(self.gpkg_path, driver)
+        gpkg_path = self.ensure_gpkg_path(inspection_type)
+        target_ds = self.open_or_create_inspection_gpkg(gpkg_path, driver)
         if target_ds is None:
-            raise RuntimeError(f"検査GPKGを開けません: {self.gpkg_path}")
+            raise RuntimeError(f"検査GPKGを開けません: {gpkg_path}")
         descriptors = []
         source_by_name = {}
         feature_count = 0
@@ -1895,22 +1697,49 @@ class InspectionTabWidget(QWidget):
         written = 0
         skipped = 0
         errors = []
-        for feature in src_layer.getFeatures():
-            try:
-                geom = feature.geometry()
-                if not geom or geom.isEmpty():
+        total = max(0, src_layer.featureCount())
+        started = time.perf_counter()
+        transaction_started = self._begin_ogr_layer_transaction(target_layer)
+        QgsMessageLog.logMessage(
+            f"INSPECTION_IMPORT_BULK_START layer={display_name} features={total} transaction={transaction_started}",
+            "OrthoManager",
+            Qgis.MessageLevel.Info,
+        )
+        try:
+            for feature in src_layer.getFeatures():
+                try:
+                    geom = feature.geometry()
+                    if not geom or geom.isEmpty():
+                        skipped += 1
+                        continue
+                    geom = QgsGeometry(geom)
+                    if transform is not None:
+                        geom.transform(transform)
+                    if self._write_qgis_import_feature(target_info, feature, geom, geom_type):
+                        written += 1
+                    else:
+                        skipped += 1
+                    if written and written % 5000 == 0:
+                        QgsMessageLog.logMessage(
+                            f"INSPECTION_IMPORT_BULK_PROGRESS layer={display_name} written={written} skipped={skipped} total={total}",
+                            "OrthoManager",
+                            Qgis.MessageLevel.Info,
+                        )
+                except Exception as exc:
                     skipped += 1
-                    continue
-                geom = QgsGeometry(geom)
-                if transform is not None:
-                    geom.transform(transform)
-                if self._write_qgis_import_feature(target_info, feature, geom, geom_type):
-                    written += 1
-                else:
-                    skipped += 1
-            except Exception as exc:
-                skipped += 1
-                errors.append(f"{src_layer.name()} / {geom_type}: {exc}")
+                    errors.append(f"{src_layer.name()} / {geom_type}: {exc}")
+            if transaction_started:
+                self._commit_ogr_layer_transaction(target_layer)
+        except Exception:
+            if transaction_started:
+                self._rollback_ogr_layer_transaction(target_layer)
+            raise
+        elapsed = time.perf_counter() - started
+        QgsMessageLog.logMessage(
+            f"INSPECTION_IMPORT_BULK_DONE layer={display_name} written={written} skipped={skipped} sec={elapsed:.2f}",
+            "OrthoManager",
+            Qgis.MessageLevel.Info,
+        )
         return descriptor, written, skipped, errors
 
     def import_vector_layers(self, insert_above_source=None):
@@ -1918,7 +1747,9 @@ class InspectionTabWidget(QWidget):
         if not isinstance(insert_above_source, str):
             insert_above_source = None
         if not OGR_OK:
-            QMessageBox.critical(self, "ベクタ取込", "GDAL/OGRを読み込めないためDXF/SHPを取り込めません。")
+            QMessageBox.critical(self, tr_text("ベクタ取込"), tr_text("GDAL/OGRを読み込めないためDXF/SHPを取り込めません。"))
+            return
+        if not self.ensure_project_metric_crs_for_inspection():
             return
         if not self.ensure_gpkg_path():
             return
@@ -1947,7 +1778,7 @@ class InspectionTabWidget(QWidget):
         options = dialog.options()
         group_name = options.get("group_name", "") if options.get("use_group") else inherited_group
         if options.get("use_group") and not group_name:
-            QMessageBox.information(self, "ベクタ取込", "グループ名を入力してください。")
+            QMessageBox.information(self, tr_text("ベクタ取込"), tr_text("グループ名を入力してください。"))
             return
 
         try:
@@ -1955,7 +1786,7 @@ class InspectionTabWidget(QWidget):
                 paths, inspection_type, round_no, group_name
             )
         except Exception as exc:
-            QMessageBox.critical(self, "ベクタ取込", f"DXF/SHPを取り込めませんでした。\n{exc}")
+            QMessageBox.critical(self, tr_text("ベクタ取込"), tr_text(f"DXF/SHPを取り込めませんでした。\n{exc}"))
             QgsMessageLog.logMessage(f"INSPECTION_VECTOR_IMPORT_FAILED error={exc}", "OrthoManager", Qgis.MessageLevel.Warning)
             return
 
@@ -1988,7 +1819,7 @@ class InspectionTabWidget(QWidget):
             preview = "\n".join(errors[:8])
             if len(errors) > 8:
                 preview += f"\n...ほか {len(errors) - 8} 件"
-            QMessageBox.warning(self, "ベクタ取込", f"一部取り込めませんでした。\n{preview}")
+            QMessageBox.warning(self, tr_text("ベクタ取込"), tr_text(f"一部取り込めませんでした。\n{preview}"))
 
     def _as_file_path(self, value):
         try:
@@ -2003,9 +1834,10 @@ class InspectionTabWidget(QWidget):
 
     def _import_vector_files(self, paths, inspection_type, round_no, group_name):
         driver = ogr.GetDriverByName("GPKG")
-        target_ds = self.open_or_create_inspection_gpkg(self.gpkg_path, driver)
+        gpkg_path = self.ensure_gpkg_path(inspection_type)
+        target_ds = self.open_or_create_inspection_gpkg(gpkg_path, driver)
         if target_ds is None:
-            raise RuntimeError(f"検査GPKGを開けません: {self.gpkg_path}")
+            raise RuntimeError(f"検査GPKGを開けません: {gpkg_path}")
         target_cache = {}
         descriptors = []
         feature_count = 0
@@ -2106,7 +1938,7 @@ class InspectionTabWidget(QWidget):
             return
         try:
             dialog = QgsProjectionSelectionDialog(self)
-            dialog.setWindowTitle("取込ファイルの座標系")
+            dialog.setWindowTitle(tr_text("取込ファイルの座標系"))
             project_crs = QgsProject.instance().crs()
             if project_crs and project_crs.isValid():
                 try:
@@ -2195,7 +2027,7 @@ class InspectionTabWidget(QWidget):
         target_layer = target_info["layer"]
         defn = target_info["defn"]
         descriptor = target_info["descriptor"]
-        ogr_geom = ogr.CreateGeometryFromWkt(geom.asWkt())
+        ogr_geom = self._qgis_geometry_to_ogr(geom)
         if ogr_geom is None:
             raise RuntimeError("ジオメトリを変換できません")
         out = ogr.Feature(defn)
@@ -2222,6 +2054,47 @@ class InspectionTabWidget(QWidget):
         self.create_ogr_feature(target_layer, out)
         out = None
         return True
+
+    def _qgis_geometry_to_ogr(self, geom):
+        try:
+            ogr_geom = ogr.CreateGeometryFromWkb(bytes(geom.asWkb()))
+            if ogr_geom is not None:
+                return ogr_geom
+        except Exception:
+            pass
+        try:
+            return ogr.CreateGeometryFromWkt(geom.asWkt())
+        except Exception:
+            return None
+
+    def _begin_ogr_layer_transaction(self, layer):
+        try:
+            return layer.StartTransaction() == 0
+        except Exception as exc:
+            QgsMessageLog.logMessage(
+                f"INSPECTION_IMPORT_TRANSACTION_START_SKIPPED layer={layer.GetName()} error={exc}",
+                "OrthoManager",
+                Qgis.MessageLevel.Info,
+            )
+            return False
+
+    def _commit_ogr_layer_transaction(self, layer):
+        try:
+            result = layer.CommitTransaction()
+        except Exception as exc:
+            raise RuntimeError(f"GPKG一括保存に失敗しました: {layer.GetName()} / {exc}")
+        if result != 0:
+            raise RuntimeError(f"GPKG一括保存に失敗しました: {layer.GetName()} / result={result}")
+
+    def _rollback_ogr_layer_transaction(self, layer):
+        try:
+            layer.RollbackTransaction()
+        except Exception as exc:
+            QgsMessageLog.logMessage(
+                f"INSPECTION_IMPORT_TRANSACTION_ROLLBACK_FAILED layer={layer.GetName()} error={exc}",
+                "OrthoManager",
+                Qgis.MessageLevel.Warning,
+            )
 
     def create_ogr_feature(self, target_layer, feature):
         try:
@@ -2573,7 +2446,7 @@ class InspectionTabWidget(QWidget):
             return None
         try:
             dialog = QgsProjectionSelectionDialog(self)
-            dialog.setWindowTitle("取込ファイルの座標系")
+            dialog.setWindowTitle(tr_text("取込ファイルの座標系"))
             project_crs = QgsProject.instance().crs()
             if project_crs and project_crs.isValid():
                 try:
@@ -2610,7 +2483,7 @@ class InspectionTabWidget(QWidget):
             layer = None
         layers = self.ordered_inspection_layers()
         if not layers:
-            QMessageBox.information(self, "レイヤ名変更", "変更できる検査レイヤがありません。")
+            QMessageBox.information(self, tr_text("レイヤ名変更"), tr_text("変更できる検査レイヤがありません。"))
             return
         if layer is None:
             labels = [self.display_layer_name(layer) for layer in layers]
@@ -2621,12 +2494,12 @@ class InspectionTabWidget(QWidget):
                     if layer.id() == current_layer.id():
                         current_index = idx
                         break
-            label, ok = QInputDialog.getItem(self, "レイヤ名変更", "変更するレイヤ:", labels, current_index, False)
+            label, ok = QInputDialog.getItem(self, tr_text("レイヤ名変更"), tr_text("変更するレイヤ:"), labels, current_index, False)
             if not ok:
                 return
             layer = layers[labels.index(label)]
         old_name = layer.customProperty(INSPECTION_PROP_PREFIX + "name", self.layer_base_name(layer))
-        new_name, ok = QInputDialog.getText(self, "レイヤ名変更", "新しいレイヤ名:", text=str(old_name))
+        new_name, ok = QInputDialog.getText(self, tr_text("レイヤ名変更"), tr_text("新しいレイヤ名:"), text=str(old_name))
         new_name = new_name.strip() if ok else ""
         if not new_name:
             return
@@ -2634,8 +2507,8 @@ class InspectionTabWidget(QWidget):
             return
         if QMessageBox.question(
             self,
-            "レイヤ名変更",
-            f"「{self.display_layer_name(layer)}」を「{new_name}」へ変更しますか？\nGPKG内の物理レイヤ名は変更しません。",
+            tr_text("レイヤ名変更"),
+            tr_text(f"「{self.display_layer_name(layer)}」を「{new_name}」へ変更しますか？\nGPKG内の物理レイヤ名は変更しません。"),
         ) != QMessageBox.StandardButton.Yes:
             return
         layer.setCustomProperty(INSPECTION_PROP_PREFIX + "name", new_name)
@@ -2655,8 +2528,9 @@ class InspectionTabWidget(QWidget):
             layer.dataProvider().changeAttributeValues(changes)
         self.update_layer_display_name(layer)
         layer.triggerRepaint()
+        self.write_gpkg_management_state()
         self.refresh_ui()
-        self.set_status(f"✅ レイヤ名変更: {new_name}")
+        self.set_status(tr_text(f"✅ レイヤ名変更: {new_name}"))
 
     def is_manual_layer(self, layer):
         if not isinstance(layer, QgsVectorLayer):
@@ -2702,7 +2576,7 @@ class InspectionTabWidget(QWidget):
                 if layer.id() == current_layer.id():
                     current_index = idx
                     break
-        label, ok = QInputDialog.getItem(self, title, "対象レイヤ:", labels, current_index, False)
+        label, ok = QInputDialog.getItem(self, title, tr_text("対象レイヤ:"), labels, current_index, False)
         if not ok:
             return None
         return layers[labels.index(label)]
@@ -2712,7 +2586,7 @@ class InspectionTabWidget(QWidget):
             layer = None
         layers = self.ordered_inspection_layers()
         if not layers:
-            QMessageBox.information(self, "色変更", "色変更できる検査レイヤがありません。")
+            QMessageBox.information(self, tr_text("色変更"), tr_text("色変更できる検査レイヤがありません。"))
             return
         if layer is None:
             layer = self.choose_layer_dialog("色変更", layers, self.active_layer())
@@ -2731,15 +2605,16 @@ class InspectionTabWidget(QWidget):
             self.layers[source]["preserve_style"] = False
         self.apply_style(layer, self.layer_descriptor(layer))
         layer.triggerRepaint()
+        self.write_gpkg_management_state()
         self.refresh_ui()
-        self.set_status(f"✅ 色変更: {self.display_layer_name(layer)}")
+        self.set_status(tr_text(f"✅ 色変更: {self.display_layer_name(layer)}"))
 
     def change_layer_size(self, layer=None):
         if not isinstance(layer, QgsVectorLayer):
             layer = None
         layers = self.ordered_inspection_layers()
         if not layers:
-            QMessageBox.information(self, "線・点サイズ変更", "変更できる検査レイヤがありません。")
+            QMessageBox.information(self, tr_text("線・点サイズ変更"), tr_text("変更できる検査レイヤがありません。"))
             return
         if layer is None:
             layer = self.choose_layer_dialog("線・点サイズ変更", layers, self.active_layer())
@@ -2756,7 +2631,7 @@ class InspectionTabWidget(QWidget):
         label = "点サイズ:" if geom_type == "point" else "線の太さ:"
         value_text, ok = QInputDialog.getItem(
             self,
-            "線・点サイズ変更",
+            tr_text("線・点サイズ変更"),
             f"{self.display_layer_name(layer)}\n{label}",
             choices,
             choices.index(current_text),
@@ -2767,10 +2642,10 @@ class InspectionTabWidget(QWidget):
         try:
             value = float(str(value_text).strip())
         except Exception:
-            QMessageBox.warning(self, "線・点サイズ変更", "数値を入力してください。")
+            QMessageBox.warning(self, tr_text("線・点サイズ変更"), tr_text("数値を入力してください。"))
             return
         if value <= 0:
-            QMessageBox.warning(self, "線・点サイズ変更", "0より大きい数値を入力してください。")
+            QMessageBox.warning(self, tr_text("線・点サイズ変更"), tr_text("0より大きい数値を入力してください。"))
             return
         value_text = self.format_size_text(value)
         layer.setCustomProperty(INSPECTION_PROP_PREFIX + key, value_text)
@@ -2781,6 +2656,7 @@ class InspectionTabWidget(QWidget):
             self.layers[source]["preserve_style"] = False
         self.apply_style(layer, self.layer_descriptor(layer))
         layer.triggerRepaint()
+        self.write_gpkg_management_state()
         self.refresh_ui()
         self.set_status(f"✅ {label} {value_text}: {self.display_layer_name(layer)}")
 
@@ -2789,7 +2665,7 @@ class InspectionTabWidget(QWidget):
             layer = None
         layers = self.manual_layers()
         if not layers:
-            QMessageBox.information(self, "レイヤ移動", "移動できる手動追加レイヤがありません。")
+            QMessageBox.information(self, tr_text("レイヤ移動"), tr_text("移動できる手動追加レイヤがありません。"))
             return
         if layer is None:
             labels = [self.display_layer_name(layer) for layer in layers]
@@ -2802,8 +2678,8 @@ class InspectionTabWidget(QWidget):
                         break
             label, ok = QInputDialog.getItem(
                 self,
-                "レイヤ移動",
-                "移動するレイヤ:\nレイヤ追加したレイヤのみ対象になります。",
+                tr_text("レイヤ移動"),
+                tr_text("移動するレイヤ:\nレイヤ追加したレイヤのみ対象になります。"),
                 labels,
                 current_layer_index,
                 False,
@@ -2812,12 +2688,12 @@ class InspectionTabWidget(QWidget):
                 return
             layer = layers[labels.index(label)]
         if not layer or not self.is_manual_layer(layer):
-            QMessageBox.information(self, "レイヤ移動", "レイヤ追加したレイヤのみ対象になります。")
+            QMessageBox.information(self, tr_text("レイヤ移動"), tr_text("レイヤ追加したレイヤのみ対象になります。"))
             return
         existing_rounds = sorted(self.standard_rounds())
-        choices = [("追加レイヤ", 0)] + [(f"{round_no}回目検査", round_no) for round_no in existing_rounds]
+        choices = [("追加レイヤ", 0)] + [(self.round_title(round_no), round_no) for round_no in existing_rounds]
         if len(choices) <= 1:
-            QMessageBox.information(self, "レイヤ移動", "移動先の検査回がまだ作成されていません。")
+            QMessageBox.information(self, tr_text("レイヤ移動"), tr_text("移動先の検査回がまだ作成されていません。"))
             return
         current_round = int(layer.customProperty(INSPECTION_PROP_PREFIX + "round_no", 0) or 0)
         current_index = 0
@@ -2826,128 +2702,568 @@ class InspectionTabWidget(QWidget):
                 current_index = index
                 break
         labels = [label for label, _round_no in choices]
-        choice, ok = QInputDialog.getItem(self, "レイヤ移動", "移動先:", labels, current_index, False)
+        choice, ok = QInputDialog.getItem(self, tr_text("レイヤ移動"), tr_text("移動先:"), labels, current_index, False)
         if not ok:
             return
         new_round = dict(choices).get(choice, 0)
         if QMessageBox.question(
             self,
-            "レイヤ移動",
-            f"「{self.display_layer_name(layer)}」を「{choice}」へ移動しますか？",
+            tr_text("レイヤ移動"),
+            tr_text(f"「{self.display_layer_name(layer)}」を「{choice}」へ移動しますか？"),
         ) != QMessageBox.StandardButton.Yes:
             return
         self.set_layer_round(layer, new_round)
         self.move_layer_node_to_round_group(layer, new_round)
         self.refresh_counts()
-        self.set_status(f"✅ レイヤ移動: {choice}")
+        self.set_status(tr_text(f"✅ レイヤ移動: {choice}"))
 
     def free_group_names(self):
         names = []
+
+        def add_name(value):
+            normalized = self.normalize_free_group_path(value)
+            if not normalized:
+                return
+            parts = self.free_group_path_parts(normalized)
+            for idx in range(1, len(parts) + 1):
+                path = FREE_GROUP_PATH_SEPARATOR.join(parts[:idx])
+                if path and path not in names:
+                    names.append(path)
+
         for name in self.free_groups:
-            name = str(name or "").strip()
-            if name and name not in names:
-                names.append(name)
+            add_name(name)
         for layer in self.inspection_layers():
             if self.layer_inspection_type(layer) != INSPECTION_TYPE_FREE:
                 continue
-            name = str(layer.customProperty(INSPECTION_PROP_PREFIX + "group_name", "") or "").strip()
-            if name and name not in names:
-                names.append(name)
-        return names
+            add_name(layer.customProperty(INSPECTION_PROP_PREFIX + "group_name", ""))
+        return self.sort_free_group_paths(names)
 
-    def add_free_group(self):
+    def sort_free_group_paths(self, names):
+        order = {name: index for index, name in enumerate(names)}
+
+        def key(name):
+            parts = self.free_group_path_parts(name)
+            path = ""
+            result = []
+            for part in parts:
+                path = self.child_free_group_path(path, part)
+                result.append((order.get(path, 10_000), part))
+            return tuple(result)
+
+        return sorted(names, key=key)
+
+    def normalize_free_group_path(self, group_name):
+        text = str(group_name or "").replace("\\", FREE_GROUP_PATH_SEPARATOR)
+        parts = [part.strip() for part in text.split(FREE_GROUP_PATH_SEPARATOR) if part.strip()]
+        return FREE_GROUP_PATH_SEPARATOR.join(parts)
+
+    def free_group_path_parts(self, group_name):
+        normalized = self.normalize_free_group_path(group_name)
+        return [part for part in normalized.split(FREE_GROUP_PATH_SEPARATOR) if part] if normalized else []
+
+    def free_group_parent_path(self, group_name):
+        parts = self.free_group_path_parts(group_name)
+        return FREE_GROUP_PATH_SEPARATOR.join(parts[:-1])
+
+    def free_group_leaf_name(self, group_name):
+        parts = self.free_group_path_parts(group_name)
+        return parts[-1] if parts else ""
+
+    def child_free_group_path(self, parent_group_name, child_name):
+        parent = self.normalize_free_group_path(parent_group_name)
+        child = str(child_name or "").strip()
+        return self.normalize_free_group_path(f"{parent}{FREE_GROUP_PATH_SEPARATOR}{child}" if parent else child)
+
+    def add_free_group(self, parent_group_name=None):
         if not self.is_free_inspection():
             return
         if not self.ensure_gpkg_path():
             return
-        name, ok = QInputDialog.getText(self, "グループ追加", "グループ名:")
+        parent_group_name = self.normalize_free_group_path(parent_group_name)
+        if parent_group_name is None:
+            parent_group_name = ""
+        if parent_group_name == "" and parent_group_name is not None:
+            selected_parent = self.selected_free_group_path()
+            if selected_parent:
+                parent_group_name = selected_parent
+        title = "子グループ追加" if parent_group_name else "グループ追加"
+        label = f"{self.free_group_title(parent_group_name)} の子グループ名:" if parent_group_name else "グループ名:"
+        name, ok = QInputDialog.getText(self, title, label)
         if not ok or not name.strip():
             return
         name = name.strip()
-        if name in self.free_group_names():
-            QMessageBox.information(self, "グループ追加", "同じ名前のグループが既にあります。")
+        if FREE_GROUP_PATH_SEPARATOR in name or "\\" in name:
+            QMessageBox.information(self, title, tr_text("グループ名に / や \\ は使えません。"))
             return
-        self.free_groups.append(name)
-        self.active_free_group_name = name
-        self.ensure_free_group(name)
+        group_path = self.child_free_group_path(parent_group_name, name)
+        if group_path in self.free_group_names():
+            QMessageBox.information(self, title, tr_text("同じ場所に同じ名前のグループが既にあります。"))
+            return
+        self.ensure_free_group(group_path)
+        self.active_free_group_name = group_path
+        self.write_gpkg_management_state()
         self.refresh_ui()
-        self.set_status(f"✅ グループ追加: {name}")
+        self.set_status(f"✅ {title}: {self.free_group_title(group_path)}")
 
     def rename_free_group(self, old_name=None):
         if not self.is_free_inspection():
             return
         groups = self.free_group_names()
+        old_name = self.normalize_free_group_path(old_name)
         if old_name == "":
-            QMessageBox.information(self, "グループ名変更", "自由式検査直下のレイヤはグループではありません。")
+            QMessageBox.information(self, tr_text("グループ名変更"), tr_text("自由式検査直下のレイヤはグループではありません。"))
             return
         elif not groups:
-            QMessageBox.information(self, "グループ名変更", "変更できる自由式グループがありません。")
+            QMessageBox.information(self, tr_text("グループ名変更"), tr_text("変更できる自由式グループがありません。"))
             return
         elif old_name not in groups:
-            choices = groups
-            old_label, ok = QInputDialog.getItem(self, "グループ名変更", "対象グループ:", choices, 0, False)
+            choices = [self.free_group_title(group) for group in groups]
+            old_label, ok = QInputDialog.getItem(self, tr_text("グループ名変更"), tr_text("対象グループ:"), choices, 0, False)
             if not ok:
                 return
-            old_name = old_label
+            old_name = groups[choices.index(old_label)]
         old_title = self.free_group_title(old_name)
-        new_name, ok = QInputDialog.getText(self, "グループ名変更", "新しいグループ名:", QLineEdit.EchoMode.Normal, old_title)
+        new_name, ok = QInputDialog.getText(self, tr_text("グループ名変更"), tr_text("新しいグループ名:"), QLineEdit.EchoMode.Normal, self.free_group_leaf_name(old_name))
         if not ok or not new_name.strip():
             return
         new_name = new_name.strip()
-        if new_name != old_name and new_name in groups:
-            QMessageBox.information(self, "グループ名変更", "同じ名前のグループが既にあります。")
+        if FREE_GROUP_PATH_SEPARATOR in new_name or "\\" in new_name:
+            QMessageBox.information(self, tr_text("グループ名変更"), tr_text("グループ名に / や \\ は使えません。"))
             return
-        self.free_groups = [new_name if name == old_name else name for name in self.free_groups]
-        if self.active_free_group_name == old_name:
-            self.active_free_group_name = new_name
+        parent_path = self.free_group_parent_path(old_name)
+        new_path = self.child_free_group_path(parent_path, new_name)
+        if new_path != old_name and new_path in groups:
+            QMessageBox.information(self, tr_text("グループ名変更"), tr_text("同じ名前のグループが既にあります。"))
+            return
+        self.free_groups = [
+            new_path + name[len(old_name):] if name == old_name or name.startswith(old_name + FREE_GROUP_PATH_SEPARATOR) else name
+            for name in self.free_groups
+        ]
+        active_group = self.normalize_free_group_path(self.active_free_group_name)
+        if active_group == old_name or active_group.startswith(old_name + FREE_GROUP_PATH_SEPARATOR):
+            self.active_free_group_name = new_path + active_group[len(old_name):]
         for layer in self.inspection_layers():
-            if self.layer_inspection_type(layer) == INSPECTION_TYPE_FREE and layer.customProperty(INSPECTION_PROP_PREFIX + "group_name", "") == old_name:
-                self.set_layer_group_name(layer, new_name)
-        root_group = self.ensure_inspection_root_group()
-        old_groups = self.direct_child_groups(root_group, old_name)
-        for group in old_groups:
+            if self.layer_inspection_type(layer) != INSPECTION_TYPE_FREE:
+                continue
+            group_name = self.normalize_free_group_path(layer.customProperty(INSPECTION_PROP_PREFIX + "group_name", ""))
+            if group_name == old_name or group_name.startswith(old_name + FREE_GROUP_PATH_SEPARATOR):
+                self.set_layer_group_name(layer, new_path + group_name[len(old_name):])
+        group = self.find_free_group_node(old_name)
+        if group is not None:
             try:
                 group.setName(new_name)
             except Exception:
                 pass
-        self.organize_inspection_layers(silent=True)
+        self.write_gpkg_management_state()
         self.refresh_ui()
-        self.set_status(f"✅ グループ名変更: {old_title} → {new_name}")
+        self.set_status(tr_text(f"✅ グループ名変更: {old_title} → {self.free_group_title(new_path)}"))
+
+    def move_free_group(self, source_group=None):
+        if not self.is_free_inspection():
+            return
+        groups = self.free_group_names()
+        source_group = self.normalize_free_group_path(source_group)
+        if not groups:
+            QMessageBox.information(self, tr_text("グループ移動"), tr_text("移動できる自由式グループがありません。"))
+            return
+        if not source_group:
+            choices = [self.free_group_title(group) for group in groups]
+            label, ok = QInputDialog.getItem(self, tr_text("グループ移動"), tr_text("移動するグループ:"), choices, 0, False)
+            if not ok:
+                return
+            source_group = groups[choices.index(label)]
+        if source_group not in groups:
+            QMessageBox.information(self, tr_text("グループ移動"), tr_text("移動するグループが見つかりません。"))
+            return
+        leaf_name = self.free_group_leaf_name(source_group)
+        parent_path = self.free_group_parent_path(source_group)
+        destinations = [("", "検査直下")]
+        for group in groups:
+            if group == source_group or group.startswith(source_group + FREE_GROUP_PATH_SEPARATOR):
+                continue
+            destinations.append((group, self.free_group_title(group)))
+        labels = [label for _path, label in destinations]
+        current_index = 0
+        for idx, (path, _label) in enumerate(destinations):
+            if path == parent_path:
+                current_index = idx
+                break
+        label, ok = QInputDialog.getItem(self, tr_text("グループ移動"), tr_text("移動先:"), labels, current_index, False)
+        if not ok:
+            return
+        target_parent = destinations[labels.index(label)][0]
+        new_path = self.child_free_group_path(target_parent, leaf_name)
+        if new_path == source_group:
+            return
+        if new_path in groups:
+            QMessageBox.information(self, tr_text("グループ移動"), tr_text("移動先に同じ名前のグループが既にあります。"))
+            return
+        old_title = self.free_group_title(source_group)
+        new_title = self.free_group_title(new_path)
+        if QMessageBox.question(self, tr_text("グループ移動"), tr_text(f"「{old_title}」を「{self.free_group_title(target_parent)}」へ移動しますか？")) != QMessageBox.StandardButton.Yes:
+            return
+        self.move_free_group_tree_node(source_group, target_parent)
+        self.free_groups = [
+            new_path + name[len(source_group):] if name == source_group or name.startswith(source_group + FREE_GROUP_PATH_SEPARATOR) else name
+            for name in self.free_groups
+        ]
+        active_group = self.normalize_free_group_path(self.active_free_group_name)
+        if active_group == source_group or active_group.startswith(source_group + FREE_GROUP_PATH_SEPARATOR):
+            self.active_free_group_name = new_path + active_group[len(source_group):]
+        for layer in self.inspection_layers():
+            if self.layer_inspection_type(layer) != INSPECTION_TYPE_FREE:
+                continue
+            group_name = self.normalize_free_group_path(layer.customProperty(INSPECTION_PROP_PREFIX + "group_name", ""))
+            if group_name == source_group or group_name.startswith(source_group + FREE_GROUP_PATH_SEPARATOR):
+                updated = new_path + group_name[len(source_group):]
+                layer.setCustomProperty(INSPECTION_PROP_PREFIX + "group_name", updated)
+                source = layer.customProperty(INSPECTION_PROP_PREFIX + "source_name", "")
+                if source in self.layers:
+                    self.layers[source]["group_name"] = updated
+        QApplication.processEvents()
+        self.refresh_ui()
+        self.set_status(tr_text(f"✅ グループ移動: {old_title} → {new_title}"))
+
+    def move_free_group_tree_node(self, source_group, target_parent):
+        source_node = self.find_free_group_node(source_group)
+        if source_node is None:
+            self.ensure_free_group(source_group)
+            source_node = self.find_free_group_node(source_group)
+        target_parent_node = self.ensure_free_group(target_parent)
+        if source_node is None or target_parent_node is None:
+            return False
+        try:
+            old_parent = source_node.parent()
+            clone = source_node.clone()
+            children = list(target_parent_node.children())
+            target_parent_node.insertChildNode(len(children), clone)
+            if old_parent is not None:
+                old_parent.removeChildNode(source_node)
+            return True
+        except Exception as exc:
+            QgsMessageLog.logMessage(f"自由式グループ移動エラー: {source_group} -> {target_parent}: {exc}", "OrthoManager", Qgis.MessageLevel.Warning)
+            return False
+
+    def apply_free_group_path_change(self, source_group, new_path):
+        source_group = self.normalize_free_group_path(source_group)
+        new_path = self.normalize_free_group_path(new_path)
+        if not source_group or not new_path:
+            return False
+        self.free_groups = [
+            new_path + name[len(source_group):]
+            if name == source_group or name.startswith(source_group + FREE_GROUP_PATH_SEPARATOR)
+            else name
+            for name in self.free_groups
+        ]
+        active_group = self.normalize_free_group_path(self.active_free_group_name)
+        if active_group == source_group or active_group.startswith(source_group + FREE_GROUP_PATH_SEPARATOR):
+            self.active_free_group_name = new_path + active_group[len(source_group):]
+        for layer in self.inspection_layers():
+            if self.layer_inspection_type(layer) != INSPECTION_TYPE_FREE:
+                continue
+            group_name = self.normalize_free_group_path(layer.customProperty(INSPECTION_PROP_PREFIX + "group_name", ""))
+            if group_name == source_group or group_name.startswith(source_group + FREE_GROUP_PATH_SEPARATOR):
+                updated = new_path + group_name[len(source_group):]
+                layer.setCustomProperty(INSPECTION_PROP_PREFIX + "group_name", updated)
+                source = layer.customProperty(INSPECTION_PROP_PREFIX + "source_name", "")
+                if source in self.layers:
+                    self.layers[source]["group_name"] = updated
+        return True
+
+    def free_group_subtree_paths(self, source_group, groups=None):
+        source_group = self.normalize_free_group_path(source_group)
+        groups = groups or self.free_group_names()
+        return [
+            name for name in groups
+            if name == source_group or name.startswith(source_group + FREE_GROUP_PATH_SEPARATOR)
+        ]
+
+    def free_root_child_positions(self, root_group_names, direct_layers):
+        root_group_names = set(root_group_names or [])
+        direct_sources = {
+            layer.customProperty(INSPECTION_PROP_PREFIX + "source_name", "")
+            for layer in direct_layers or []
+        }
+        group_positions = {}
+        layer_positions = {}
+        root_group = self.ensure_inspection_root_group(INSPECTION_TYPE_FREE)
+        try:
+            children = list(root_group.children())
+        except Exception:
+            return group_positions, layer_positions
+        for index, child in enumerate(children):
+            try:
+                layer = child.layer()
+            except Exception:
+                layer = None
+            if layer:
+                source = layer.customProperty(INSPECTION_PROP_PREFIX + "source_name", "")
+                group_name = self.normalize_free_group_path(layer.customProperty(INSPECTION_PROP_PREFIX + "group_name", ""))
+                if source in direct_sources and not group_name:
+                    layer_positions[source] = index
+                continue
+            try:
+                name = child.name()
+            except Exception:
+                name = ""
+            if name in root_group_names and name not in group_positions:
+                group_positions[name] = index
+        return group_positions, layer_positions
+
+    def free_root_child_count(self):
+        root_group = self.ensure_inspection_root_group(INSPECTION_TYPE_FREE)
+        try:
+            return len(list(root_group.children()))
+        except Exception:
+            return 0
+
+    def preferred_free_layer_parent_for_save(self, layer):
+        nodes = self.layer_tree_nodes_for_layer(layer.id()) if layer else []
+        if not nodes:
+            return None, ""
+        candidates = []
+        for parent, _node in nodes:
+            candidates.append((parent, self.free_group_path_from_node(parent)))
+        current = self.normalize_free_group_path(layer.customProperty(INSPECTION_PROP_PREFIX + "group_name", ""))
+        if current:
+            for parent, group_name in candidates:
+                if group_name == current:
+                    return parent, group_name
+        for parent, group_name in candidates:
+            if group_name:
+                return parent, group_name
+        return candidates[0]
+
+    def free_root_order_state(self):
+        root_group = self.ensure_inspection_root_group(INSPECTION_TYPE_FREE)
+        result = []
+        seen_groups = set()
+        seen_layers = set()
+        try:
+            children = list(root_group.children())
+        except Exception:
+            return result
+        for child in children:
+            try:
+                layer = child.layer()
+            except Exception:
+                layer = None
+            if layer and self.layer_inspection_type(layer) == INSPECTION_TYPE_FREE:
+                preferred_parent, preferred_group = self.preferred_free_layer_parent_for_save(layer)
+                if preferred_group or (preferred_parent is not None and not self.same_layer_tree_group(root_group, preferred_parent)):
+                    continue
+                source = layer.customProperty(INSPECTION_PROP_PREFIX + "source_name", "")
+                if source and source not in seen_layers:
+                    result.append({"type": "layer", "source_name": source})
+                    seen_layers.add(source)
+                continue
+            group_name = self.free_group_path_from_node(child)
+            if not group_name or self.free_group_parent_path(group_name) or group_name in seen_groups:
+                continue
+            result.append({"type": "group", "name": group_name})
+            seen_groups.add(group_name)
+        return result
+
+    def restore_free_root_order(self, order):
+        if not isinstance(order, list):
+            return
+        index = 0
+        for item in order:
+            if not isinstance(item, dict):
+                continue
+            item_type = item.get("type", "")
+            if item_type == "group":
+                group_name = self.normalize_free_group_path(item.get("name", ""))
+                if not group_name or self.free_group_parent_path(group_name):
+                    continue
+                if self.place_free_group_at_root_index(group_name, index):
+                    index += 1
+                continue
+            if item_type == "layer":
+                source_name = item.get("source_name", "")
+                layer = self.layer_by_source(source_name)
+                if layer is None or self.layer_inspection_type(layer) != INSPECTION_TYPE_FREE:
+                    continue
+                if self.normalize_free_group_path(layer.customProperty(INSPECTION_PROP_PREFIX + "group_name", "")):
+                    continue
+                if self.place_layer_at_free_root_index(layer, index):
+                    index += 1
+
+    def sync_free_groups_from_layer_tree(self):
+        root_group = self.ensure_inspection_root_group(INSPECTION_TYPE_FREE)
+        ordered = []
+
+        def add_path(path):
+            path = self.normalize_free_group_path(path)
+            if path and path not in ordered:
+                ordered.append(path)
+
+        def walk(parent, parent_path=""):
+            try:
+                children = list(parent.children())
+            except Exception:
+                return
+            for child in children:
+                try:
+                    child.layer()
+                    is_layer = True
+                except Exception:
+                    is_layer = False
+                if is_layer:
+                    continue
+                try:
+                    name = str(child.name() or "").strip()
+                except Exception:
+                    name = ""
+                if not name:
+                    continue
+                path = self.child_free_group_path(parent_path, name)
+                first = self.free_group_path_parts(path)[0] if self.free_group_path_parts(path) else ""
+                if first in ORTHO_MODULE_GROUP_NAMES:
+                    continue
+                add_path(path)
+                walk(child, path)
+
+        walk(root_group)
+        for name in self.free_group_names():
+            add_path(name)
+        self.free_groups = ordered
+
+    def sync_free_layer_groups_from_layer_tree(self):
+        changed = 0
+        for layer in self.inspection_layers():
+            if self.layer_inspection_type(layer) != INSPECTION_TYPE_FREE:
+                continue
+            _parent, parent_path = self.preferred_free_layer_parent_for_save(layer)
+            current = self.normalize_free_group_path(layer.customProperty(INSPECTION_PROP_PREFIX + "group_name", ""))
+            if current != parent_path:
+                self.set_layer_group_name(layer, parent_path)
+                changed += 1
+        self.sync_free_groups_from_layer_tree()
+        return changed
+
+    def reorder_free_group_paths_for_drop(self, moved_paths, target_group, position):
+        target_group = self.normalize_free_group_path(target_group)
+        position = position if position in ("before", "after", "inside", "root_top") else "after"
+        moved_set = set(moved_paths)
+        groups = [name for name in self.free_group_names() if name not in moved_set]
+        if position == "root_top":
+            groups[0:0] = moved_paths
+        elif position == "inside" or not target_group:
+            insert_index = len(groups)
+            if target_group:
+                for index, name in enumerate(groups):
+                    if name == target_group or name.startswith(target_group + FREE_GROUP_PATH_SEPARATOR):
+                        insert_index = index + 1
+            groups[insert_index:insert_index] = moved_paths
+        elif target_group in groups:
+            target_index = groups.index(target_group)
+            if position == "after":
+                while (
+                    target_index + 1 < len(groups)
+                    and groups[target_index + 1].startswith(target_group + FREE_GROUP_PATH_SEPARATOR)
+                ):
+                    target_index += 1
+                target_index += 1
+            groups[target_index:target_index] = moved_paths
+        else:
+            groups.extend(moved_paths)
+        self.free_groups = groups
+
+    def reorder_free_group_paths_for_layer_drop(self, moved_paths, target_layer, position):
+        if not moved_paths or target_layer is None:
+            return
+        position = position if position in ("before_layer", "after_layer") else "after_layer"
+        moved_set = set(moved_paths)
+        groups = [name for name in self.free_group_names() if name not in moved_set]
+        target_parent = self.normalize_free_group_path(target_layer.customProperty(INSPECTION_PROP_PREFIX + "group_name", ""))
+        target_nodes = self.layer_tree_nodes_for_layer(target_layer.id())
+        target_parent_node = None
+        target_node = None
+        for parent, node in target_nodes:
+            parent_path = self.free_group_path_from_node(parent)
+            if parent_path == target_parent:
+                target_parent_node = parent
+                target_node = node
+                break
+        if target_parent_node is None and target_nodes:
+            target_parent_node, target_node = target_nodes[0]
+            target_parent = self.free_group_path_from_node(target_parent_node)
+        anchor_group = ""
+        try:
+            children = list(target_parent_node.children())
+            target_index = children.index(target_node)
+        except Exception:
+            children = []
+            target_index = -1
+        if target_index >= 0:
+            for index, child in enumerate(children):
+                try:
+                    child.layer()
+                    is_layer = True
+                except Exception:
+                    is_layer = False
+                if is_layer:
+                    continue
+                group_path = self.free_group_path_from_node(child)
+                if not group_path or group_path in moved_set:
+                    continue
+                if self.free_group_parent_path(group_path) != target_parent:
+                    continue
+                if index > target_index or (position == "before_layer" and index >= target_index):
+                    anchor_group = group_path
+                    break
+        if anchor_group and anchor_group in groups:
+            insert_index = groups.index(anchor_group)
+        elif target_parent and target_parent in groups:
+            insert_index = groups.index(target_parent) + 1
+            while (
+                insert_index < len(groups)
+                and groups[insert_index].startswith(target_parent + FREE_GROUP_PATH_SEPARATOR)
+            ):
+                insert_index += 1
+        else:
+            insert_index = len(groups)
+        groups[insert_index:insert_index] = moved_paths
+        self.free_groups = groups
 
     def set_layer_group_name(self, layer, group_name):
-        group_name = str(group_name or "").strip()
+        group_name = self.normalize_free_group_path(group_name)
         layer.setCustomProperty(INSPECTION_PROP_PREFIX + "group_name", group_name)
         layer.setCustomProperty(INSPECTION_PROP_PREFIX + "inspection_type", INSPECTION_TYPE_FREE)
         source = layer.customProperty(INSPECTION_PROP_PREFIX + "source_name", "")
         if source in self.layers:
             self.layers[source]["group_name"] = group_name
             self.layers[source]["inspection_type"] = INSPECTION_TYPE_FREE
-        if group_name and group_name not in self.free_groups:
-            self.free_groups.append(group_name)
+        if group_name:
+            self.ensure_free_group(group_name)
+        self.schedule_gpkg_management_sync()
 
     def delete_manual_layer(self, layer=None):
         if not isinstance(layer, QgsVectorLayer):
             layer = None
         layers = self.manual_layers()
         if not layers:
-            QMessageBox.information(self, "手動削除", "削除できる手動追加レイヤがありません。")
+            QMessageBox.information(self, tr_text("手動削除"), tr_text("削除できる手動追加レイヤがありません。"))
             return
         if layer is None:
             layer = self.choose_layer_dialog("手動削除", layers, self.active_layer())
             if not layer:
                 return
         if not self.is_manual_layer(layer):
-            QMessageBox.information(self, "手動削除", "手動追加レイヤだけ削除できます。")
+            QMessageBox.information(self, tr_text("手動削除"), tr_text("手動追加レイヤだけ削除できます。"))
             return
         source = layer.customProperty(INSPECTION_PROP_PREFIX + "source_name", "")
         if QMessageBox.question(
             self,
-            "手動レイヤ削除",
-            f"手動追加レイヤ「{self.display_layer_name(layer)}」を削除しますか？\nQGIS上のレイヤとGPKG内の該当レイヤを削除します。",
+            tr_text("手動レイヤ削除"),
+            tr_text(f"手動追加レイヤ「{self.display_layer_name(layer)}」を削除しますか？\nQGIS上のレイヤとGPKG内の該当レイヤを削除します。"),
         ) != QMessageBox.StandardButton.Yes:
             return
         layer_id = layer.id()
+        self.force_removed_layer_canvas_refresh(layer)
         QgsProject.instance().removeMapLayer(layer_id)
+        self.force_removed_layer_canvas_refresh()
         self.layers.pop(source, None)
         if self.active_layer_id == layer_id:
             self.active_layer_id = ""
@@ -2955,15 +3271,16 @@ class InspectionTabWidget(QWidget):
         deleted = self.delete_gpkg_layer(source)
         self.refresh_ui()
         if deleted:
-            self.set_status(f"🗑 手動レイヤ削除: {source}")
+            self.set_status(tr_text(f"🗑 手動レイヤ削除: {source}"))
         else:
-            QMessageBox.warning(self, "手動レイヤ削除", "QGIS上のレイヤは削除しましたが、GPKG内レイヤの削除に失敗しました。QGIS再起動後に再実行してください。")
+            QMessageBox.warning(self, tr_text("手動レイヤ削除"), tr_text("QGIS上のレイヤは削除しましたが、GPKG内レイヤの削除に失敗しました。QGIS再起動後に再実行してください。"))
 
-    def delete_gpkg_layer(self, source_name):
-        if not OGR_OK or not self.gpkg_path or not os.path.exists(self.gpkg_path):
+    def delete_gpkg_layer(self, source_name, gpkg_path=None):
+        gpkg_path = gpkg_path or self.gpkg_path
+        if not OGR_OK or not gpkg_path or not os.path.exists(gpkg_path):
             return False
         try:
-            ds = ogr.Open(self.gpkg_path, 1)
+            ds = ogr.Open(gpkg_path, 1)
             if ds is None:
                 return False
             for idx in range(ds.GetLayerCount()):
@@ -2978,6 +3295,19 @@ class InspectionTabWidget(QWidget):
             return False
         return False
 
+    def gpkg_layer_exists(self, source_name, gpkg_path=None):
+        gpkg_path = gpkg_path or self.gpkg_path
+        if not OGR_OK or not gpkg_path or not os.path.exists(gpkg_path):
+            return False
+        ds = None
+        try:
+            ds = ogr.Open(gpkg_path, 0)
+            return bool(ds and ds.GetLayerByName(source_name))
+        except Exception:
+            return False
+        finally:
+            ds = None
+
     def delete_layers_physically(self, layers):
         if not layers:
             return []
@@ -2986,20 +3316,48 @@ class InspectionTabWidget(QWidget):
         for layer in layers:
             source = layer.customProperty(INSPECTION_PROP_PREFIX + "source_name", "")
             if source:
-                sources.append(source)
+                sources.append((source, self.layer_source_path(layer) or self.inspection_gpkg_path(self.layer_inspection_type(layer))))
             try:
+                self.force_removed_layer_canvas_refresh(layer)
                 project.removeMapLayer(layer.id())
             except Exception as exc:
                 QgsMessageLog.logMessage(f"検査レイヤ削除エラー: {exc}", "OrthoManager", Qgis.MessageLevel.Warning)
         QApplication.processEvents()
+        self.force_removed_layer_canvas_refresh()
         failed = []
-        for source in sources:
+        for source, gpkg_path in sources:
             self.layers.pop(source, None)
-            if not self.delete_gpkg_layer(source):
+            if not self.delete_gpkg_layer(source, gpkg_path):
                 failed.append(source)
         if self.active_layer_id and not project.mapLayer(self.active_layer_id):
             self.active_layer_id = ""
         return failed
+
+    def force_removed_layer_canvas_refresh(self, layer=None):
+        def refresh_once():
+            try:
+                if layer:
+                    layer.triggerRepaint()
+            except Exception:
+                pass
+            try:
+                canvas = self.iface.mapCanvas()
+                cache = canvas.cache()
+                if cache and layer:
+                    cache.invalidateCacheForLayer(layer)
+                if hasattr(canvas, "refreshAllLayers"):
+                    canvas.refreshAllLayers()
+                else:
+                    canvas.refresh()
+            except Exception:
+                pass
+            try:
+                if hasattr(self.main_ui, "invalidate_interaction_image_caches"):
+                    self.main_ui.invalidate_interaction_image_caches()
+            except Exception:
+                pass
+        refresh_once()
+        QTimer.singleShot(80, refresh_once)
 
     def remove_direct_group(self, group_name):
         root = QgsProject.instance().layerTreeRoot()
@@ -3012,6 +3370,20 @@ class InspectionTabWidget(QWidget):
                 QgsMessageLog.logMessage(f"検査グループ削除エラー: {exc}", "OrthoManager", Qgis.MessageLevel.Warning)
         return removed
 
+    def delete_current_trash_layers_physically(self):
+        failed = []
+        for layer in list(self.trash_layers()):
+            try:
+                self.force_removed_layer_canvas_refresh(layer)
+                QgsProject.instance().removeMapLayer(layer.id())
+            except Exception as exc:
+                QgsMessageLog.logMessage(f"ゴミ箱レイヤ削除エラー: {exc}", "OrthoManager", Qgis.MessageLevel.Warning)
+        for source in TRASH_LAYER_SOURCES.values():
+            if self.gpkg_layer_exists(source, self.gpkg_path) and not self.delete_gpkg_layer(source, self.gpkg_path):
+                failed.append(source)
+        self.trash_layer_ids.clear()
+        return failed
+
     def delete_current_inspection_type(self):
         is_free = self.is_free_inspection()
         root_group_name = FREE_INSPECTION_GROUP if is_free else INSPECTION_GROUP
@@ -3020,11 +3392,12 @@ class InspectionTabWidget(QWidget):
         root = QgsProject.instance().layerTreeRoot()
         group_exists = root.findGroup(root_group_name) is not None
         if not layers and not group_exists:
-            QMessageBox.information(self, title, "削除できる検査グループまたは検査レイヤがありません。")
+            QMessageBox.information(self, title, tr_text("削除できる検査グループまたは検査レイヤがありません。"))
             return
         if is_free:
             message = (
                 "自由式検査グループ内の全レイヤをGPKGから完全削除します。\n"
+                "自由式検査GPKG内のゴミ箱レイヤも削除します。\n"
                 "空の自由式検査グループだけがある場合は、グループだけ削除します。\n"
                 "削除した地物は元に戻せません。\n"
                 "削除後は自由式検査で新しいレイヤを追加できます。\n\n"
@@ -3033,47 +3406,51 @@ class InspectionTabWidget(QWidget):
         else:
             message = (
                 "オルソ検査グループ内の全検査回・全レイヤをGPKGから完全削除します。\n"
+                "オルソ検査GPKG内のゴミ箱レイヤも削除します。\n"
                 "空のオルソ検査グループだけがある場合は、グループだけ削除します。\n"
                 "削除した地物は元に戻せません。\n"
-                "削除後は新規検査で1回目から作成し直せます。\n\n"
+            "削除後は検査作成で1回目から作成し直せます。\n\n"
                 "続行しますか？"
             )
         if QMessageBox.question(self, title, message) != QMessageBox.StandardButton.Yes:
             return
         failed = self.delete_layers_physically(layers) if layers else []
+        failed.extend(self.delete_current_trash_layers_physically())
         if is_free:
             self.free_groups.clear()
         self.remove_direct_group(root_group_name)
         self.refresh_ui()
         if failed:
-            QMessageBox.warning(self, title, "一部のGPKGレイヤ削除に失敗しました。\nQGIS再起動後に再実行してください。\n" + "\n".join(failed))
+            QMessageBox.warning(self, title, tr_text("一部のGPKGレイヤ削除に失敗しました。\nQGIS再起動後に再実行してください。\n" + "\n".join(failed)))
         else:
-            self.set_status(f"✅ {title}: {len(layers)} レイヤ")
+            self.set_status(tr_text(f"✅ {title}: {len(layers)} レイヤ"))
     def delete_ortho_round(self):
         rounds = sorted(self.standard_rounds())
         if not rounds:
-            QMessageBox.information(self, "検査回削除", "削除できる検査回がありません。")
+            QMessageBox.information(self, tr_text("検査回削除"), tr_text("削除できる検査回がありません。"))
             return
-        choices = [f"{round_no}回目検査" for round_no in rounds]
-        choice, ok = QInputDialog.getItem(self, "検査回削除", "削除する検査回:", choices, 0, False)
+        choices = [self.round_title(round_no) for round_no in rounds]
+        choice, ok = QInputDialog.getItem(self, tr_text("検査回削除"), tr_text("削除する検査回:"), choices, 0, False)
         if not ok:
             return
-        round_no = int(choice.split("回目", 1)[0])
+        round_no = next((round_no for round_no in rounds if self.round_title(round_no) == choice), 0)
+        if not round_no:
+            return
         layers = [
             layer for layer in self.inspection_layers()
             if self.layer_inspection_type(layer) == INSPECTION_TYPE_ORTHO
             and int(layer.customProperty(INSPECTION_PROP_PREFIX + "round_no", 0) or 0) == round_no
         ]
         if not layers:
-            QMessageBox.information(self, "検査回削除", "削除対象レイヤがありません。")
+            QMessageBox.information(self, tr_text("検査回削除"), tr_text("削除対象レイヤがありません。"))
             return
         message = (
             f"{choice}の標準レイヤと、その検査回内の手動追加レイヤをGPKGから完全削除します。\n"
             "削除した地物は元に戻せません。\n"
-            f"削除後は「{round_no}回目追加」で空の検査回として再作成できます。\n\n"
+            f"削除後は「{self.round_title(round_no)}」を再作成できます。\n\n"
             "続行しますか？"
         )
-        if QMessageBox.question(self, "検査回削除", message) != QMessageBox.StandardButton.Yes:
+        if QMessageBox.question(self, tr_text("検査回削除"), message) != QMessageBox.StandardButton.Yes:
             return
         failed = self.delete_layers_physically(layers)
         root_group = self.ensure_inspection_root_group(INSPECTION_TYPE_ORTHO)
@@ -3084,54 +3461,65 @@ class InspectionTabWidget(QWidget):
                 pass
         self.refresh_ui()
         if failed:
-            QMessageBox.warning(self, "検査回削除", "一部のGPKGレイヤ削除に失敗しました。\nQGIS再起動後に再実行してください。\n" + "\n".join(failed))
+            QMessageBox.warning(self, tr_text("検査回削除"), tr_text("一部のGPKGレイヤ削除に失敗しました。\nQGIS再起動後に再実行してください。\n" + "\n".join(failed)))
         else:
-            self.set_status(f"✅ 検査回削除: {choice}")
+            self.set_status(tr_text(f"✅ 検査回削除: {choice}"))
 
     def delete_free_group(self, group_name=None):
         groups = self.free_group_names()
+        group_name = self.normalize_free_group_path(group_name)
         if group_name == "":
-            QMessageBox.information(self, "グループ削除", "自由式検査直下はグループではありません。レイヤは手動削除してください。")
+            QMessageBox.information(self, tr_text("グループ削除"), tr_text("自由式検査直下はグループではありません。レイヤは手動削除してください。"))
             return
         elif not groups:
-            QMessageBox.information(self, "グループ削除", "削除できる自由式グループがありません。")
+            QMessageBox.information(self, tr_text("グループ削除"), tr_text("削除できる自由式グループがありません。"))
             return
         elif group_name not in groups:
-            choices = groups
-            group_label, ok = QInputDialog.getItem(self, "グループ削除", "削除するグループ:", choices, 0, False)
+            choices = [self.free_group_title(group) for group in groups]
+            group_label, ok = QInputDialog.getItem(self, tr_text("グループ削除"), tr_text("削除するグループ:"), choices, 0, False)
             if not ok:
                 return
-            group_name = group_label
+            group_name = groups[choices.index(group_label)]
+        delete_groups = {
+            name for name in self.free_group_names()
+            if name == group_name or name.startswith(group_name + FREE_GROUP_PATH_SEPARATOR)
+        }
         layers = [
             layer for layer in self.inspection_layers()
             if self.layer_inspection_type(layer) == INSPECTION_TYPE_FREE
-            and layer.customProperty(INSPECTION_PROP_PREFIX + "group_name", "") == group_name
+            and self.normalize_free_group_path(layer.customProperty(INSPECTION_PROP_PREFIX + "group_name", "")) in delete_groups
         ]
         group_title = self.free_group_title(group_name)
         message = (
-            f"自由式グループ「{group_title}」内のレイヤをGPKGから完全削除します。\n"
+            f"グループ「{group_title}」と子グループ内のレイヤをGPKGから完全削除します。\n"
             "削除した地物は元に戻せません。\n"
             "空グループの場合はグループ表示だけ削除します。\n\n"
             "続行しますか？"
         )
-        if QMessageBox.question(self, "グループ削除", message) != QMessageBox.StandardButton.Yes:
+        if QMessageBox.question(self, tr_text("グループ削除"), message) != QMessageBox.StandardButton.Yes:
             return
         failed = self.delete_layers_physically(layers)
-        if self.active_free_group_name == group_name:
+        active_group = self.normalize_free_group_path(self.active_free_group_name)
+        if active_group == group_name or active_group.startswith(group_name + FREE_GROUP_PATH_SEPARATOR):
             self.active_free_group_name = ""
-        self.free_groups = [name for name in self.free_groups if name != group_name]
-        root_group = self.ensure_inspection_root_group(INSPECTION_TYPE_FREE)
-        if group_name:
-            for group in self.direct_child_groups(root_group, group_name):
-                try:
-                    root_group.removeChildNode(group)
-                except Exception:
-                    pass
+        self.free_groups = [
+            name for name in self.free_groups
+            if name not in delete_groups and not name.startswith(group_name + FREE_GROUP_PATH_SEPARATOR)
+        ]
+        group = self.find_free_group_node(group_name)
+        if group is not None:
+            try:
+                parent = group.parent()
+                if parent is not None:
+                    parent.removeChildNode(group)
+            except Exception:
+                pass
+        self.write_gpkg_management_state()
         self.refresh_ui()
         if failed:
-            QMessageBox.warning(self, "グループ削除", "一部のGPKGレイヤ削除に失敗しました。\nQGIS再起動後に再実行してください。\n" + "\n".join(failed))
+            QMessageBox.warning(self, tr_text("グループ削除"), tr_text("一部のGPKGレイヤ削除に失敗しました。\nQGIS再起動後に再実行してください。\n" + "\n".join(failed)))
         else:
-            self.set_status(f"✅ グループ削除: {group_title}")
+            self.set_status(tr_text(f"✅ グループ削除: {group_title}"))
 
     def delete_empty_geometry_features(self):
         targets = []
@@ -3156,28 +3544,306 @@ class InspectionTabWidget(QWidget):
                 targets.append((layer, ids))
         total = sum(len(ids) for _layer, ids in targets)
         if total == 0:
-            QMessageBox.information(self, "空地物削除", "ジオメトリなしの検査地物はありません。")
+            QMessageBox.information(self, tr_text("空地物削除"), tr_text("ジオメトリなしの検査地物はありません。"))
             return
-        if QMessageBox.question(self, "空地物削除", f"ジオメトリなしの検査地物 {total} 件を削除しますか？") != QMessageBox.StandardButton.Yes:
+        if QMessageBox.question(self, tr_text("空地物削除"), tr_text(f"ジオメトリなしの検査地物 {total} 件を削除しますか？")) != QMessageBox.StandardButton.Yes:
             return
         for layer, ids in targets:
             layer.dataProvider().deleteFeatures(ids)
             layer.removeSelection()
             self.refresh_vector_layer_after_data_change(layer, reload_data=True)
         self.refresh_counts()
-        self.set_status(f"🧹 空地物削除: {total} 件")
+        self.set_status(tr_text(f"🧹 空地物削除: {total} 件"))
 
     def organize_inspection_layers(self, silent=False):
         self.ensure_inspection_root_group()
+        unmanaged_moved = self.move_unmanaged_layers_out_of_inspection_group()
         removed_duplicates = self.remove_duplicate_loaded_inspection_layers()
+        free_synced = self.sync_free_layer_groups_from_layer_tree()
         moved = 0
         for layer in self.inspection_layers():
+            if not self.is_standard_ortho_module_layer(layer):
+                continue
             if self.move_layer_node_to_inspection_group(layer):
                 moved += 1
+        removed_empty_groups = self.remove_nested_empty_module_groups()
+        reordered = self.reorder_ortho_round_groups()
+        reordered_groups = self.reorder_ortho_module_groups()
         self.refresh_counts()
+        self.schedule_gpkg_management_sync()
+        self.schedule_layer_lock_indicator_rebuild()
         if not silent:
             extra = f" / 重複削除:{removed_duplicates}" if removed_duplicates else ""
-            self.set_status(f"✅ レイヤ整理: {moved} レイヤ{extra}")
+            if free_synced:
+                extra += f" / 所属同期:{free_synced}"
+            if removed_empty_groups:
+                extra += f" / 空グループ削除:{removed_empty_groups}"
+            if unmanaged_moved:
+                extra += f" / 未管理外出し:{unmanaged_moved}"
+            if reordered:
+                extra += f" / 順番復元:{reordered}"
+            if reordered_groups:
+                extra += f" / グループ順:{reordered_groups}"
+            self.set_status(tr_text(f"✅ レイヤ整理: {moved} レイヤ{extra}"))
+
+    def move_unmanaged_layers_out_of_inspection_group(self):
+        root = QgsProject.instance().layerTreeRoot()
+        root_group_names = {self.root_group_name_for_type(inspection_type) for inspection_type in INSPECTION_TYPES}
+        moved = 0
+        for inspection_group in list(self.inspection_root_groups()):
+            parent = inspection_group.parent()
+            if parent is None:
+                parent = root
+            moved += self._move_unmanaged_layers_out_of_group(inspection_group, parent, root_group_names)
+        moved += self.restore_unmanaged_vector_layers_without_tree_node(root)
+        return moved
+
+    def _move_unmanaged_layers_out_of_group(self, group, target_parent, root_group_names):
+        moved = 0
+        try:
+            children = list(group.children())
+        except Exception:
+            return moved
+        for child in children:
+            layer = None
+            try:
+                layer = child.layer()
+            except Exception:
+                layer = None
+            if layer is not None:
+                if self.is_managed_inspection_layer(layer) or self.is_trash_layer(layer):
+                    continue
+                try:
+                    new_node = QgsLayerTreeLayer(layer)
+                    self.copy_layer_tree_visibility(layer, new_node)
+                    target_parent.addChildNode(new_node)
+                    if group.removeChildNode(child):
+                        moved += 1
+                except Exception as exc:
+                    QgsMessageLog.logMessage(f"未管理レイヤ外出しエラー: {layer.name()} / {exc}", "OrthoManager", Qgis.MessageLevel.Warning)
+                continue
+            try:
+                name = str(child.name() or "")
+            except Exception:
+                name = ""
+            if name in root_group_names:
+                continue
+            moved += self._move_unmanaged_layers_out_of_group(child, target_parent, root_group_names)
+        return moved
+
+    def restore_unmanaged_vector_layers_without_tree_node(self, target_parent):
+        restored = 0
+        for layer in QgsProject.instance().mapLayers().values():
+            if not isinstance(layer, QgsVectorLayer):
+                continue
+            if self.is_managed_inspection_layer(layer) or self.is_trash_layer(layer):
+                continue
+            if self.layer_tree_nodes_for_layer(layer.id()):
+                continue
+            try:
+                target_parent.addLayer(layer)
+                restored += 1
+            except Exception as exc:
+                QgsMessageLog.logMessage(f"未管理レイヤ再表示エラー: {layer.name()} / {exc}", "OrthoManager", Qgis.MessageLevel.Warning)
+        return restored
+
+    def is_managed_inspection_layer(self, layer):
+        if not isinstance(layer, QgsVectorLayer):
+            return False
+        try:
+            return bool(layer.customProperty(INSPECTION_PROP_PREFIX + "source_name", ""))
+        except Exception:
+            return False
+
+    def is_standard_ortho_module_layer(self, layer):
+        if not layer or self.layer_inspection_type(layer) != INSPECTION_TYPE_ORTHO:
+            return False
+        if self.is_manual_layer(layer):
+            return False
+        try:
+            round_no = int(layer.customProperty(INSPECTION_PROP_PREFIX + "round_no", 0) or 0)
+        except Exception:
+            round_no = 0
+        return round_no in ROUND_ITEMS
+
+    def reorder_ortho_round_groups(self):
+        root_groups = self.inspection_root_groups(INSPECTION_TYPE_ORTHO)
+        if not root_groups:
+            return 0
+        total = 0
+        for root_group in root_groups:
+            for round_no in sorted(ROUND_ITEMS.keys()):
+                group_name = self.round_title(round_no)
+                for round_group in self.direct_child_groups(root_group, group_name):
+                    total += self.reorder_ortho_round_group(round_group, round_no)
+        return total
+
+    def reorder_ortho_module_groups(self):
+        root_groups = self.inspection_root_groups(INSPECTION_TYPE_ORTHO)
+        if not root_groups:
+            return 0
+        moved = 0
+        for root_group in root_groups:
+            moved += self.reorder_direct_groups(root_group, [self.round_title(round_no) for round_no in sorted(ROUND_ITEMS.keys())])
+        return moved
+
+    def reorder_direct_groups(self, parent_group, group_names):
+        group_names = [name for name in group_names if name]
+        if not parent_group or not group_names:
+            return 0
+        nodes = []
+        for name in group_names:
+            groups = self.direct_child_groups(parent_group, name)
+            if groups:
+                nodes.append(groups[0])
+        if len(nodes) < 2:
+            return 0
+        try:
+            children = list(parent_group.children())
+        except Exception:
+            return 0
+        existing_indices = []
+        for node in nodes:
+            try:
+                existing_indices.append(children.index(node))
+            except Exception:
+                pass
+        if not existing_indices:
+            return 0
+        insert_index = min(existing_indices)
+        moved = 0
+        for name in group_names:
+            groups = self.direct_child_groups(parent_group, name)
+            if not groups:
+                continue
+            group = groups[0]
+            try:
+                children = list(parent_group.children())
+                current_index = children.index(group)
+            except Exception:
+                continue
+            if current_index != insert_index:
+                try:
+                    clone = group.clone()
+                    parent_group.insertChildNode(insert_index, clone)
+                    parent_group.removeChildNode(group)
+                    moved += 1
+                except Exception as exc:
+                    QgsMessageLog.logMessage(f"検査グループ順番復元エラー: {name}: {exc}", "OrthoManager", Qgis.MessageLevel.Warning)
+                    continue
+            insert_index += 1
+        return moved
+
+    def reorder_ortho_round_group(self, round_group, round_no):
+        code_order = {code: index for index, (code, _name, _color) in enumerate(ROUND_ITEMS.get(round_no, []))}
+        if not code_order:
+            return 0
+        children = list(round_group.children())
+        layer_rows = []
+        for current_index, child in enumerate(children):
+            try:
+                layer = child.layer()
+            except Exception:
+                layer = None
+            if not layer or self.layer_inspection_type(layer) != INSPECTION_TYPE_ORTHO:
+                continue
+            try:
+                layer_round = int(layer.customProperty(INSPECTION_PROP_PREFIX + "round_no", 0) or 0)
+            except Exception:
+                layer_round = 0
+            if layer_round != round_no:
+                continue
+            code = str(layer.customProperty(INSPECTION_PROP_PREFIX + "code", "") or "")
+            order_index = code_order.get(code, 1000 + current_index)
+            layer_rows.append((order_index, current_index, layer))
+        if len(layer_rows) < 2:
+            return 0
+        desired = [layer for _order, _index, layer in sorted(layer_rows, key=lambda row: (row[0], row[1]))]
+        current = [layer for _order, _index, layer in sorted(layer_rows, key=lambda row: row[1])]
+        if [layer.id() for layer in desired] == [layer.id() for layer in current]:
+            return 0
+        moved = 0
+        for index, layer in enumerate(desired):
+            if self.place_layer_at_group_index(layer, round_group, index):
+                moved += 1
+        return moved
+
+    def remove_nested_empty_inspection_groups(self):
+        removed = 0
+        for inspection_type in INSPECTION_TYPES:
+            for root_group in self.inspection_root_groups(inspection_type):
+                removed += self.remove_nested_empty_groups_under(root_group, is_root=True)
+        return removed
+
+    def remove_nested_empty_module_groups(self):
+        removed = 0
+        for root_group in self.inspection_root_groups(INSPECTION_TYPE_ORTHO):
+            removed += self.remove_nested_empty_module_groups_under(root_group, parent_is_root=True)
+        return removed
+
+    def remove_nested_empty_module_groups_under(self, group, parent_is_root=False):
+        removed = 0
+        try:
+            children = list(group.children())
+        except Exception:
+            return 0
+        for child in children:
+            try:
+                child_layer = child.layer()
+            except Exception:
+                child_layer = None
+            if child_layer:
+                continue
+            removed += self.remove_nested_empty_module_groups_under(child, parent_is_root=False)
+            try:
+                child_count_after = len(child.children())
+            except Exception:
+                child_count_after = 0
+            try:
+                child_name = child.name()
+            except Exception:
+                child_name = ""
+            module_names = ORTHO_MODULE_GROUP_NAMES | LEGACY_ORTHO_MODULE_GROUP_NAMES
+            if child_count_after != 0 or child_name not in module_names:
+                continue
+            if parent_is_root and child_name not in LEGACY_ORTHO_MODULE_GROUP_NAMES:
+                continue
+            try:
+                group.removeChildNode(child)
+                removed += 1
+            except Exception as exc:
+                QgsMessageLog.logMessage(f"空検査グループ削除エラー: {exc}", "OrthoManager", Qgis.MessageLevel.Warning)
+        return removed
+
+    def remove_nested_empty_groups_under(self, group, is_root=False):
+        removed = 0
+        try:
+            children = list(group.children())
+        except Exception:
+            return 0
+        for child in children:
+            try:
+                child_layer = child.layer()
+            except Exception:
+                child_layer = None
+            if child_layer:
+                continue
+            try:
+                child_count_before = len(child.children())
+            except Exception:
+                child_count_before = 0
+            removed += self.remove_nested_empty_groups_under(child, is_root=False)
+            try:
+                child_count_after = len(child.children())
+            except Exception:
+                child_count_after = child_count_before
+            if not is_root and child_count_after == 0:
+                try:
+                    group.removeChildNode(child)
+                    removed += 1
+                except Exception as exc:
+                    QgsMessageLog.logMessage(f"空検査グループ削除エラー: {exc}", "OrthoManager", Qgis.MessageLevel.Warning)
+        return removed
 
     def move_layer_node_to_round_group(self, layer, round_no):
         target_group = self.ensure_round_group(round_no)
@@ -3261,6 +3927,8 @@ class InspectionTabWidget(QWidget):
                 "OrthoManager",
                 Qgis.MessageLevel.Info,
             )
+            if placed:
+                self.schedule_layer_lock_indicator_rebuild()
             return placed
         except Exception as exc:
             QgsMessageLog.logMessage(f"検査レイヤ配置エラー: {exc}", "OrthoManager", Qgis.MessageLevel.Warning)
@@ -3378,7 +4046,183 @@ class InspectionTabWidget(QWidget):
         return self.place_layer_at_group_bottom(layer, target_group)
 
     def place_layer_at_group_bottom(self, layer, target_group):
-        return self.place_layer_at_group_index(layer, target_group, None)
+        index = None
+        try:
+            if self.layer_inspection_type(layer) == INSPECTION_TYPE_FREE and self.free_group_path_from_node(target_group):
+                index = self.free_group_direct_layer_insert_index(target_group)
+        except Exception:
+            index = None
+        return self.place_layer_at_group_index(layer, target_group, index)
+
+    def place_layer_after_free_root_group(self, layer, group_name):
+        group_name = self.normalize_free_group_path(group_name)
+        if not layer or not group_name or self.free_group_parent_path(group_name):
+            return False
+        root_group = self.ensure_inspection_root_group(INSPECTION_TYPE_FREE)
+        target_node = self.find_free_group_node(group_name)
+        if target_node is None:
+            return False
+        try:
+            if not self.same_layer_tree_group(target_node.parent(), root_group):
+                return False
+            children = list(root_group.children())
+            target_index = children.index(target_node)
+        except Exception:
+            return False
+        return self.place_layer_at_group_index(layer, root_group, target_index + 1)
+
+    def place_layer_before_free_root_group(self, layer, group_name):
+        group_name = self.normalize_free_group_path(group_name)
+        if not layer or not group_name or self.free_group_parent_path(group_name):
+            return False
+        root_group = self.ensure_inspection_root_group(INSPECTION_TYPE_FREE)
+        target_node = self.find_free_group_node(group_name)
+        if target_node is None:
+            return False
+        try:
+            if not self.same_layer_tree_group(target_node.parent(), root_group):
+                return False
+            children = list(root_group.children())
+            target_index = children.index(target_node)
+        except Exception:
+            return False
+        return self.place_layer_at_group_index(layer, root_group, target_index)
+
+    def place_free_root_group_at_top(self, group_name):
+        group_name = self.normalize_free_group_path(group_name)
+        if not group_name or self.free_group_parent_path(group_name):
+            return False
+        root_group = self.ensure_inspection_root_group(INSPECTION_TYPE_FREE)
+        group_node = self.find_free_group_node(group_name)
+        if root_group is None or group_node is None:
+            return False
+        try:
+            if not self.same_layer_tree_group(group_node.parent(), root_group):
+                return False
+            children = list(root_group.children())
+            current_index = children.index(group_node)
+            if current_index == 0:
+                return True
+            clone = group_node.clone()
+            root_group.insertChildNode(0, clone)
+            root_group.removeChildNode(group_node)
+            QApplication.processEvents()
+            return True
+        except Exception as exc:
+            QgsMessageLog.logMessage(f"自由式グループ先頭移動エラー: {group_name}: {exc}", "OrthoManager", Qgis.MessageLevel.Warning)
+            return False
+
+    def place_free_group_at_layer_position(self, group_name, target_layer, after=False):
+        group_name = self.normalize_free_group_path(group_name)
+        if not group_name or target_layer is None:
+            return False
+        group_node = self.find_free_group_node(group_name)
+        if group_node is None:
+            return False
+        target_parent_path = self.normalize_free_group_path(target_layer.customProperty(INSPECTION_PROP_PREFIX + "group_name", ""))
+        target_nodes = self.layer_tree_nodes_for_layer(target_layer.id())
+        target_parent = None
+        target_node = None
+        for parent, node in target_nodes:
+            if self.free_group_path_from_node(parent) == target_parent_path:
+                target_parent = parent
+                target_node = node
+                break
+        if target_parent is None and target_nodes:
+            target_parent, target_node = target_nodes[0]
+        if target_parent is None or target_node is None:
+            return False
+        try:
+            children = list(target_parent.children())
+            target_index = children.index(target_node)
+            insert_index = target_index + (1 if after else 0)
+            clone = group_node.clone()
+            target_parent.insertChildNode(insert_index, clone)
+            old_parent = group_node.parent()
+            if old_parent is not None:
+                old_parent.removeChildNode(group_node)
+            QApplication.processEvents()
+            return True
+        except Exception as exc:
+            QgsMessageLog.logMessage(f"自由式グループレイヤ位置移動エラー: {group_name}: {exc}", "OrthoManager", Qgis.MessageLevel.Warning)
+            return False
+
+    def place_free_group_at_group_position(self, group_name, target_group_name, after=False):
+        group_name = self.normalize_free_group_path(group_name)
+        target_group_name = self.normalize_free_group_path(target_group_name)
+        if not group_name or not target_group_name:
+            return False
+        group_node = self.find_free_group_node(group_name)
+        target_node = self.find_free_group_node(target_group_name)
+        if group_node is None or target_node is None:
+            return False
+        target_parent = target_node.parent()
+        if target_parent is None:
+            return False
+        try:
+            children = list(target_parent.children())
+            target_index = children.index(target_node)
+            insert_index = target_index + (1 if after else 0)
+            clone = group_node.clone()
+            target_parent.insertChildNode(insert_index, clone)
+            old_parent = group_node.parent()
+            if old_parent is not None:
+                old_parent.removeChildNode(group_node)
+            QApplication.processEvents()
+            return True
+        except Exception as exc:
+            QgsMessageLog.logMessage(f"自由式グループ位置移動エラー: {group_name}: {exc}", "OrthoManager", Qgis.MessageLevel.Warning)
+            return False
+
+    def place_free_group_at_root_index(self, group_name, index):
+        group_name = self.normalize_free_group_path(group_name)
+        if not group_name or self.free_group_parent_path(group_name):
+            return False
+        root_group = self.ensure_inspection_root_group(INSPECTION_TYPE_FREE)
+        group_node = self.find_free_group_node(group_name)
+        if root_group is None or group_node is None:
+            return False
+        try:
+            if not self.same_layer_tree_group(group_node.parent(), root_group):
+                return False
+            children = list(root_group.children())
+            index = max(0, min(int(index), len(children)))
+            clone = group_node.clone()
+            root_group.insertChildNode(index, clone)
+            root_group.removeChildNode(group_node)
+            QApplication.processEvents()
+            return True
+        except Exception as exc:
+            QgsMessageLog.logMessage(f"自由式グループ隙間移動エラー: {group_name}: {exc}", "OrthoManager", Qgis.MessageLevel.Warning)
+            return False
+
+    def place_layer_at_free_root_index(self, layer, index):
+        if layer is None:
+            return False
+        root_group = self.ensure_inspection_root_group(INSPECTION_TYPE_FREE)
+        try:
+            children = list(root_group.children())
+            index = max(0, min(int(index), len(children)))
+        except Exception:
+            index = 0
+        return self.place_layer_at_group_index(layer, root_group, index)
+
+    def free_group_direct_layer_insert_index(self, group):
+        try:
+            children = list(group.children())
+        except Exception:
+            return None
+        insert_index = len(children)
+        for index, child in enumerate(children):
+            try:
+                child.layer()
+                is_layer = True
+            except Exception:
+                is_layer = False
+            if not is_layer:
+                insert_index = index
+                break
+        return insert_index
 
     def remove_layer_tree_nodes_except(self, layer_id, keep_node):
         root = QgsProject.instance().layerTreeRoot()
@@ -3553,7 +4397,10 @@ class InspectionTabWidget(QWidget):
         self, round_no, code, name, color, geom_type, custom=False, inspection_type=None,
         extra_fields=None, source_name_override=None, multi_geometry=False, dataset=None,
     ):
-        path = self.ensure_gpkg_path()
+        if not self.ensure_project_metric_crs_for_inspection():
+            raise RuntimeError("プロジェクト座標系が未設定または緯度経度座標系です")
+        inspection_type = inspection_type if inspection_type in INSPECTION_TYPES else self.active_inspection_type
+        path = self.ensure_gpkg_path(inspection_type)
         os.makedirs(os.path.dirname(path), exist_ok=True)
         driver = ogr.GetDriverByName("GPKG")
         ds = dataset or self.open_or_create_inspection_gpkg(path, driver)
@@ -3602,12 +4449,20 @@ class InspectionTabWidget(QWidget):
     def _ogr_project_srs(self):
         srs = osr.SpatialReference()
         crs = QgsProject.instance().crs()
-        if crs and crs.isValid() and crs.postgisSrid() > 0:
+        if crs and crs.isValid():
+            if crs.postgisSrid() > 0:
+                try:
+                    srs.ImportFromEPSG(crs.postgisSrid())
+                    return srs
+                except Exception:
+                    pass
             try:
-                srs.ImportFromEPSG(crs.postgisSrid())
+                wkt = crs.toWkt()
+                if wkt:
+                    srs.ImportFromWkt(wkt)
+                    return srs
             except Exception:
                 return None
-            return srs
         return None
 
     def source_layer_name(self, round_no, code, name, geom_type, custom, inspection_type=None):
@@ -3647,10 +4502,14 @@ class InspectionTabWidget(QWidget):
             number += 1
 
     def load_layers_from_gpkg(self):
+        self.sync_active_gpkg_path()
         if not self.gpkg_path or not os.path.exists(self.gpkg_path):
             return
         if not OGR_OK:
             return
+        if self.load_layers_from_gpkg_management(show_warning=True):
+            return
+        return
         ds = self.open_inspection_gpkg_readonly(self.gpkg_path)
         if not ds:
             return
@@ -3661,16 +4520,24 @@ class InspectionTabWidget(QWidget):
             if not self._is_inspection_source(source_name):
                 continue
             descriptor = descriptors.get(source_name) or self._descriptor_from_source(source_name, ogr_layer)
+            descriptor["gpkg_path"] = self.gpkg_path
             self.load_layer(source_name, descriptor)
+        for source_name in TRASH_LAYER_SOURCES.values():
+            if ds.GetLayerByName(source_name):
+                self.load_trash_layer(source_name, visible=False)
         ds = None
         self.organize_inspection_layers(silent=True)
 
     def _is_inspection_source(self, source_name):
+        if source_name in TRASH_LAYER_SOURCES.values():
+            return False
         return source_name.startswith("r") or source_name.startswith("manual_") or source_name.startswith("inspection_")
 
     def _descriptors_from_existing_layers(self):
         result = {}
         for layer in self.inspection_layers():
+            if self.gpkg_path and not self.same_file_path(self.layer_source_path(layer), self.gpkg_path):
+                continue
             source = layer.customProperty(INSPECTION_PROP_PREFIX + "source_name", "")
             if not source:
                 continue
@@ -3709,11 +4576,32 @@ class InspectionTabWidget(QWidget):
             if len(parts) == 3:
                 geom_type = parts[1]
                 name = parts[2]
+        guide_role = ""
+        labels_enabled = True
+        color = "ff0000"
+        stroke_width = self.default_stroke_width(geom_type)
+        if geom_type == "polygon":
+            if name == "検査線" or name.startswith("検査線_"):
+                guide_role = GUIDE_ROLE_LINE
+                labels_enabled = False
+                color = "000000"
+                stroke_width = 0.4
+            elif name == "検査済" or name.startswith("検査済_"):
+                guide_role = GUIDE_ROLE_DONE
+                labels_enabled = False
+                color = "000000"
+                stroke_width = 0.4
+            elif name == "検査範囲" or name.startswith("検査範囲_") or name == "作業範囲" or name.startswith("作業範囲_"):
+                guide_role = GUIDE_ROLE_AREA
+                labels_enabled = False
+                color = "0080ff"
+                stroke_width = 0.6
         return {
-            "round_no": 0, "code": "", "name": name, "color": "ff0000",
-            "geom_type": geom_type, "stroke_width": self.default_stroke_width(geom_type),
+            "round_no": 0, "code": "", "name": name, "color": color,
+            "geom_type": geom_type, "stroke_width": stroke_width,
             "point_size": self.default_point_size(), "source_name": source_name,
-            "inspection_type": inspection_type, "group_name": "", "custom": True
+            "inspection_type": inspection_type, "group_name": "", "custom": True,
+            "guide_role": guide_role, "labels_enabled": labels_enabled
         }
 
     def default_color_for_code(self, code):
@@ -3724,20 +4612,26 @@ class InspectionTabWidget(QWidget):
         return "ff0000"
 
     def load_layer(self, source_name, descriptor):
+        descriptor = dict(descriptor or {})
+        inspection_type = self.descriptor_inspection_type(descriptor)
+        gpkg_path = descriptor.get("gpkg_path") or self.inspection_gpkg_path(inspection_type)
+        if not gpkg_path:
+            gpkg_path = self.gpkg_path
+        descriptor["gpkg_path"] = gpkg_path
         if source_name in self.layers:
             layer = QgsProject.instance().mapLayer(self.layers[source_name].get("layer_id", ""))
-            if layer:
+            if layer and self.same_file_path(self.layer_source_path(layer), gpkg_path):
                 self.apply_layer_metadata(layer, descriptor)
                 self.layers[source_name] = {**descriptor, "layer_id": layer.id()}
                 self.place_layer_for_descriptor(layer, descriptor)
                 return layer
-        layer = self.find_loaded_layer_by_source(source_name)
+        layer = self.find_loaded_layer_by_source(source_name, gpkg_path)
         if layer:
             self.apply_layer_metadata(layer, descriptor)
             self.layers[source_name] = {**descriptor, "layer_id": layer.id()}
             self.place_layer_for_descriptor(layer, descriptor)
             return layer
-        uri = f"{self.gpkg_path}|layername={source_name}"
+        uri = f"{gpkg_path}|layername={source_name}"
         layer = QgsVectorLayer(uri, descriptor.get("name", source_name), "ogr")
         if not layer.isValid():
             QgsMessageLog.logMessage(f"検査レイヤ読込失敗: {source_name}", "OrthoManager", Qgis.MessageLevel.Warning)
@@ -3760,29 +4654,440 @@ class InspectionTabWidget(QWidget):
             pass
         return layer
 
-    def find_loaded_layer_by_source(self, source_name):
+    def load_trash_layer(self, source_name, visible=False):
+        self.cleanup_duplicate_trash_layers(source_name)
+        if source_name in self.trash_layer_ids:
+            layer = QgsProject.instance().mapLayer(self.trash_layer_ids.get(source_name, ""))
+            if layer:
+                self.apply_trash_layer_metadata(layer, source_name)
+                self.ensure_trash_qgs_fields(layer)
+                self.set_layer_tree_visibility(layer, visible)
+                return layer
+        layer = QgsProject.instance().mapLayer(self.trash_layer_ids.get(source_name, ""))
+        if not layer:
+            layer = self.existing_trash_layer(source_name)
+        if not layer:
+            uri = f"{self.gpkg_path}|layername={source_name}"
+            geom_type = self.trash_geom_type_from_source(source_name)
+            layer = QgsVectorLayer(uri, self.trash_layer_display_name(source_name, geom_type=geom_type), "ogr")
+        if not layer or not layer.isValid():
+            return None
+        if not QgsProject.instance().mapLayer(layer.id()):
+            QgsProject.instance().addMapLayer(layer, False)
+            try:
+                group = self.ensure_direct_group(QgsProject.instance().layerTreeRoot(), TRASH_GROUP_NAME)
+                group.addLayer(layer)
+            except Exception:
+                try:
+                    QgsProject.instance().layerTreeRoot().addLayer(layer)
+                except Exception:
+                    pass
+        self.apply_trash_layer_metadata(layer, source_name)
+        self.ensure_trash_qgs_fields(layer)
+        self.trash_layer_ids[source_name] = layer.id()
+        self.set_layer_tree_visibility(layer, visible)
+        return layer
+
+    def apply_trash_layer_metadata(self, layer, source_name):
+        geom_type = self.trash_geom_type_from_source(source_name)
+        layer.setName(self.trash_layer_display_name(source_name, layer=layer, geom_type=geom_type))
+        layer.setCustomProperty(INSPECTION_PROP_PREFIX + "trash", True)
+        layer.setCustomProperty(INSPECTION_PROP_PREFIX + "source_name", source_name)
+        layer.setCustomProperty(INSPECTION_PROP_PREFIX + "geom_type", geom_type)
+        layer.setCustomProperty(INSPECTION_PROP_PREFIX + "inspection_type", self.active_inspection_type)
+        layer.setCustomProperty(INSPECTION_PROP_PREFIX + "gpkg_path", self.gpkg_path)
+        self.apply_trash_style(layer)
+
+    def trash_layer_display_name(self, source_name, layer=None, geom_type=None):
+        geom_type = geom_type or self.trash_geom_type_from_source(source_name)
+        label = GEOM_TYPE_LABELS.get(geom_type, geom_type)
+        count_text = ""
+        if layer is not None and layer.isValid():
+            try:
+                count = layer.featureCount()
+                if count is None or count < 0:
+                    count = sum(1 for _feature in layer.getFeatures())
+                count_text = f" ({count})"
+            except Exception:
+                count_text = ""
+        return f"ゴミ箱_{label}{count_text}"
+
+    def existing_trash_layer(self, source_name):
+        layers = self.project_trash_layers(source_name)
+        return layers[0] if layers else None
+
+    def project_trash_layers(self, source_name):
+        layers = []
+        active_path = self.gpkg_path
+        for layer in QgsProject.instance().mapLayers().values():
+            try:
+                if not isinstance(layer, QgsVectorLayer):
+                    continue
+                prop_source = layer.customProperty(INSPECTION_PROP_PREFIX + "source_name", "")
+                prop_trash = bool(layer.customProperty(INSPECTION_PROP_PREFIX + "trash", False))
+                uri = layer.dataProvider().dataSourceUri()
+                uri_matches = f"layername={source_name}" in uri or f"layername='{source_name}'" in uri
+                if (prop_trash and prop_source == source_name) or uri_matches:
+                    if not active_path or self.same_file_path(self.layer_source_path(layer), active_path):
+                        layers.append(layer)
+            except Exception:
+                continue
+        return layers
+
+    def is_project_trash_layer_for_close(self, layer):
+        if not isinstance(layer, QgsVectorLayer):
+            return False
+        if self.is_trash_layer(layer):
+            return True
+        try:
+            if str(layer.name()).startswith("ゴミ箱_"):
+                return True
+        except Exception:
+            pass
+        try:
+            uri = layer.dataProvider().dataSourceUri()
+        except Exception:
+            uri = ""
+        return any(
+            f"layername={source}" in uri or f"layername='{source}'" in uri
+            for source in TRASH_LAYER_SOURCES.values()
+        )
+
+    def close_project_trash_layers_and_group(self):
+        project = QgsProject.instance()
+        removed_any = False
+        for layer in list(project.mapLayers().values()):
+            if not self.is_project_trash_layer_for_close(layer):
+                continue
+            try:
+                self.force_removed_layer_canvas_refresh(layer)
+                project.removeMapLayer(layer.id())
+                removed_any = True
+            except Exception as exc:
+                QgsMessageLog.logMessage(f"ゴミ箱レイヤを閉じる処理エラー: {exc}", "OrthoManager", Qgis.MessageLevel.Warning)
+        root = project.layerTreeRoot()
+        for group in list(self.direct_child_groups(root, TRASH_GROUP_NAME)):
+            try:
+                root.removeChildNode(group)
+                removed_any = True
+            except Exception as exc:
+                QgsMessageLog.logMessage(f"ゴミ箱グループを閉じる処理エラー: {exc}", "OrthoManager", Qgis.MessageLevel.Warning)
+        self.trash_layer_ids.clear()
+        if removed_any:
+            QApplication.processEvents()
+            self.force_removed_layer_canvas_refresh()
+        return removed_any
+
+    def cleanup_duplicate_trash_layers(self, source_name):
+        layers = self.project_trash_layers(source_name)
+        if not layers:
+            return
+        keep = None
+        remembered = QgsProject.instance().mapLayer(self.trash_layer_ids.get(source_name, ""))
+        if remembered in layers:
+            keep = remembered
+        if keep is None:
+            keep = layers[0]
+        for layer in layers:
+            if layer.id() == keep.id():
+                continue
+            try:
+                QgsProject.instance().removeMapLayer(layer.id())
+                QgsMessageLog.logMessage(
+                    f"RESTORE_TRASH_DUPLICATE_LAYER_REMOVED source={source_name} layer={layer.name()}",
+                    "OrthoManager",
+                    Qgis.MessageLevel.Info,
+                )
+            except Exception as exc:
+                QgsMessageLog.logMessage(
+                    f"RESTORE_TRASH_DUPLICATE_LAYER_REMOVE_FAILED source={source_name} error={exc}",
+                    "OrthoManager",
+                    Qgis.MessageLevel.Warning,
+                )
+        self.trash_layer_ids[source_name] = keep.id()
+        self.apply_trash_layer_metadata(keep, source_name)
+
+    def apply_trash_style(self, layer):
+        geom_type = self.layer_geom_type_key(layer)
+        grey = QColor("#808080")
+        if geom_type == "polygon":
+            symbol = QgsFillSymbol.createSimple({
+                "color": "128,128,128,55",
+                "outline_color": grey.name(),
+                "outline_width": "0.7",
+            })
+        elif geom_type == "line":
+            symbol = QgsLineSymbol.createSimple({"color": grey.name(), "width": "0.8"})
+        else:
+            symbol = QgsMarkerSymbol.createSimple({"color": grey.name(), "size": "2.8", "outline_color": "#404040"})
+        layer.setRenderer(QgsSingleSymbolRenderer(symbol))
+
+    def trash_geom_type_from_source(self, source_name):
+        for geom_type, source in TRASH_LAYER_SOURCES.items():
+            if source == source_name:
+                return geom_type
+        return "polygon"
+
+    def ensure_trash_layer(self, geom_type, visible=False):
+        geom_type = geom_type if geom_type in TRASH_LAYER_SOURCES else "polygon"
+        source_name = TRASH_LAYER_SOURCES[geom_type]
+        if not OGR_OK:
+            return None
+        path = self.ensure_gpkg_path()
+        if not path:
+            return None
+        driver = ogr.GetDriverByName("GPKG")
+        ds = self.open_or_create_inspection_gpkg(path, driver)
+        if ds is None:
+            return None
+        try:
+            layer = ds.GetLayerByName(source_name)
+            if layer is None:
+                layer = self.create_trash_ogr_layer(ds, source_name, geom_type)
+            else:
+                self.ensure_trash_ogr_fields(layer)
+        finally:
+            ds = None
+        return self.load_trash_layer(source_name, visible=visible)
+
+    def trash_field_specs(self):
+        return [
+            ("orig_source", 160),
+            ("orig_layer_name", 160),
+            ("orig_color", 16),
+            ("orig_geom_type", 16),
+            ("orig_round_no", 16),
+            ("orig_code", 32),
+            ("orig_item_name", 160),
+            ("orig_inspection_type", 32),
+            ("orig_group_name", 160),
+            ("orig_layer_id", 128),
+            ("orig_layer_source_path", 1024),
+            ("orig_provider_uri", 2048),
+            ("orig_attrs", 8000),
+            ("deleted_at", 32),
+        ]
+
+    def ensure_trash_ogr_fields(self, layer):
+        if layer is None:
+            return
+        try:
+            defn = layer.GetLayerDefn()
+            existing = {defn.GetFieldDefn(i).GetName() for i in range(defn.GetFieldCount())}
+        except Exception:
+            existing = set()
+        for field_name, width in self.trash_field_specs():
+            if field_name in existing:
+                continue
+            field = ogr.FieldDefn(field_name, ogr.OFTString)
+            field.SetWidth(width)
+            try:
+                layer.CreateField(field)
+                existing.add(field_name)
+            except Exception as exc:
+                QgsMessageLog.logMessage(
+                    f"TRASH_FIELD_ADD_FAILED field={field_name} error={exc}",
+                    "OrthoManager",
+                    Qgis.MessageLevel.Warning,
+                )
+
+    def ensure_trash_qgs_fields(self, layer):
+        if not isinstance(layer, QgsVectorLayer):
+            return
+        missing = []
+        fields = layer.fields()
+        for field_name, width in self.trash_field_specs():
+            if fields.indexOf(field_name) >= 0:
+                continue
+            missing.append(QgsField(field_name, QVariant.String, len=width))
+        if not missing:
+            return
+        try:
+            if layer.dataProvider().addAttributes(missing):
+                layer.updateFields()
+        except Exception as exc:
+            QgsMessageLog.logMessage(
+                f"TRASH_QGS_FIELD_ADD_FAILED layer={layer.name()} error={exc}",
+                "OrthoManager",
+                Qgis.MessageLevel.Warning,
+            )
+
+    def create_trash_ogr_layer(self, ds, source_name, geom_type):
+        srs = self._ogr_project_srs()
+        ogr_type = {"polygon": ogr.wkbMultiPolygon, "line": ogr.wkbMultiLineString, "point": ogr.wkbMultiPoint}[geom_type]
+        layer = ds.CreateLayer(source_name, srs, ogr_type)
+        self.ensure_trash_ogr_fields(layer)
+        return layer
+
+    def feature_attrs_json(self, feature):
+        values = {}
+        try:
+            fields = feature.fields()
+        except Exception:
+            fields = []
+        for field in fields:
+            name = field.name()
+            try:
+                value = feature[name]
+            except Exception:
+                value = None
+            if value is None:
+                values[name] = ""
+            elif isinstance(value, (str, int, float, bool)):
+                values[name] = value
+            else:
+                values[name] = str(value)
+        try:
+            return json.dumps(values, ensure_ascii=False)
+        except Exception:
+            return "{}"
+
+    def set_feature_attrs_from_json(self, feature, attrs_text, skip_indexes=None, skip_names=None, coerce_types=False):
+        try:
+            values = json.loads(attrs_text or "{}")
+        except Exception:
+            values = {}
+        if not isinstance(values, dict):
+            values = {}
+        skip_indexes = set(skip_indexes or [])
+        skip_names = {str(name or "").lower() for name in (skip_names or [])}
+        fields = feature.fields()
+        for name, value in values.items():
+            idx = fields.indexOf(name)
+            if idx < 0 or idx in skip_indexes or str(name or "").lower() in skip_names:
+                continue
+            try:
+                if coerce_types:
+                    value = self.coerce_feature_attribute_value(fields[idx], value)
+                feature.setAttribute(idx, value)
+            except Exception:
+                pass
+
+    def variant_type_values(self, *names):
+        values = set()
+        for name in names:
+            try:
+                values.add(getattr(QVariant, name))
+            except Exception:
+                pass
+        return values
+
+    def coerce_feature_attribute_value(self, field, value):
+        if value == "":
+            return None
+        try:
+            field_type = field.type()
+        except Exception:
+            return value
+        int_types = self.variant_type_values("Int", "UInt", "LongLong", "ULongLong")
+        float_types = self.variant_type_values("Double")
+        bool_types = self.variant_type_values("Bool")
+        string_types = self.variant_type_values("String")
+        try:
+            if field_type in int_types:
+                return int(value)
+            if field_type in float_types:
+                return float(value)
+            if field_type in bool_types:
+                if isinstance(value, bool):
+                    return value
+                text = str(value).strip().lower()
+                return text in ("1", "true", "yes", "y", "on")
+            if field_type in string_types and value is not None:
+                return str(value)
+        except Exception:
+            return None
+        return value
+
+    def restore_skip_attribute_indexes(self, layer):
+        indexes = set()
+        names = {"fid", "fid_1", "ogc_fid"}
+        try:
+            provider = layer.dataProvider()
+            if hasattr(provider, "pkAttributeIndexes"):
+                indexes.update(int(idx) for idx in provider.pkAttributeIndexes())
+        except Exception:
+            pass
+        try:
+            fields = layer.fields()
+            for idx, field in enumerate(fields):
+                name = str(field.name() or "").lower()
+                if name in names:
+                    indexes.add(idx)
+        except Exception:
+            pass
+        return indexes
+
+    def set_restore_feature_attrs_from_json(self, feature, attrs_text, target_layer):
+        self.set_feature_attrs_from_json(
+            feature,
+            attrs_text,
+            skip_indexes=self.restore_skip_attribute_indexes(target_layer),
+            skip_names={"fid", "fid_1", "ogc_fid"},
+            coerce_types=True,
+        )
+
+    def provider_error_text(self, layer):
+        texts = []
+        try:
+            provider = layer.dataProvider()
+        except Exception:
+            provider = None
+        if provider is not None:
+            for attr in ("errors", "lastError"):
+                try:
+                    value = getattr(provider, attr)()
+                except Exception:
+                    value = ""
+                if isinstance(value, (list, tuple)):
+                    texts.extend(str(item) for item in value if item)
+                elif value:
+                    texts.append(str(value))
+        try:
+            if hasattr(layer, "commitErrors"):
+                texts.extend(str(item) for item in layer.commitErrors() if item)
+        except Exception:
+            pass
+        return "; ".join(dict.fromkeys(texts))
+
+    def set_layer_tree_visibility(self, layer, visible):
+        try:
+            for _parent, node in self.layer_tree_nodes_for_layer(layer.id()):
+                node.setItemVisibilityChecked(bool(visible))
+        except Exception:
+            pass
+
+    def find_loaded_layer_by_source(self, source_name, gpkg_path=None):
         for layer in self.inspection_layers():
-            if layer.customProperty(INSPECTION_PROP_PREFIX + "source_name", "") == source_name:
+            if layer.customProperty(INSPECTION_PROP_PREFIX + "source_name", "") != source_name:
+                continue
+            if gpkg_path and not self.same_file_path(self.layer_source_path(layer), gpkg_path):
+                continue
+            if not gpkg_path or self.same_file_path(self.layer_source_path(layer), gpkg_path):
                 return layer
         return None
 
     def ensure_round_group(self, round_no):
         main = self.ensure_inspection_root_group(INSPECTION_TYPE_ORTHO)
-        group_name = f"{round_no}回目検査" if round_no else "追加レイヤ"
+        group_name = self.round_title(round_no) if round_no else "追加レイヤ"
         group = self.ensure_direct_group(main, group_name)
         return group
 
     def ensure_free_group(self, group_name):
         main = self.ensure_inspection_root_group(INSPECTION_TYPE_FREE)
-        group_name = str(group_name or "").strip()
-        if not group_name:
+        parts = self.free_group_path_parts(group_name)
+        if not parts:
             return main
-        if group_name not in self.free_groups:
-            self.free_groups.append(group_name)
-        return self.ensure_direct_group(main, group_name)
+        current = main
+        for idx, part in enumerate(parts):
+            current = self.ensure_direct_group(current, part)
+            path = FREE_GROUP_PATH_SEPARATOR.join(parts[:idx + 1])
+            if path and path not in self.free_groups:
+                self.free_groups.append(path)
+        return current
 
     def ensure_named_inspection_group(self, inspection_type, group_name):
-        group_name = str(group_name or "").strip()
+        group_name = self.normalize_free_group_path(group_name) if inspection_type == INSPECTION_TYPE_FREE else str(group_name or "").strip()
         if not group_name:
             return None
         if inspection_type == INSPECTION_TYPE_FREE:
@@ -3828,23 +5133,22 @@ class InspectionTabWidget(QWidget):
         return self.ensure_round_group(round_no)
 
     def root_group_name_for_type(self, inspection_type):
-        return FREE_INSPECTION_GROUP if inspection_type == INSPECTION_TYPE_FREE else INSPECTION_GROUP
+        return INSPECTION_GROUP
 
     def ensure_inspection_root_group(self, inspection_type=None):
-        if inspection_type not in (INSPECTION_TYPE_ORTHO, INSPECTION_TYPE_FREE):
+        if inspection_type not in INSPECTION_TYPES:
             inspection_type = self.active_inspection_type
         root = QgsProject.instance().layerTreeRoot()
         return self.ensure_direct_group(root, self.root_group_name_for_type(inspection_type))
 
     def inspection_root_groups(self, inspection_type=None):
-        if inspection_type not in (INSPECTION_TYPE_ORTHO, INSPECTION_TYPE_FREE):
+        if inspection_type not in INSPECTION_TYPES:
             inspection_type = self.active_inspection_type
         root = QgsProject.instance().layerTreeRoot()
         groups = []
-        for name in (self.root_group_name_for_type(inspection_type), LEGACY_INSPECTION_GROUP):
-            for group in self.direct_child_groups(root, name):
-                if group not in groups:
-                    groups.append(group)
+        for group in self.direct_child_groups(root, self.root_group_name_for_type(inspection_type)):
+            if group not in groups:
+                groups.append(group)
         return groups
 
     def direct_child_groups(self, parent, name):
@@ -3912,9 +5216,18 @@ class InspectionTabWidget(QWidget):
             descriptor["point_size"] = self.default_point_size()
         descriptor["inspection_type"] = self.descriptor_inspection_type(descriptor)
         descriptor.setdefault("group_name", "")
+        descriptor.setdefault("guide_role", "")
+        if descriptor.get("guide_role", "") in (GUIDE_ROLE_AREA, GUIDE_ROLE_DONE, GUIDE_ROLE_LINE):
+            descriptor["group_name"] = ""
+        descriptor.setdefault("labels_enabled", True)
+        descriptor.setdefault("gpkg_path", self.inspection_gpkg_path(descriptor["inspection_type"]))
         source_name = descriptor.get("source_name", "")
         layer.setCustomProperty(INSPECTION_PROP_PREFIX + "source_name", source_name)
-        for key in ("round_no", "code", "name", "color", "geom_type", "custom", "stroke_width", "point_size", "inspection_type", "group_name", "preserve_style"):
+        for key in (
+            "round_no", "code", "name", "color", "geom_type", "custom", "stroke_width",
+            "point_size", "inspection_type", "group_name", "preserve_style",
+            "guide_role", "labels_enabled", "gpkg_path",
+        ):
             layer.setCustomProperty(INSPECTION_PROP_PREFIX + key, descriptor.get(key, ""))
         if not self.layer_preserve_style(layer):
             self.apply_style(layer, descriptor)
@@ -3925,7 +5238,28 @@ class InspectionTabWidget(QWidget):
         geom_type = descriptor.get("geom_type", "polygon")
         stroke_width = self.size_from_descriptor(descriptor, "stroke_width", self.default_stroke_width(geom_type))
         point_size = self.size_from_descriptor(descriptor, "point_size", self.default_point_size())
-        if geom_type == "polygon":
+        guide_role = descriptor.get("guide_role", "")
+        if guide_role == GUIDE_ROLE_DONE:
+            symbol = QgsFillSymbol.createSimple({
+                "color": "0,0,0,128",
+                "outline_color": "0,0,0,0",
+                "outline_width": "0",
+            })
+        elif guide_role == GUIDE_ROLE_LINE:
+            symbol = QgsFillSymbol.createSimple({
+                "color": "0,0,0,0",
+                "style": "no",
+                "outline_color": "#000000",
+                "outline_width": "0.4",
+            })
+        elif guide_role == GUIDE_ROLE_AREA:
+            symbol = QgsFillSymbol.createSimple({
+                "color": "0,0,0,0",
+                "style": "no",
+                "outline_color": color.name(),
+                "outline_width": self.format_size_text(stroke_width),
+            })
+        elif geom_type == "polygon":
             symbol = QgsFillSymbol.createSimple({
                 "color": "0,0,0,0",
                 "style": "no",
@@ -3938,6 +5272,9 @@ class InspectionTabWidget(QWidget):
             symbol = QgsMarkerSymbol.createSimple({"color": color.name(), "size": self.format_size_text(point_size), "outline_color": "#202020"})
         layer.setRenderer(QgsSingleSymbolRenderer(symbol))
         self.apply_memo_labels(layer, color)
+        labels_enabled = descriptor.get("labels_enabled", True)
+        if str(labels_enabled).lower() in ("false", "0", "no", ""):
+            layer.setLabelsEnabled(False)
 
     def default_stroke_width(self, geom_type):
         return 0.8 if geom_type == "line" else 0.6
@@ -4039,6 +5376,9 @@ class InspectionTabWidget(QWidget):
     def layer_descriptor(self, layer):
         inspection_type = self.layer_inspection_type(layer)
         group_name = layer.customProperty(INSPECTION_PROP_PREFIX + "group_name", "")
+        guide_role = layer.customProperty(INSPECTION_PROP_PREFIX + "guide_role", "")
+        if guide_role in (GUIDE_ROLE_AREA, GUIDE_ROLE_DONE, GUIDE_ROLE_LINE):
+            group_name = ""
         return {
             "source_name": layer.customProperty(INSPECTION_PROP_PREFIX + "source_name", ""),
             "round_no": int(layer.customProperty(INSPECTION_PROP_PREFIX + "round_no", 0) or 0),
@@ -4052,6 +5392,9 @@ class InspectionTabWidget(QWidget):
             "group_name": group_name,
             "custom": bool(layer.customProperty(INSPECTION_PROP_PREFIX + "custom", False)),
             "preserve_style": self.layer_preserve_style(layer),
+            "guide_role": guide_role,
+            "labels_enabled": layer.customProperty(INSPECTION_PROP_PREFIX + "labels_enabled", True),
+            "gpkg_path": self.layer_source_path(layer) or self.inspection_gpkg_path(inspection_type),
         }
 
     def layer_preserve_style(self, layer):
@@ -4132,6 +5475,13 @@ class InspectionTabWidget(QWidget):
                 pass
         try:
             layer.invalidateWgs84Extent()
+        except Exception:
+            pass
+        try:
+            if self.is_trash_layer(layer):
+                source_name = layer.customProperty(INSPECTION_PROP_PREFIX + "source_name", "")
+                if source_name:
+                    self.apply_trash_layer_metadata(layer, source_name)
         except Exception:
             pass
         try:
@@ -4218,35 +5568,37 @@ class InspectionTabWidget(QWidget):
             pass
 
     def refresh_ui(self):
+        self.sync_active_gpkg_path()
         path_text = self.gpkg_path or tr("inspection.path.none")
-        self.path_label.setText(tr("inspection.path").format(path=path_text))
+        self.path_label.setText(tr_text(f"検査GPKG: {path_text}"))
         self.path_label.setToolTip(self.gpkg_path)
-        self.btn_type_ortho.setChecked(self.active_inspection_type == INSPECTION_TYPE_ORTHO)
-        self.btn_type_free.setChecked(self.active_inspection_type == INSPECTION_TYPE_FREE)
-        self.rounds_box.setVisible(not self.is_free_inspection())
+        self.rounds_box.setVisible(False)
+        self.refresh_guide_layer_combo()
         self._rebuild_item_buttons()
         existing_rounds = self.standard_rounds()
+        root_group_exists = bool(self.inspection_root_groups())
+        selected_round = self.selected_module_round_no()
+        self.module_create_btn.setEnabled(bool(self.gpkg_path and root_group_exists and selected_round and selected_round not in existing_rounds))
         for round_no, button in self.round_buttons.items():
-            button.setEnabled(not self.is_free_inspection() and round_no not in existing_rounds and bool(self.gpkg_path))
+            button.setEnabled(False)
         has_layers = bool(self.current_inspection_layers())
         has_manual_layers = bool(self.manual_layers())
         self.btn_import_qgis_layer.setEnabled(True)
         self.btn_rename_item.setEnabled(has_layers)
         self.btn_color_item.setEnabled(has_layers)
         self.btn_move_manual.setEnabled(has_manual_layers)
-        self.btn_move_manual.setVisible(not self.is_free_inspection())
-        self.btn_add_group.setVisible(self.is_free_inspection())
+        self.btn_move_manual.setVisible(False)
+        self.btn_add_group.setVisible(True)
         self.btn_rename_group.setVisible(False)
         self.btn_delete_free_group.setVisible(False)
-        self.btn_delete_round.setVisible(not self.is_free_inspection())
-        self.btn_add_group.setEnabled(self.is_free_inspection() and bool(self.gpkg_path))
+        self.btn_delete_round.setVisible(False)
+        self.btn_add_group.setEnabled(bool(self.gpkg_path))
         self.btn_rename_group.setEnabled(False)
         self.btn_delete_free_group.setEnabled(False)
-        self.btn_delete_round.setEnabled(not self.is_free_inspection() and bool(existing_rounds))
+        self.btn_delete_round.setEnabled(False)
         self._refresh_delete_inspection_type_text()
-        root_group_name = FREE_INSPECTION_GROUP if self.is_free_inspection() else INSPECTION_GROUP
-        root_group_exists = QgsProject.instance().layerTreeRoot().findGroup(root_group_name) is not None
-        self.btn_delete_inspection_type.setEnabled(bool(self.current_inspection_layers()) or root_group_exists)
+        self.btn_delete_inspection_type.setVisible(False)
+        self.btn_delete_inspection_type.setEnabled(False)
         self.btn_delete_manual.setEnabled(has_manual_layers)
         self.btn_clean_empty.setEnabled(has_layers)
         self.btn_organize_layers.setEnabled(has_layers)
@@ -4289,25 +5641,63 @@ class InspectionTabWidget(QWidget):
     def raw_inspection_layers(self):
         result = []
         for layer in QgsProject.instance().mapLayers().values():
-            if isinstance(layer, QgsVectorLayer) and layer.customProperty(INSPECTION_PROP_PREFIX + "source_name", ""):
+            if (
+                isinstance(layer, QgsVectorLayer)
+                and layer.customProperty(INSPECTION_PROP_PREFIX + "source_name", "")
+                and not self.is_trash_layer(layer)
+            ):
                 result.append(layer)
         return result
+
+    def is_trash_layer(self, layer):
+        if not isinstance(layer, QgsVectorLayer):
+            return False
+        source = layer.customProperty(INSPECTION_PROP_PREFIX + "source_name", "")
+        if source in TRASH_LAYER_SOURCES.values():
+            return True
+        value = layer.customProperty(INSPECTION_PROP_PREFIX + "trash", False)
+        return value is True or str(value).lower() in ("true", "1", "yes")
+
+    def trash_layers(self):
+        layers = []
+        seen_ids = set()
+        active_path = self.gpkg_path
+
+        def add_layer(layer):
+            if not layer or layer.id() in seen_ids:
+                return
+            if active_path and not self.same_file_path(self.layer_source_path(layer), active_path):
+                return
+            layers.append(layer)
+            seen_ids.add(layer.id())
+
+        for source in TRASH_LAYER_SOURCES.values():
+            layer = QgsProject.instance().mapLayer(self.trash_layer_ids.get(source, ""))
+            add_layer(layer)
+            for layer in self.project_trash_layers(source):
+                add_layer(layer)
+        for layer in QgsProject.instance().mapLayers().values():
+            if self.is_trash_layer(layer):
+                add_layer(layer)
+        return layers
 
     def inspection_layers(self):
         result = []
         seen_sources = set()
         for layer in self.raw_inspection_layers():
             source = layer.customProperty(INSPECTION_PROP_PREFIX + "source_name", "")
-            if source in seen_sources:
+            key = (source, self.normalize_file_path(self.layer_source_path(layer)))
+            if key in seen_sources:
                 continue
-            seen_sources.add(source)
+            seen_sources.add(key)
             result.append(layer)
         return result
 
     def current_inspection_layers(self):
+        active_path = self.gpkg_path
         return [
             layer for layer in self.inspection_layers()
-            if self.layer_inspection_type(layer) == self.active_inspection_type
+            if not active_path or self.same_file_path(self.layer_source_path(layer), active_path)
         ]
 
     def remove_duplicate_loaded_inspection_layers(self):
@@ -4317,14 +5707,15 @@ class InspectionTabWidget(QWidget):
             source = layer.customProperty(INSPECTION_PROP_PREFIX + "source_name", "")
             if not source:
                 continue
+            key = (source, self.normalize_file_path(self.layer_source_path(layer)))
             preferred_id = self.layers.get(source, {}).get("layer_id", "")
-            if source not in by_source:
-                by_source[source] = layer
+            if key not in by_source:
+                by_source[key] = layer
                 continue
-            keep_layer = by_source[source]
+            keep_layer = by_source[key]
             if preferred_id and layer.id() == preferred_id:
                 remove_ids.append(keep_layer.id())
-                by_source[source] = layer
+                by_source[key] = layer
             else:
                 remove_ids.append(layer.id())
         for layer_id in remove_ids:
@@ -4332,7 +5723,7 @@ class InspectionTabWidget(QWidget):
                 QgsProject.instance().removeMapLayer(layer_id)
             except Exception as exc:
                 QgsMessageLog.logMessage(f"検査重複レイヤ削除エラー: {exc}", "OrthoManager", Qgis.MessageLevel.Warning)
-        for source, layer in by_source.items():
+        for (source, _path), layer in by_source.items():
             self.layers[source] = {**self.layer_descriptor(layer), "layer_id": layer.id()}
         return len(remove_ids)
 
@@ -4388,7 +5779,7 @@ class InspectionTabWidget(QWidget):
                     continue
             except Exception:
                 pass
-            if self.is_layer_locked(layer):
+            if self.is_layer_selection_locked(layer):
                 try:
                     layer.removeSelection()
                 except Exception:
@@ -4411,9 +5802,10 @@ class InspectionTabWidget(QWidget):
                 break
         if not layer:
             return
-        if self.operation_mode in ("layer_change", "layer_change_select"):
+        if self.operation_mode in ("layer_change", "layer_change_select", "layer_change_select_polygon"):
             self.move_selected_to_layer(layer)
             return
+        self.remember_create_return_mode()
         self.finish_edit_for_mode_switch()
         self.active_layer_id = layer.id()
         self.active_geom_type = layer.customProperty(INSPECTION_PROP_PREFIX + "geom_type", "polygon")
@@ -4422,7 +5814,7 @@ class InspectionTabWidget(QWidget):
         self.iface.setActiveLayer(layer)
         self.ensure_map_tool()
         self.refresh_ui()
-        self.set_status(f"検査入力: {self.layer_base_name(layer)}")
+        self.set_status(tr_text(f"検査入力: {self.layer_base_name(layer)}"))
 
     def toggle_inspection(self, enabled):
         self.inspection_enabled = enabled
@@ -4434,16 +5826,42 @@ class InspectionTabWidget(QWidget):
             self.btn_on.setStyleSheet("QPushButton{background:#27ae60;color:white;font-weight:bold;}")
         else:
             self.remove_context_filter()
-            self.clear_inspection_selection()
+            self.finish_edit_for_mode_switch()
             self.restore_selection_color()
             self.btn_on.setStyleSheet("")
-            self.operation_mode = "create"
+            self.reset_inspection_map_tool_to_qgis_pan()
+
+    def reset_inspection_map_tool_to_qgis_pan(self):
+        self.clear_feature_move_preview()
+        self.feature_move_targets = []
+        self.feature_move_undo_stack = []
+        if self.operation_mode == "restore":
+            self.clear_trash_selection()
+            self.set_trash_layers_visible(False)
+        self.clear_inspection_selection()
+        self.operation_mode = "pan"
+        self.create_return_mode = "pan"
+        try:
+            canvas = self.iface.mapCanvas()
+            viewport = canvas.viewport()
+            if viewport:
+                viewport.unsetCursor()
+            if self.map_tool and canvas.mapTool() == self.map_tool:
+                canvas.unsetMapTool(self.map_tool)
+            self.map_tool = None
+            self.iface.actionPan().trigger()
+            canvas.setFocus()
+            if viewport:
+                viewport.setFocus()
+        except Exception:
             try:
-                canvas = self.iface.mapCanvas()
-                if self.map_tool and canvas.mapTool() == self.map_tool:
-                    canvas.unsetMapTool(self.map_tool)
+                if self.map_tool and self.iface.mapCanvas().mapTool() == self.map_tool:
+                    self.iface.mapCanvas().unsetMapTool(self.map_tool)
             except Exception:
                 pass
+            self.map_tool = None
+        self.refresh_ui()
+        self.set_status(tr_text("検査OFF: 地図移動へ戻しました"))
 
     def ensure_map_tool(self):
         canvas = self.iface.mapCanvas()
@@ -4471,7 +5889,10 @@ class InspectionTabWidget(QWidget):
             return
         if self.operation_mode in ("delete", "merge", "layer_change"):
             cursor = Qt.CursorShape.PointingHandCursor
-        elif self.operation_mode == "layer_change_select":
+        elif self.operation_mode in ("layer_change_select", "layer_change_select_polygon"):
+            self.apply_map_cursor(self.yellow_select_cursor())
+            return
+        elif self.operation_mode == "restore":
             self.apply_map_cursor(self.yellow_select_cursor())
             return
         elif self.operation_mode == "edit":
@@ -4529,6 +5950,7 @@ class InspectionTabWidget(QWidget):
                 pass
         self._original_selection_colors.clear()
         self.clear_selection_highlight()
+        self.clear_paste_flash_highlight()
 
     def clear_selection_highlight(self):
         try:
@@ -4542,6 +5964,78 @@ class InspectionTabWidget(QWidget):
             except Exception:
                 pass
         self.selection_highlight_items = []
+
+    def clear_paste_flash_highlight(self):
+        try:
+            scene = self.iface.mapCanvas().scene()
+        except Exception:
+            scene = None
+        for item in self.paste_flash_highlight_items:
+            try:
+                if scene is not None:
+                    scene.removeItem(item)
+            except Exception:
+                pass
+        self.paste_flash_highlight_items = []
+
+    def flash_pasted_features(self, added_by_layer, duration_ms=2200):
+        self.clear_paste_flash_highlight()
+        if not self.inspection_enabled:
+            return
+        canvas = self.iface.mapCanvas()
+        flash_color = QColor("#00d9ff")
+        flash_color.setAlpha(255)
+        fill_color = QColor(flash_color)
+        fill_color.setAlpha(45)
+        for layer, ids in added_by_layer:
+            ids = [fid for fid in ids if fid is not None and fid >= 0]
+            if not ids:
+                continue
+            request = QgsFeatureRequest().setFilterFids(ids)
+            for feature in layer.getFeatures(request):
+                geom = feature.geometry()
+                if not geom or geom.isEmpty():
+                    continue
+                if layer.geometryType() in (Qgis.GeometryType.Line, Qgis.GeometryType.Polygon):
+                    band = QgsRubberBand(canvas, layer.geometryType())
+                    try:
+                        band.setStrokeColor(flash_color)
+                        band.setFillColor(fill_color if layer.geometryType() == Qgis.GeometryType.Polygon else QColor(0, 0, 0, 0))
+                    except Exception:
+                        band.setColor(flash_color)
+                    band.setWidth(8 if layer.geometryType() == Qgis.GeometryType.Line else 5)
+                    try:
+                        band.setToGeometry(geom, layer)
+                    except Exception:
+                        continue
+                    try:
+                        band.setZValue(1200)
+                    except Exception:
+                        pass
+                    band.show()
+                    self.paste_flash_highlight_items.append(band)
+                elif layer.geometryType() == Qgis.GeometryType.Point:
+                    points = geom.asMultiPoint() if geom.isMultipart() else [geom.asPoint()]
+                    for point in points:
+                        marker = QgsVertexMarker(canvas)
+                        marker.setCenter(QgsPointXY(point))
+                        marker.setColor(flash_color)
+                        marker.setIconSize(18)
+                        marker.setPenWidth(6)
+                        try:
+                            marker.setIconType(QgsVertexMarker.IconType.ICON_CIRCLE)
+                        except Exception:
+                            try:
+                                marker.setIconType(QgsVertexMarker.ICON_CIRCLE)
+                            except Exception:
+                                pass
+                        try:
+                            marker.setZValue(1200)
+                        except Exception:
+                            pass
+                        self.paste_flash_highlight_items.append(marker)
+        if self.paste_flash_highlight_items:
+            QTimer.singleShot(duration_ms, self.clear_paste_flash_highlight)
 
     def refresh_selection_highlight(self):
         self.clear_selection_highlight()
@@ -4652,11 +6146,14 @@ class InspectionTabWidget(QWidget):
 
     def switch_to_pan(self):
         if self.operation_mode == "edit":
-            self.finish_edit_mode(defer_pan=True)
+            self.finish_edit_mode(defer_pan=True, return_to_selection_after=False)
             return
         self.clear_feature_move_preview()
         self.feature_move_targets = []
         self.feature_move_undo_stack = []
+        if self.operation_mode == "restore":
+            self.clear_trash_selection()
+            self.set_trash_layers_visible(False)
         self.clear_inspection_selection()
         self.operation_mode = "pan"
         try:
@@ -4675,15 +6172,35 @@ class InspectionTabWidget(QWidget):
             except Exception:
                 pass
         self.refresh_ui()
-        self.set_status("パンモード")
+        self.set_status(tr_text("パンモード"))
 
     def switch_to_pan_if_still_create(self):
         if self.operation_mode in ("create", "pan_pending"):
             self.switch_to_pan()
 
+    def remember_create_return_mode(self):
+        if self.operation_mode == "pan":
+            self.create_return_mode = "pan"
+        elif self.operation_mode == "select_polygon":
+            self.create_return_mode = "select_polygon"
+            self.last_selection_mode = "select_polygon"
+        elif self.operation_mode == "select":
+            self.create_return_mode = "select"
+            self.last_selection_mode = "select"
+
+    def return_to_pre_create_mode_if_still_create(self):
+        if self.operation_mode not in ("create", "pan_pending"):
+            return
+        if self.create_return_mode in ("select", "select_polygon"):
+            self.return_to_last_selection_mode()
+        else:
+            self.switch_to_pan()
+
     def finish_edit_for_mode_switch(self):
         self.clear_feature_move_preview()
         self.feature_move_targets = []
+        self.clear_edit_overlap_candidates()
+        self.clear_direct_overlap_vertex_edit()
         if self.operation_mode == "edit":
             self.finish_edit_mode(switch_to_pan_after=False)
             self.operation_mode = "pan_pending"
@@ -4711,7 +6228,17 @@ class InspectionTabWidget(QWidget):
             self.context_filter_canvas = None
 
     def eventFilter(self, obj, event):
+        source = "CANVAS_FILTER" if obj == self.context_filter_canvas else "APP_FILTER"
+        if self.handle_feature_clipboard_event_filter_key(event, source=source):
+            return True
         if self.inspection_enabled and obj == self.context_filter_canvas:
+            if self.suppress_next_context_menu and event.type() == QEvent.Type.ContextMenu:
+                self.suppress_next_context_menu = False
+                try:
+                    event.accept()
+                except Exception:
+                    pass
+                return True
             if self.operation_mode == "move" and event.type() in (
                 QEvent.Type.MouseButtonPress,
                 QEvent.Type.MouseMove,
@@ -4733,7 +6260,15 @@ class InspectionTabWidget(QWidget):
                         pass
                     if self.map_tool:
                         self.map_tool._clear_move_state()
-                    self.switch_to_pan()
+                    self.return_to_last_selection_mode("移動終了")
+                    return True
+                if self.operation_mode in ("select_polygon", "layer_change_select_polygon") and self.map_tool and self.map_tool.select_polygon_points:
+                    try:
+                        event.accept()
+                    except Exception:
+                        pass
+                    self.suppress_next_context_menu = True
+                    self.map_tool._finish_select_polygon()
                     return True
                 if self.operation_mode == "create" and self.map_tool and self.map_tool.points:
                     try:
@@ -4747,8 +6282,12 @@ class InspectionTabWidget(QWidget):
                         event.accept()
                     except Exception:
                         pass
+                    point = self.map_point_from_mouse_event(event)
+                    if point and self.switch_direct_overlap_vertex_candidate_at(point):
+                        return True
                     self.finish_edit_mode(defer_pan=True)
                     return True
+                self.suppress_next_context_menu = False
                 try:
                     global_pos = event.globalPosition().toPoint()
                 except Exception:
@@ -4774,10 +6313,92 @@ class InspectionTabWidget(QWidget):
                         pass
                     return True
             if self.operation_mode == "edit":
-                if event.type() == QEvent.Type.MouseMove:
+                if (
+                    event.type() == QEvent.Type.MouseButtonRelease
+                    and event.button() == Qt.MouseButton.LeftButton
+                    and self.just_finished_direct_overlap_vertex_edit
+                ):
+                    try:
+                        event.accept()
+                    except Exception:
+                        pass
+                    return True
+                if event.type() == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
                     point = self.map_point_from_mouse_event(event)
                     if point:
-                        self.prepare_edit_layer_at(point, activate_tool=True, quiet=True)
+                        self.suspend_edit_hover_prepare = False
+                        self.remember_edit_overlap_anchor_at(point)
+                if (
+                    event.type() == QEvent.Type.MouseMove
+                    and self.has_direct_overlap_vertex_edit()
+                    and self.map_tool
+                    and self.map_tool.edit_vertex_start_point
+                ):
+                    point = self.direct_overlap_point_from_mouse_event(event, use_snap=True)
+                    if point:
+                        self.map_tool.edit_vertex_dragging = True
+                        self.update_direct_overlap_vertex_preview(point)
+                    try:
+                        event.accept()
+                    except Exception:
+                        pass
+                    return True
+                if (
+                    event.type() == QEvent.Type.MouseButtonRelease
+                    and event.button() == Qt.MouseButton.LeftButton
+                    and self.has_direct_overlap_vertex_edit()
+                    and self.map_tool
+                    and self.map_tool.edit_vertex_start_point
+                ):
+                    if self.ignore_next_direct_overlap_release:
+                        self.ignore_next_direct_overlap_release = False
+                        try:
+                            event.accept()
+                        except Exception:
+                            pass
+                        return True
+                    try:
+                        end_pixel = event.position().toPoint()
+                    except Exception:
+                        end_pixel = event.pos()
+                    start_pixel = self.map_tool.edit_vertex_start_pixel
+                    moved = False
+                    try:
+                        moved = abs(end_pixel.x() - start_pixel.x()) > 4 or abs(end_pixel.y() - start_pixel.y()) > 4
+                    except Exception:
+                        moved = self.map_tool.edit_vertex_dragging
+                    point = self.direct_overlap_point_from_mouse_event(event, use_snap=True)
+                    self.map_tool._clear_direct_vertex_state()
+                    if moved and point:
+                        self.finish_direct_overlap_vertex_move(point)
+                    else:
+                        self.clear_direct_overlap_vertex_preview()
+                    self.clear_direct_overlap_vertex_edit()
+                    self.clear_edit_overlap_anchor()
+                    self.stop_qgis_vertex_tool_for_direct_overlap()
+                    self.just_finished_direct_overlap_vertex_edit = True
+                    self.suspend_edit_hover_prepare = False
+                    try:
+                        event.accept()
+                    except Exception:
+                        pass
+                    return True
+                if event.type() == QEvent.Type.MouseMove:
+                    if self.just_finished_direct_overlap_vertex_edit:
+                        self.just_finished_direct_overlap_vertex_edit = False
+                    if self.suspend_edit_hover_prepare:
+                        self.update_map_cursor()
+                        return super().eventFilter(obj, event)
+                    try:
+                        if event.buttons() & Qt.MouseButton.LeftButton:
+                            self.update_map_cursor()
+                            return super().eventFilter(obj, event)
+                    except Exception:
+                        pass
+                    if not self.has_direct_overlap_vertex_edit():
+                        point = self.map_point_from_mouse_event(event)
+                        if point:
+                            self.prepare_edit_layer_at(point, activate_tool=True, quiet=True)
                     self.update_map_cursor()
             elif self.operation_mode == "move" and event.type() == QEvent.Type.MouseMove:
                 self.update_map_cursor()
@@ -4793,8 +6414,44 @@ class InspectionTabWidget(QWidget):
         except Exception:
             return None
 
+    def direct_overlap_point_from_mouse_event(self, event, use_snap=True):
+        if self.map_tool:
+            try:
+                return self.map_tool._event_map_point(event, use_snap=use_snap)
+            except Exception:
+                pass
+        return self.map_point_from_mouse_event(event)
+
+    def close_current_context_menu(self, keep_menu=None):
+        menu = getattr(self, "current_context_menu", None)
+        if not menu or menu is keep_menu:
+            return
+        self.current_context_menu = None
+        try:
+            menu.close()
+        except Exception:
+            pass
+        try:
+            menu.deleteLater()
+        except Exception:
+            pass
+
+    def clear_current_context_menu(self, menu):
+        if getattr(self, "current_context_menu", None) is menu:
+            self.current_context_menu = None
+        try:
+            menu.deleteLater()
+        except Exception:
+            pass
+
     def show_context_menu(self, global_pos):
+        self.close_current_context_menu()
         menu = QMenu()
+        self.current_context_menu = menu
+        try:
+            menu.aboutToHide.connect(lambda m=menu: self.clear_current_context_menu(m))
+        except Exception:
+            pass
         self.populate_context_menu(menu, global_pos)
         menu.exec(global_pos)
         return
@@ -4818,6 +6475,31 @@ class InspectionTabWidget(QWidget):
         if not self.delete_confirm_enabled():
             return True
         return QMessageBox.question(self, title, message) == QMessageBox.StandardButton.Yes
+
+    def layer_change_confirm_enabled(self):
+        try:
+            value = QgsSettings().value(INSPECTION_LAYER_CHANGE_CONFIRM_KEY, True)
+        except Exception:
+            return True
+        if isinstance(value, bool):
+            return value
+        return str(value).strip().lower() not in ("0", "false", "no", "off", "")
+
+    def set_layer_change_confirm_enabled(self, enabled):
+        try:
+            QgsSettings().setValue(INSPECTION_LAYER_CHANGE_CONFIRM_KEY, bool(enabled))
+        except Exception:
+            pass
+
+    def confirm_layer_change_if_needed(self, target_layer, total_count):
+        if not self.layer_change_confirm_enabled():
+            return True
+        return QMessageBox.question(
+            self,
+            tr_text("移層"),
+            tr_text(f"選択中の {total_count} 件を「{self.layer_base_name(target_layer)}」へ移層しますか？"),
+        ) == QMessageBox.StandardButton.Yes
+
     def inspection_shortcut_defaults(self):
         return {key: default_value for key, _label, default_value in INSPECTION_SHORTCUT_DEFINITIONS}
 
@@ -4836,6 +6518,39 @@ class InspectionTabWidget(QWidget):
             text = text.replace(old, new)
         return text.replace(" ", "").lower()
 
+    def valid_hold_shortcut_text(self, text):
+        norm = self.normalize_shortcut_text(text)
+        if not norm or "+" in norm:
+            return False
+        blocked = {
+            "ctrl",
+            "control",
+            "shift",
+            "alt",
+            "meta",
+            "esc",
+            "escape",
+            "backspace",
+            "del",
+            "delete",
+            "space",
+            "enter",
+            "return",
+            "tab",
+        }
+        return norm not in blocked
+
+    def hold_shortcut_key_from_event(self, event):
+        event_text = self.shortcut_text_from_event(event)
+        if not event_text:
+            return ""
+        event_norm = self.normalize_shortcut_text(event_text)
+        for key in INSPECTION_HOLD_SHORTCUT_KEYS:
+            value = self.inspection_shortcuts().get(key, "")
+            if value and self.normalize_shortcut_text(value) == event_norm:
+                return key
+        return ""
+
     def inspection_shortcuts(self):
         settings = QgsSettings()
         shortcuts = self.inspection_shortcut_defaults()
@@ -4844,8 +6559,52 @@ class InspectionTabWidget(QWidget):
                 value = settings.value(INSPECTION_SHORTCUTS_KEY_PREFIX + key, shortcuts[key])
             except Exception:
                 value = shortcuts[key]
+            if key == "parallel_direction_copy" and self.normalize_shortcut_text(value) in ("s", "f"):
+                value = "Z"
+                try:
+                    settings.setValue(INSPECTION_SHORTCUTS_KEY_PREFIX + key, value)
+                except Exception:
+                    pass
             shortcuts[key] = str(value or "").strip()
         return shortcuts
+    def inspection_angle_snap_degrees(self):
+        try:
+            value = QgsSettings().value(INSPECTION_ANGLE_SNAP_DEGREES_KEY, INSPECTION_ANGLE_SNAP_DEFAULT_DEGREES)
+            degrees = int(value)
+        except Exception:
+            degrees = INSPECTION_ANGLE_SNAP_DEFAULT_DEGREES
+        if degrees not in INSPECTION_ANGLE_SNAP_ALLOWED_DEGREES:
+            return INSPECTION_ANGLE_SNAP_DEFAULT_DEGREES
+        return degrees
+
+    def save_inspection_angle_snap_degrees(self, degrees):
+        try:
+            degrees = int(degrees)
+        except Exception:
+            degrees = INSPECTION_ANGLE_SNAP_DEFAULT_DEGREES
+        if degrees not in INSPECTION_ANGLE_SNAP_ALLOWED_DEGREES:
+            degrees = INSPECTION_ANGLE_SNAP_DEFAULT_DEGREES
+        try:
+            QgsSettings().setValue(INSPECTION_ANGLE_SNAP_DEGREES_KEY, degrees)
+        except Exception:
+            pass
+
+    def inspection_angle_snap_basis(self):
+        try:
+            basis = str(QgsSettings().value(INSPECTION_ANGLE_SNAP_BASIS_KEY, INSPECTION_ANGLE_SNAP_BASIS_DEFAULT) or "")
+        except Exception:
+            basis = INSPECTION_ANGLE_SNAP_BASIS_DEFAULT
+        if basis not in INSPECTION_ANGLE_SNAP_BASIS_ALLOWED:
+            return INSPECTION_ANGLE_SNAP_BASIS_DEFAULT
+        return basis
+
+    def save_inspection_angle_snap_basis(self, basis):
+        if basis not in INSPECTION_ANGLE_SNAP_BASIS_ALLOWED:
+            basis = INSPECTION_ANGLE_SNAP_BASIS_DEFAULT
+        try:
+            QgsSettings().setValue(INSPECTION_ANGLE_SNAP_BASIS_KEY, basis)
+        except Exception:
+            pass
 
     def save_inspection_shortcuts(self, shortcuts):
         settings = QgsSettings()
@@ -4863,12 +6622,14 @@ class InspectionTabWidget(QWidget):
         if values is None:
             return
         self.save_inspection_shortcuts(values)
+        self.save_inspection_angle_snap_degrees(dialog.angle_snap_degrees())
+        self.save_inspection_angle_snap_basis(dialog.angle_snap_basis())
         self.refresh_inspection_qshortcuts()
-        self.set_status("✅ 検査ショートカットを保存しました")
+        self.set_status(tr_text("✅ 検査ショートカットを保存しました"))
 
     def shortcut_focus_allows_run(self):
         widget = QApplication.focusWidget()
-        if isinstance(widget, (QLineEdit, QTextEdit, QKeySequenceEdit)):
+        if isinstance(widget, (QLineEdit, QTextEdit, QPlainTextEdit, QKeySequenceEdit)):
             return False
         return True
 
@@ -4881,6 +6642,8 @@ class InspectionTabWidget(QWidget):
                 pass
         self.inspection_qshortcuts = []
         for key, value in self.inspection_shortcuts().items():
+            if key in INSPECTION_HOLD_SHORTCUT_KEYS:
+                continue
             if not value:
                 continue
             sequence = QKeySequence(value)
@@ -4937,15 +6700,22 @@ class InspectionTabWidget(QWidget):
             return False
         event_norm = self.normalize_shortcut_text(event_text)
         for key, value in self.inspection_shortcuts().items():
+            if key in INSPECTION_HOLD_SHORTCUT_KEYS:
+                continue
             if value and self.normalize_shortcut_text(value) == event_norm:
                 return self.run_inspection_shortcut(key)
         return False
 
     def run_inspection_shortcut(self, key):
+        if key == "delete" and self.operation_mode == "edit":
+            self.forward_qgis_vertex_tool_key(Qt.Key.Key_Delete)
+            return True
         actions = {
             "pan": self.switch_to_pan,
             "select": self.start_select,
+            "select_polygon": self.start_select_polygon,
             "layer_change": self.start_layer_change,
+            "restore": self.start_restore_mode,
             "delete": self.start_delete,
             "edit": self.start_edit,
             "move": self.start_move,
@@ -4957,10 +6727,11 @@ class InspectionTabWidget(QWidget):
         if key == "continuous":
             self.set_continuous_capture(not self.continuous_capture_enabled)
             state = "ON" if self.continuous_capture_enabled else "OFF"
-            self.set_status(f"連続: {state}")
+            self.set_status(tr_text(f"連続: {state}"))
             return True
         shape_map = {
             "shape_polygon": ("polygon", "polygon", "多角"),
+            "shape_fixed_angle_90": ("polygon", "fixed_angle_90", "直角多角"),
             "shape_rectangle": ("polygon", "rectangle", "矩形"),
             "shape_ellipse": ("polygon", "ellipse", "楕円"),
             "shape_circle": ("polygon", "circle", "正円"),
@@ -4975,13 +6746,13 @@ class InspectionTabWidget(QWidget):
     def activate_shape_shortcut(self, geom_key, shape, label):
         layer = self.active_layer()
         if not layer:
-            self.set_status("検査項目を選択してください")
+            self.set_status(tr_text("検査項目を選択してください"))
             return True
         layer_geom = self.layer_geom_type_key(layer)
         if layer_geom != geom_key:
             layer_label = GEOM_TYPE_LABELS.get(layer_geom, "不明")
             target_label = GEOM_TYPE_LABELS.get(geom_key, label)
-            self.set_status(f"この検査項目は{layer_label}です。{target_label}入力には切り替えられません")
+            self.set_status(tr_text(f"この検査項目は{layer_label}です。{target_label}入力には切り替えられません"))
             return True
         self.finish_edit_for_mode_switch()
         self.active_geom_type = geom_key
@@ -4990,1138 +6761,8 @@ class InspectionTabWidget(QWidget):
         self.operation_mode = "create"
         self.iface.setActiveLayer(layer)
         self.ensure_map_tool()
-        self.set_status(f"検査入力: {self.layer_base_name(layer)} / {label}")
+        self.set_status(tr_text(f"検査入力: {self.layer_base_name(layer)} / {label}"))
         return True
-    def context_action_definitions(self):
-        return {
-            "pan": (tr("inspection.menu.action.pan"), self.switch_to_pan, tr("inspection.menu.tip.pan")),
-            "select": (tr("inspection.menu.action.select"), self.start_select, tr("inspection.menu.tip.select")),
-            "layer_change": (tr("inspection.menu.action.layer_change"), self.start_layer_change, tr("inspection.menu.tip.layer_change")),
-            "delete": (tr("inspection.menu.action.delete"), self.start_delete, tr("inspection.menu.tip.delete")),
-            "edit": (tr("inspection.menu.action.edit"), self.start_edit, tr("inspection.menu.tip.edit")),
-            "move": (tr("inspection.menu.action.move"), self.start_move, tr("inspection.menu.tip.move")),
-            "merge": (tr("inspection.menu.action.merge"), self.start_merge, tr("inspection.menu.tip.merge")),
-        }
-
-    def context_action_order(self):
-        default_order = list(CONTEXT_ACTION_DEFAULT_ORDER)
-        try:
-            raw = QgsSettings().value(CONTEXT_ACTION_ORDER_KEY, "")
-        except Exception:
-            raw = ""
-        saved = []
-        if raw:
-            saved = [part.strip() for part in str(raw).split(",") if part.strip()]
-        order = [key for key in saved if key in default_order]
-        for key in default_order:
-            if key not in order:
-                order.append(key)
-        return order[:len(default_order)]
-
-    def context_action_rows(self):
-        default_order = list(CONTEXT_ACTION_DEFAULT_ORDER)
-        try:
-            raw = QgsSettings().value(CONTEXT_ACTION_ORDER_KEY, "")
-        except Exception:
-            raw = ""
-        raw = str(raw or "")
-        if "|" not in raw:
-            order = self.context_action_order()
-            return [order[:4], order[4:]]
-        rows = []
-        seen = set()
-        for part in raw.split("|", 1):
-            row = []
-            for key in [item.strip() for item in part.split(",") if item.strip()]:
-                if key in default_order and key not in seen:
-                    row.append(key)
-                    seen.add(key)
-            rows.append(row)
-        while len(rows) < 2:
-            rows.append([])
-        for key in default_order:
-            if key not in seen:
-                rows[1].append(key)
-        if not rows[0] and rows[1]:
-            rows[0].append(rows[1].pop(0))
-        return [rows[0], rows[1]]
-
-    def save_context_action_order(self, order):
-        valid = [key for key in order if key in CONTEXT_ACTION_DEFAULT_ORDER]
-        if not valid:
-            valid = list(CONTEXT_ACTION_DEFAULT_ORDER)
-        try:
-            QgsSettings().setValue(CONTEXT_ACTION_ORDER_KEY, ",".join(valid))
-        except Exception:
-            pass
-
-    def save_context_action_rows(self, rows):
-        seen = set()
-        cleaned = [[], []]
-        for row_index in range(2):
-            for key in rows[row_index] if row_index < len(rows) else []:
-                if key in CONTEXT_ACTION_DEFAULT_ORDER and key not in seen:
-                    cleaned[row_index].append(key)
-                    seen.add(key)
-        for key in CONTEXT_ACTION_DEFAULT_ORDER:
-            if key not in seen:
-                cleaned[1].append(key)
-        if not cleaned[0] and cleaned[1]:
-            cleaned[0].append(cleaned[1].pop(0))
-        try:
-            QgsSettings().setValue(
-                CONTEXT_ACTION_ORDER_KEY,
-                ",".join(cleaned[0]) + "|" + ",".join(cleaned[1]),
-            )
-        except Exception:
-            pass
-
-    def context_action_is_active(self, action_key):
-        mode = self.operation_mode
-        active_by_mode = {
-            "pan": "pan",
-            "pan_pending": "pan",
-            "select": "select",
-            "layer_change": "layer_change",
-            "layer_change_select": "layer_change",
-            "delete": "delete",
-            "edit": "edit",
-            "move": "move",
-            "merge": "merge",
-        }
-        return active_by_mode.get(mode) == action_key
-
-    def add_context_action_drop_zone(self, row, row_index, slot_index, expand=False):
-        zone = QPushButton("")
-        zone.setFlat(True)
-        zone.setFixedHeight(24)
-        zone.setMinimumWidth(22 if expand else 10)
-        if expand:
-            zone.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        else:
-            zone.setFixedWidth(10)
-        target = f"__action_slot__:{row_index}:{slot_index}"
-        zone.setProperty("inspection_action_drop_target", target)
-        base_style = (
-            "QPushButton{border:none;background:transparent;padding:0;}"
-            "QPushButton:hover{background:#eef4ff;}"
-        )
-        zone.setProperty("base_style", base_style)
-        zone.setStyleSheet(base_style)
-        row.addWidget(zone)
-
-    def add_context_action_button(self, row, menu, menu_pos, action_key, row_index, slot_index):
-        definitions = self.context_action_definitions()
-        if action_key not in definitions:
-            return
-        text, slot, tooltip = definitions[action_key]
-        btn = InspectionActionMenuButton(text, self, action_key, menu, menu_pos)
-        btn.setFixedWidth(CONTEXT_ACTION_BUTTON_WIDTH)
-        btn.setToolTip(tooltip)
-        btn.setCheckable(True)
-        btn.setChecked(self.context_action_is_active(action_key))
-        btn.setProperty("inspection_action_row", row_index)
-        btn.setProperty("inspection_action_index", slot_index)
-        base_style = (
-            "QPushButton{border:1px solid #b8c0cc;border-radius:3px;"
-            "background:#ffffff;color:#202020;padding:3px 0;}"
-            "QPushButton:hover{background:#dcecff;border:1px solid #6b8fd6;}"
-            "QPushButton:checked{background:#2d8cff;color:white;font-weight:bold;border:1px solid #1f66c2;}"
-        )
-        btn.setProperty("base_style", base_style)
-        btn.setStyleSheet(base_style)
-        btn.clicked.connect(lambda _=False, s=slot, m=menu: (m.close(), s()))
-        row.addWidget(btn)
-
-    def add_context_action_row(self, top_rows, menu, menu_pos, row_index, action_keys):
-        row_widget = QWidget()
-        row_widget.setProperty("inspection_action_row", row_index)
-        row_widget.setProperty("inspection_action_row_len", len(action_keys))
-        row = QHBoxLayout(row_widget)
-        row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(0)
-        for slot_index, action_key in enumerate(action_keys):
-            self.add_context_action_drop_zone(row, row_index, slot_index)
-            self.add_context_action_button(row, menu, menu_pos, action_key, row_index, slot_index)
-        self.add_context_action_drop_zone(row, row_index, len(action_keys), expand=True)
-        top_rows.addWidget(row_widget)
-
-    def populate_context_menu(self, menu, global_pos):
-        top_action = QWidgetAction(menu)
-        top_widget = QWidget(menu)
-        top_rows = QVBoxLayout(top_widget)
-        top_rows.setContentsMargins(4, 2, 4, 2)
-        top_rows.setSpacing(2)
-        layer_change_mode = self.operation_mode in ("layer_change", "layer_change_select")
-        if layer_change_mode:
-            row = QHBoxLayout()
-            row.setSpacing(2)
-            btn_pan = QPushButton(tr("inspection.menu.main"))
-            btn_pan.setFixedWidth(CONTEXT_ACTION_BUTTON_WIDTH)
-            btn_pan.clicked.connect(lambda _=False, m=menu, p=global_pos: (m.close(), self.show_main_menu(p)))
-            row.addWidget(btn_pan)
-            menu.setStyleSheet("QMenu{background:#fff6c8;} QMenu::item:selected{background:#ffe58a;color:#202020;}")
-            top_widget.setStyleSheet("background:#fff6c8;")
-            for text, slot, width in [
-                (tr("inspection.menu.reselect"), self.restart_layer_change_selection, 56),
-                (tr("inspection.menu.cancel"), self.cancel_layer_change, 50),
-            ]:
-                btn = QPushButton(text)
-                btn.setFixedWidth(width)
-                btn.clicked.connect(lambda _=False, s=slot, m=menu: (m.close(), s()))
-                row.addWidget(btn)
-            top_rows.addLayout(row)
-        else:
-            rows = self.context_action_rows()
-            self.add_context_action_row(top_rows, menu, global_pos, 0, rows[0])
-            self.add_context_action_row(top_rows, menu, global_pos, 1, rows[1])
-        top_action.setDefaultWidget(top_widget)
-        menu.addAction(top_action)
-        if not layer_change_mode:
-            self.add_capture_options_row(menu)
-        menu.addSeparator()
-        if self.is_free_inspection():
-            grouped = {"": []}
-            group_order = [""]
-            free_group_names = self.free_group_names()
-            for name in free_group_names:
-                grouped.setdefault(name, [])
-                group_order.append(name)
-            for layer in self.ordered_inspection_layers():
-                desc = self.layer_descriptor(layer)
-                group_name = str(desc.get("group_name", "") or "")
-                if group_name not in grouped:
-                    grouped[group_name] = []
-                    group_order.append(group_name)
-                grouped[group_name].append(layer)
-            has_free_items = bool(free_group_names) or any(grouped.get(name) for name in grouped)
-            if not has_free_items:
-                self.add_menu_button(
-                    menu, tr("inspection.menu.add_group"),
-                    lambda: self.add_free_group(), close_menu=True, bold=True, indent=0
-                )
-                self.add_menu_button(
-                    menu, tr("inspection.menu.add_layer"),
-                    lambda: self.add_manual_layer(free_group_name=""), close_menu=True, bold=True, indent=0
-                )
-            direct_layers = grouped.get("", [])
-            for layer in direct_layers:
-                desc = self.layer_descriptor(layer)
-                source = desc.get("source_name")
-                self.add_layer_menu_button(
-                    menu,
-                    self.layer_base_name(layer),
-                    source,
-                    lambda s=source: self.activate_layer_by_source(s),
-                    close_menu=True,
-                    bold=False,
-                    indent=0,
-                )
-            self.add_free_group_bottom_drop_button(menu, "", indent=0)
-            for group_name in [name for name in group_order if name]:
-                layers = grouped.get(group_name, [])
-                title = group_name
-                expanded = self.free_group_menu_expanded.get(group_name, True)
-                self.add_free_group_menu_button(
-                    menu,
-                    f"{'➖' if expanded else '➕'} {title}",
-                    lambda g=group_name, p=global_pos: self.toggle_free_group_menu(g, p),
-                    group_name,
-                    global_pos,
-                    close_menu=True,
-                    bold=True,
-                    indent=0,
-                )
-                if not expanded:
-                    continue
-                for layer in layers:
-                    desc = self.layer_descriptor(layer)
-                    source = desc.get("source_name")
-                    self.add_layer_menu_button(
-                        menu,
-                        self.layer_base_name(layer),
-                        source,
-                        lambda s=source: self.activate_layer_by_source(s),
-                        close_menu=True,
-                        bold=False,
-                        indent=26,
-                    )
-                self.add_free_group_bottom_drop_button(menu, group_name, indent=26)
-            if has_free_items:
-                menu.addSeparator()
-                self.add_menu_button(
-                    menu, tr("inspection.menu.add_layer"),
-                    lambda: self.add_manual_layer(free_group_name=""), close_menu=True, bold=True, indent=0
-                )
-                self.add_menu_button(
-                    menu, tr("inspection.menu.add_group"),
-                    lambda: self.add_free_group(), close_menu=True, bold=True, indent=0
-                )
-        else:
-            grouped = {}
-            group_order = []
-            for layer in self.ordered_inspection_layers():
-                desc = self.layer_descriptor(layer)
-                if desc.get("geom_type") != "polygon":
-                    continue
-                round_no = int(desc.get("round_no", 0) or 0)
-                if round_no not in grouped:
-                    grouped[round_no] = []
-                    group_order.append(round_no)
-                grouped[round_no].append(layer)
-            for round_no in group_order:
-                title = tr("inspection.menu.manual_layers") if round_no == 0 else tr("inspection.menu.round_title").format(round=round_no)
-                expanded = self.round_menu_expanded.get(round_no, True)
-                self.add_menu_button(
-                    menu,
-                    f"{'➖' if expanded else '➕'} {title}",
-                    lambda r=round_no, p=global_pos: self.toggle_round_menu(r, p),
-                    close_menu=True,
-                    bold=True,
-                    indent=0,
-                )
-                if not expanded:
-                    continue
-                for layer in grouped[round_no]:
-                    desc = self.layer_descriptor(layer)
-                    source = desc.get("source_name")
-                    self.add_layer_menu_button(
-                        menu,
-                        self.layer_base_name(layer),
-                        source,
-                        lambda s=source: self.activate_layer_by_source(s),
-                        close_menu=True,
-                        bold=False,
-                        indent=26,
-                    )
-                self.add_round_bottom_drop_button(menu, round_no, indent=26)
-
-    def refresh_context_menu(self, menu, global_pos):
-        if menu:
-            menu.clear()
-            self.populate_context_menu(menu, global_pos)
-            menu.update()
-            return
-        QTimer.singleShot(0, lambda: self.show_context_menu(global_pos))
-
-    def add_capture_options_row(self, menu):
-        action = QWidgetAction(menu)
-        widget = QWidget(menu)
-        layout = QHBoxLayout(widget)
-        layout.setContentsMargins(4, 1, 4, 1)
-        chk = QCheckBox(tr("inspection.menu.continuous"))
-        chk.setToolTip(tr("inspection.menu.continuous_tooltip"))
-        chk.setChecked(self.continuous_capture_enabled)
-        chk.toggled.connect(self.set_continuous_capture)
-        layout.addWidget(chk)
-        group = QButtonGroup(widget)
-        group.setExclusive(True)
-        for key, text in [
-            ("polygon", tr("inspection.menu.shape_polygon")),
-            ("rectangle", tr("inspection.menu.shape_rectangle")),
-            ("ellipse", tr("inspection.menu.shape_ellipse")),
-            ("circle", tr("inspection.menu.shape_circle")),
-        ]:
-            btn = QPushButton(text)
-            btn.setCheckable(True)
-            btn.setChecked(self.active_capture_shape == key)
-            btn.setFixedWidth(38)
-            btn.setStyleSheet(
-                "QPushButton{padding:2px 3px;}"
-                "QPushButton:checked{background:#2d8cff;color:white;font-weight:bold;}"
-            )
-            btn.clicked.connect(lambda _=False, k=key: self.set_capture_shape(k))
-            group.addButton(btn)
-            layout.addWidget(btn)
-        layout.addStretch()
-        action.setDefaultWidget(widget)
-        menu.addAction(action)
-
-    def add_menu_button(self, menu, text, callback, close_menu=True, bold=False, indent=0):
-        action = QWidgetAction(menu)
-        widget = QWidget(menu)
-        layout = QHBoxLayout(widget)
-        layout.setContentsMargins(indent, 1, 4, 1)
-        button = QPushButton(text)
-        button.setFlat(True)
-        button.setMinimumWidth(170)
-        text_color = "#202020"
-        base_style = (
-            f"QPushButton{{border:none;text-align:left;padding:3px 6px;color:{text_color};}}"
-            "QPushButton:hover{background:#dcecff;}"
-        )
-        button.setProperty("base_style", base_style)
-        button.setStyleSheet(base_style)
-        if bold:
-            font = QFont(button.font())
-            font.setBold(True)
-            font.setPointSize(max(font.pointSize(), 10))
-            button.setFont(font)
-        if close_menu:
-            button.clicked.connect(lambda _=False, m=menu, cb=callback: (m.close(), cb()))
-        else:
-            button.clicked.connect(lambda _=False, cb=callback: cb())
-        layout.addWidget(button)
-        action.setDefaultWidget(widget)
-        menu.addAction(action)
-
-    def add_free_group_menu_button(self, menu, text, callback, group_name, menu_pos, close_menu=True, bold=False, indent=0):
-        action = QWidgetAction(menu)
-        widget = QWidget(menu)
-        target = f"__free_group_bottom__:{group_name or ''}"
-        widget.setProperty("inspection_drop_target", target)
-        widget.setProperty("inspection_group_name", group_name or "")
-        layout = QHBoxLayout(widget)
-        layout.setContentsMargins(indent, 1, 4, 1)
-        button = InspectionGroupMenuButton(text, self, group_name, menu, menu_pos, widget)
-        button.setFlat(True)
-        button.setMinimumWidth(170)
-        button.setProperty("inspection_drop_target", target)
-        button.setProperty("inspection_group_name", group_name or "")
-        text_color = "#d93025" if self.is_free_group_locked(group_name) else "#202020"
-        base_style = (
-            f"QPushButton{{border:none;text-align:left;padding:3px 6px;color:{text_color};}}"
-            "QPushButton:hover{background:#dcecff;}"
-        )
-        button.setProperty("base_style", base_style)
-        button.setStyleSheet(base_style)
-        if bold:
-            font = QFont(button.font())
-            font.setBold(True)
-            font.setPointSize(max(font.pointSize(), 10))
-            button.setFont(font)
-        if close_menu:
-            button.clicked.connect(lambda _=False, m=menu, cb=callback: (m.close(), cb()))
-        else:
-            button.clicked.connect(lambda _=False, cb=callback: cb())
-        layout.addWidget(button)
-        action.setDefaultWidget(widget)
-        menu.addAction(action)
-
-    def add_layer_menu_button(self, menu, text, source_name, callback, close_menu=True, bold=False, indent=0):
-        action = QWidgetAction(menu)
-        widget = QWidget(menu)
-        widget.setProperty("inspection_source", source_name)
-        layout = QHBoxLayout(widget)
-        layout.setContentsMargins(indent, 1, 4, 1)
-        button = InspectionLayerMenuButton(text, self, source_name, menu, QCursor.pos(), widget)
-        button.setFlat(True)
-        button.setMinimumWidth(170)
-        layer = self.layer_by_source(source_name)
-        if self.is_layer_locked(layer):
-            text_color = "#d93025"
-        else:
-            text_color = "#0645ad" if layer and self.is_manual_layer(layer) else "#202020"
-        base_style = (
-            f"QPushButton{{border:none;text-align:left;padding:3px 6px;color:{text_color};}}"
-            "QPushButton:hover{background:#dcecff;}"
-        )
-        button.setProperty("base_style", base_style)
-        button.setStyleSheet(base_style)
-        if bold:
-            font = QFont(button.font())
-            font.setBold(True)
-            font.setPointSize(max(font.pointSize(), 10))
-            button.setFont(font)
-        if close_menu:
-            button.clicked.connect(lambda _=False, m=menu, cb=callback: (m.close(), cb()))
-        else:
-            button.clicked.connect(lambda _=False, cb=callback: cb())
-        layout.addWidget(button)
-        action.setDefaultWidget(widget)
-        menu.addAction(action)
-
-    def add_round_bottom_drop_button(self, menu, round_no, indent=0):
-        action = QWidgetAction(menu)
-        widget = QWidget(menu)
-        target = f"__round_bottom__:{round_no}"
-        widget.setProperty("inspection_drop_target", target)
-        layout = QHBoxLayout(widget)
-        layout.setContentsMargins(indent, 0, 4, 0)
-        button = QPushButton("")
-        button.setFlat(True)
-        button.setMinimumWidth(170)
-        button.setFixedHeight(8)
-        button.setProperty("inspection_drop_target", target)
-        base_style = (
-            "QPushButton{border:none;text-align:left;padding:0;background:transparent;color:transparent;}"
-            "QPushButton:hover{background:#eef4ff;}"
-        )
-        button.setProperty("base_style", base_style)
-        button.setStyleSheet(base_style)
-        layout.addWidget(button)
-        action.setDefaultWidget(widget)
-        menu.addAction(action)
-
-    def add_free_group_bottom_drop_button(self, menu, group_name, indent=0):
-        action = QWidgetAction(menu)
-        widget = QWidget(menu)
-        target = f"__free_group_bottom__:{group_name or ''}"
-        widget.setProperty("inspection_drop_target", target)
-        layout = QHBoxLayout(widget)
-        layout.setContentsMargins(indent, 0, 4, 0)
-        button = QPushButton("")
-        button.setFlat(True)
-        button.setMinimumWidth(170)
-        button.setFixedHeight(8)
-        button.setProperty("inspection_drop_target", target)
-        base_style = (
-            "QPushButton{border:none;text-align:left;padding:0;background:transparent;color:transparent;}"
-            "QPushButton:hover{background:#eef4ff;}"
-        )
-        button.setProperty("base_style", base_style)
-        button.setStyleSheet(base_style)
-        layout.addWidget(button)
-        action.setDefaultWidget(widget)
-        menu.addAction(action)
-
-    def layer_source_at_global_pos(self, global_pos):
-        source, _button = self.layer_button_at_global_pos(global_pos)
-        return source
-
-    def layer_button_at_global_pos(self, global_pos):
-        widget = QApplication.widgetAt(global_pos)
-        while widget:
-            drop_target = widget.property("inspection_drop_target")
-            if drop_target:
-                button = widget if isinstance(widget, QPushButton) else None
-                if button is None:
-                    child = widget.findChild(QPushButton)
-                    if child and child.property("inspection_drop_target") == drop_target:
-                        button = child
-                return drop_target, button
-            source = widget.property("inspection_source")
-            if source:
-                button = widget if isinstance(widget, QPushButton) else None
-                if button is None:
-                    child = widget.findChild(QPushButton)
-                    if child and child.property("inspection_source") == source:
-                        button = child
-                if button:
-                    local_pos = button.mapFromGlobal(global_pos)
-                    if local_pos.y() > button.height() / 2:
-                        return f"__after__:{source}", button
-                return source, button
-            widget = widget.parentWidget()
-        return "", None
-
-    def free_group_drop_target_at_global_pos(self, global_pos):
-        widget = QApplication.widgetAt(global_pos)
-        while widget:
-            group_name = widget.property("inspection_group_name")
-            if group_name is not None:
-                group_name = str(group_name or "").strip()
-                button = widget if isinstance(widget, QPushButton) else None
-                if button is None:
-                    child = widget.findChild(QPushButton)
-                    if child and child.property("inspection_group_name") is not None:
-                        button = child
-                if button:
-                    local_pos = button.mapFromGlobal(global_pos)
-                    position = "after" if local_pos.y() > button.height() / 2 else "before"
-                    return group_name, position, button
-            widget = widget.parentWidget()
-        return "", "", None
-
-    def clear_free_group_drag_highlight(self):
-        if self.group_drag_highlight_button:
-            base_style = self.group_drag_highlight_button.property("base_style")
-            if base_style:
-                self.group_drag_highlight_button.setStyleSheet(base_style)
-        self.group_drag_highlight_button = None
-        self.group_drag_highlight_target = ""
-
-    def clear_free_group_drag_visual(self):
-        self.clear_free_group_drag_highlight()
-        if self.group_drag_source_button:
-            base_style = self.group_drag_source_button.property("base_style")
-            if base_style:
-                self.group_drag_source_button.setStyleSheet(base_style)
-        self.group_drag_source_button = None
-        if self.group_drag_preview_label:
-            self.group_drag_preview_label.hide()
-
-    def update_free_group_drag_target(self, group_name, global_pos, source_button=None):
-        group_name = str(group_name or "").strip()
-        if not group_name:
-            return
-        if source_button and source_button is not self.group_drag_source_button:
-            if self.group_drag_source_button:
-                base_style = self.group_drag_source_button.property("base_style")
-                if base_style:
-                    self.group_drag_source_button.setStyleSheet(base_style)
-            self.group_drag_source_button = source_button
-            source_button.setStyleSheet(
-                "QPushButton{border:1px dashed #9aa0a6;text-align:left;padding:3px 6px;"
-                "background:#f3f4f6;color:#8a8f98;font-weight:bold;}"
-            )
-        self.update_free_group_drag_preview(group_name, global_pos)
-        target_group, position, button = self.free_group_drop_target_at_global_pos(global_pos)
-        if not target_group or target_group == group_name:
-            target_key = ""
-            button = None
-        else:
-            target_key = f"{position}:{target_group}"
-        if button is self.group_drag_highlight_button and target_key == self.group_drag_highlight_target:
-            return
-        self.clear_free_group_drag_highlight()
-        if not target_key or not button:
-            return
-        base_style = button.property("base_style") or "QPushButton{border:none;text-align:left;padding:3px 6px;color:#202020;}"
-        line_side = "border-bottom" if position == "after" else "border-top"
-        button.setStyleSheet(
-            str(base_style).replace("border:none;", f"border:none;{line_side}:3px solid #1456d9;")
-        )
-        self.group_drag_highlight_button = button
-        self.group_drag_highlight_target = target_key
-        side_label = "下" if position == "after" else "上"
-        self.set_status(f"グループ移動先: {self.free_group_title(target_group)} の{side_label}")
-
-    def update_free_group_drag_preview(self, group_name, global_pos):
-        label_text = self.free_group_title(group_name)
-        if not self.group_drag_preview_label:
-            self.group_drag_preview_label = QLabel()
-            try:
-                self.group_drag_preview_label.setWindowFlags(Qt.WindowType.ToolTip)
-            except Exception:
-                self.group_drag_preview_label.setWindowFlags(Qt.ToolTip)
-            self.group_drag_preview_label.setStyleSheet(
-                "QLabel{background:#202124;color:white;border:1px solid #4d5156;"
-                "border-radius:3px;padding:4px 8px;font-weight:bold;}"
-            )
-        self.group_drag_preview_label.setText(label_text)
-        self.group_drag_preview_label.adjustSize()
-        self.group_drag_preview_label.move(global_pos.x() + 14, global_pos.y() + 14)
-        self.group_drag_preview_label.show()
-
-    def clear_layer_drag_highlight(self):
-        if self.drag_highlight_button:
-            base_style = self.drag_highlight_button.property("base_style")
-            if base_style:
-                self.drag_highlight_button.setStyleSheet(base_style)
-        self.drag_highlight_button = None
-        self.drag_highlight_target = ""
-
-    def clear_layer_drag_visual(self):
-        self.clear_layer_drag_highlight()
-        if self.drag_source_button:
-            base_style = self.drag_source_button.property("base_style")
-            if base_style:
-                self.drag_source_button.setStyleSheet(base_style)
-        self.drag_source_button = None
-        if self.drag_preview_label:
-            self.drag_preview_label.hide()
-
-    def update_layer_drag_target(self, source_name, global_pos, source_button=None):
-        if source_button and source_button is not self.drag_source_button:
-            if self.drag_source_button:
-                base_style = self.drag_source_button.property("base_style")
-                if base_style:
-                    self.drag_source_button.setStyleSheet(base_style)
-            self.drag_source_button = source_button
-            source_button.setStyleSheet(
-                "QPushButton{border:1px dashed #9aa0a6;text-align:left;padding:3px 6px;"
-                "background:#f3f4f6;color:#8a8f98;}"
-            )
-        self.update_layer_drag_preview(source_name, global_pos)
-        target_source, button = self.layer_button_at_global_pos(global_pos)
-        if target_source == source_name or target_source == f"__after__:{source_name}":
-            target_source = ""
-            button = None
-        if button is self.drag_highlight_button and target_source == self.drag_highlight_target:
-            return
-        self.clear_layer_drag_highlight()
-        if not target_source or not button:
-            return
-        base_style = button.property("base_style") or "QPushButton{border:none;text-align:left;padding:3px 6px;color:#202020;}"
-        line_side = "border-bottom" if self.is_after_drop_target(target_source) or self.is_round_bottom_drop_target(target_source) or self.is_free_group_bottom_drop_target(target_source) else "border-top"
-        button.setStyleSheet(
-            str(base_style).replace("border:none;", f"border:none;{line_side}:3px solid #1456d9;")
-        )
-        self.drag_highlight_button = button
-        self.drag_highlight_target = target_source
-        if target_source.startswith("__round_bottom__:"):
-            round_no = self.round_no_from_drop_target(target_source)
-            self.set_status(f"移動先: {self.round_title(round_no)} の一番下")
-        elif target_source.startswith("__free_group_bottom__:"):
-            group_name = self.group_name_from_drop_target(target_source)
-            self.set_status(f"移動先: {self.free_group_title(group_name)} の一番下")
-        elif self.is_after_drop_target(target_source):
-            layer = self.layer_by_source(self.source_from_after_drop_target(target_source))
-            if layer:
-                self.set_status(f"移動先: {self.display_layer_name(layer)} の下")
-        else:
-            layer = self.layer_by_source(target_source)
-            if layer:
-                self.set_status(f"移動先: {self.display_layer_name(layer)} の上")
-
-    def round_title(self, round_no):
-        return "手動レイヤ" if round_no == 0 else f"{round_no}回目検査"
-
-    def round_no_from_drop_target(self, target_source):
-        try:
-            return int(str(target_source).split(":", 1)[1])
-        except Exception:
-            return None
-
-    def is_round_bottom_drop_target(self, target_source):
-        return str(target_source).startswith("__round_bottom__:")
-
-    def is_free_group_bottom_drop_target(self, target_source):
-        return str(target_source).startswith("__free_group_bottom__:")
-
-    def group_name_from_drop_target(self, target_source):
-        return str(target_source).split(":", 1)[1] if self.is_free_group_bottom_drop_target(target_source) else ""
-
-    def free_group_title(self, group_name):
-        return group_name if group_name else "自由式検査直下"
-
-    def layer_lock_manager(self):
-        return getattr(self.main_ui, "layer_lock_manager", None)
-
-    def is_layer_locked(self, layer):
-        manager = self.layer_lock_manager()
-        if manager is None or layer is None:
-            return False
-        try:
-            return manager.is_layer_locked(layer)
-        except Exception:
-            return False
-
-    def is_free_group_locked(self, group_name):
-        manager = self.layer_lock_manager()
-        group = self.find_free_group_node(group_name)
-        if manager is None or group is None:
-            return False
-        try:
-            return manager.is_node_effectively_locked(group)
-        except Exception:
-            return False
-
-    def find_free_group_node(self, group_name):
-        root = QgsProject.instance().layerTreeRoot()
-        if not group_name:
-            return root.findGroup(FREE_INSPECTION_GROUP)
-        for free_root in self.direct_child_groups(root, FREE_INSPECTION_GROUP):
-            groups = self.direct_child_groups(free_root, group_name)
-            if groups:
-                return groups[0]
-        return None
-
-    def locked_layer_names(self, layers):
-        names = []
-        for layer in layers:
-            if layer is not None and self.is_layer_locked(layer):
-                names.append(self.display_layer_name(layer))
-        return names
-
-    def block_locked_layers(self, layers, title, action_label):
-        names = self.locked_layer_names(layers)
-        if not names:
-            return False
-        QMessageBox.warning(
-            self,
-            title,
-            f"ロック中のレイヤには{action_label}できません。\n\n" + "\n".join(names[:8]),
-        )
-        self.set_status("ロック中のレイヤです")
-        return True
-
-    def is_after_drop_target(self, target_source):
-        return str(target_source).startswith("__after__:")
-
-    def source_from_after_drop_target(self, target_source):
-        return str(target_source).split(":", 1)[1] if self.is_after_drop_target(target_source) else target_source
-
-    def is_action_slot_target(self, target_key):
-        return str(target_key).startswith("__action_slot__:")
-
-    def action_slot_from_target(self, target_key):
-        if not self.is_action_slot_target(target_key):
-            return None, None
-        parts = str(target_key).split(":")
-        try:
-            return int(parts[1]), int(parts[2])
-        except Exception:
-            return None, None
-
-    def action_drop_target_at_global_pos(self, global_pos):
-        widget = QApplication.widgetAt(global_pos)
-        while widget:
-            drop_target = widget.property("inspection_action_drop_target")
-            if drop_target:
-                button = widget if isinstance(widget, QPushButton) else None
-                return str(drop_target), button
-            action_key = widget.property("inspection_action_key")
-            if action_key:
-                button = widget if isinstance(widget, QPushButton) else None
-                if button is None:
-                    child = widget.findChild(QPushButton)
-                    if child and child.property("inspection_action_key") == action_key:
-                        button = child
-                if button:
-                    local_pos = button.mapFromGlobal(global_pos)
-                    row_index = button.property("inspection_action_row")
-                    slot_index = button.property("inspection_action_index")
-                    try:
-                        row_index = int(row_index)
-                        slot_index = int(slot_index)
-                    except Exception:
-                        row_index = 0
-                        slot_index = 0
-                    if local_pos.x() > button.width() / 2:
-                        slot_index += 1
-                    return f"__action_slot__:{row_index}:{slot_index}", button
-            row_index = widget.property("inspection_action_row")
-            row_len = widget.property("inspection_action_row_len")
-            if row_index is not None and row_len is not None:
-                try:
-                    return f"__action_slot__:{int(row_index)}:{int(row_len)}", widget
-                except Exception:
-                    pass
-            widget = widget.parentWidget()
-        return "", None
-
-    def clear_action_drag_highlight(self):
-        if self.action_drag_highlight_button:
-            base_style = self.action_drag_highlight_button.property("base_style")
-            if base_style:
-                self.action_drag_highlight_button.setStyleSheet(base_style)
-        self.action_drag_highlight_button = None
-        self.action_drag_highlight_target = ""
-
-    def clear_action_drag_visual(self):
-        self.clear_action_drag_highlight()
-        if self.action_drag_source_button:
-            base_style = self.action_drag_source_button.property("base_style")
-            if base_style:
-                self.action_drag_source_button.setStyleSheet(base_style)
-        self.action_drag_source_button = None
-        if self.action_drag_preview_label:
-            self.action_drag_preview_label.hide()
-
-    def update_action_drag_target(self, action_key, global_pos, source_button=None):
-        if source_button and source_button is not self.action_drag_source_button:
-            if self.action_drag_source_button:
-                base_style = self.action_drag_source_button.property("base_style")
-                if base_style:
-                    self.action_drag_source_button.setStyleSheet(base_style)
-            self.action_drag_source_button = source_button
-            source_button.setStyleSheet(
-                "QPushButton{border:1px dashed #9aa0a6;border-radius:3px;"
-                "background:#f3f4f6;color:#8a8f98;padding:3px 0;}"
-            )
-        self.update_action_drag_preview(action_key, global_pos)
-        target_key, target_widget = self.action_drop_target_at_global_pos(global_pos)
-        row_index, slot_index = self.action_slot_from_target(target_key)
-        rows = self.context_action_rows()
-        source_row = None
-        source_index = None
-        for idx, row in enumerate(rows):
-            if action_key in row:
-                source_row = idx
-                source_index = row.index(action_key)
-                break
-        if row_index is None or slot_index is None:
-            target_key = ""
-        elif source_row == row_index and (slot_index == source_index or slot_index == source_index + 1):
-            target_key = ""
-        if target_key == self.action_drag_highlight_target:
-            return
-        self.clear_action_drag_highlight()
-        if not target_key:
-            return
-        if isinstance(target_widget, QPushButton):
-            base_style = target_widget.property("base_style") or ""
-            target_widget.setStyleSheet(
-                "QPushButton{border-left:3px solid #1456d9;background:#e7f0ff;padding:0;}"
-            )
-            self.action_drag_highlight_button = target_widget
-        else:
-            self.action_drag_highlight_button = None
-        self.action_drag_highlight_target = target_key
-        self.set_status(f"ボタン移動先: {row_index + 1}行目 {slot_index + 1}番目")
-
-    def update_action_drag_preview(self, action_key, global_pos):
-        label_text = self.context_action_definitions().get(action_key, (action_key, None, ""))[0]
-        if not self.action_drag_preview_label:
-            self.action_drag_preview_label = QLabel()
-            try:
-                self.action_drag_preview_label.setWindowFlags(Qt.WindowType.ToolTip)
-            except Exception:
-                self.action_drag_preview_label.setWindowFlags(Qt.ToolTip)
-            self.action_drag_preview_label.setStyleSheet(
-                "QLabel{background:#202124;color:white;border:1px solid #4d5156;"
-                "border-radius:3px;padding:4px 8px;font-weight:bold;}"
-            )
-        self.action_drag_preview_label.setText(label_text)
-        self.action_drag_preview_label.adjustSize()
-        self.action_drag_preview_label.move(global_pos.x() + 14, global_pos.y() + 14)
-        self.action_drag_preview_label.show()
-
-    def handle_action_button_drop(self, action_key, target_key, menu_pos, menu=None):
-        row_index, slot_index = self.action_slot_from_target(target_key)
-        if row_index is None or slot_index is None:
-            self.refresh_context_menu(menu, menu_pos)
-            return
-        if action_key not in CONTEXT_ACTION_DEFAULT_ORDER or row_index not in (0, 1):
-            self.refresh_context_menu(menu, menu_pos)
-            return
-        rows = self.context_action_rows()
-        source_row = None
-        source_index = None
-        for idx, row in enumerate(rows):
-            if action_key in row:
-                source_row = idx
-                source_index = row.index(action_key)
-                break
-        if source_row is not None:
-            rows[source_row].remove(action_key)
-        if source_row == row_index and source_index is not None and source_index < slot_index:
-            slot_index -= 1
-        slot_index = max(0, min(slot_index, len(rows[row_index])))
-        rows[row_index].insert(slot_index, action_key)
-        self.save_context_action_rows(rows)
-        self.set_status("✅ 右クリックボタン配置を保存しました")
-        self.refresh_context_menu(menu, menu_pos)
-
-    def update_layer_drag_preview(self, source_name, global_pos):
-        layer = self.layer_by_source(source_name)
-        label_text = self.layer_base_name(layer) if layer else source_name
-        if not self.drag_preview_label:
-            self.drag_preview_label = QLabel()
-            try:
-                self.drag_preview_label.setWindowFlags(Qt.WindowType.ToolTip)
-            except Exception:
-                self.drag_preview_label.setWindowFlags(Qt.ToolTip)
-            self.drag_preview_label.setStyleSheet(
-                "QLabel{background:#202124;color:white;border:1px solid #4d5156;"
-                "border-radius:3px;padding:4px 8px;font-weight:bold;}"
-            )
-        self.drag_preview_label.setText(label_text)
-        self.drag_preview_label.adjustSize()
-        self.drag_preview_label.move(global_pos.x() + 14, global_pos.y() + 14)
-        self.drag_preview_label.show()
-
-    def show_layer_management_menu(self, source_name, global_pos, return_pos=None):
-        layer = self.layer_by_source(source_name)
-        if not layer:
-            return
-        menu = QMenu()
-        title_action = menu.addAction(self.layer_base_name(layer))
-        title_action.setEnabled(False)
-        menu.addSeparator()
-        add_action = menu.addAction(tr("inspection.btn.layer_add"))
-        add_action.triggered.connect(lambda _=False, s=source_name: self.add_manual_layer(insert_above_source=s))
-        import_action = menu.addAction(tr("inspection.btn.vector_import"))
-        import_action.triggered.connect(lambda _=False, s=source_name: self.import_vector_layers(insert_above_source=s))
-        rename_action = menu.addAction(tr("inspection.menu.layer_rename"))
-        rename_action.triggered.connect(lambda _=False, l=layer: self.rename_inspection_item(l))
-        color_action = menu.addAction(tr("inspection.menu.color"))
-        color_action.triggered.connect(lambda _=False, l=layer: self.change_inspection_color(l))
-        size_action = menu.addAction(tr("inspection.menu.size"))
-        size_action.triggered.connect(lambda _=False, l=layer: self.change_layer_size(l))
-        delete_action = menu.addAction(tr("inspection.btn.manual_delete"))
-        delete_action.setEnabled(self.is_manual_layer(layer))
-        delete_action.triggered.connect(lambda _=False, l=layer: self.delete_manual_layer(l))
-        menu.exec(global_pos)
-        if return_pos:
-            QTimer.singleShot(0, lambda: self.show_context_menu(return_pos))
-
-    def show_free_group_management_menu(self, group_name, global_pos, return_pos=None):
-        if not self.is_free_inspection():
-            return
-        menu = QMenu()
-        title_action = menu.addAction(self.free_group_title(group_name))
-        title_action.setEnabled(False)
-        menu.addSeparator()
-        add_action = menu.addAction(tr("inspection.btn.layer_add"))
-        add_action.triggered.connect(lambda _=False, g=group_name: self.add_manual_layer(free_group_name=g))
-        rename_action = menu.addAction(tr("inspection.menu.group_rename"))
-        rename_action.triggered.connect(lambda _=False, g=group_name: self.rename_free_group(g))
-        delete_action = menu.addAction(tr("inspection.menu.group_delete"))
-        delete_action.triggered.connect(lambda _=False, g=group_name: self.delete_free_group(g))
-        menu.exec(global_pos)
-        if return_pos:
-            QTimer.singleShot(0, lambda: self.show_context_menu(return_pos))
-
-    def handle_free_group_button_drop(self, source_group, target_group, position, menu_pos, menu=None):
-        source_group = str(source_group or "").strip()
-        target_group = str(target_group or "").strip()
-        position = "after" if position == "after" else "before"
-        if not source_group or not target_group or source_group == target_group:
-            self.refresh_context_menu(menu, menu_pos)
-            return
-        groups = self.free_group_names()
-        if source_group not in groups or target_group not in groups:
-            self.refresh_context_menu(menu, menu_pos)
-            return
-        groups = [name for name in groups if name != source_group]
-        target_index = groups.index(target_group)
-        if position == "after":
-            target_index += 1
-        groups.insert(target_index, source_group)
-        self.free_groups = groups
-        self.reorder_free_group_layer_tree()
-        self.refresh_counts()
-        side_label = "下" if position == "after" else "上"
-        self.set_status(f"✅ グループ並び替え: {self.free_group_title(source_group)} → {self.free_group_title(target_group)} の{side_label}")
-        self.refresh_context_menu(menu, menu_pos)
-
-    def reorder_free_group_layer_tree(self):
-        root_group = self.ensure_inspection_root_group(INSPECTION_TYPE_FREE)
-        desired = [name for name in self.free_group_names() if name]
-        if not desired:
-            return
-        for name in desired:
-            self.ensure_direct_group(root_group, name)
-        try:
-            children = list(root_group.children())
-        except Exception:
-            return
-        group_indices = []
-        for index, child in enumerate(children):
-            try:
-                child.children()
-                is_group = True
-            except Exception:
-                is_group = False
-            try:
-                if is_group and child.name() in desired:
-                    group_indices.append(index)
-            except Exception:
-                pass
-        insert_index = min(group_indices) if group_indices else len(children)
-        for name in desired:
-            group = self.ensure_direct_group(root_group, name)
-            try:
-                children = list(root_group.children())
-                current_index = children.index(group)
-            except Exception:
-                continue
-            if current_index != insert_index:
-                try:
-                    clone = group.clone()
-                    root_group.insertChildNode(insert_index, clone)
-                    root_group.removeChildNode(group)
-                    group = clone
-                except Exception as exc:
-                    QgsMessageLog.logMessage(f"自由式グループ並び替えエラー: {name}: {exc}", "OrthoManager", Qgis.MessageLevel.Warning)
-                    continue
-            insert_index += 1
-        QApplication.processEvents()
-
-    def handle_layer_button_drop(self, source_name, target_source, menu_pos, menu=None):
-        if not target_source or source_name == target_source:
-            self.refresh_context_menu(menu, menu_pos)
-            return
-        layer = self.layer_by_source(source_name)
-        if not layer:
-            self.refresh_context_menu(menu, menu_pos)
-            return
-        if self.layer_inspection_type(layer) == INSPECTION_TYPE_FREE:
-            if self.is_free_group_bottom_drop_target(target_source):
-                group_name = self.group_name_from_drop_target(target_source)
-                self.set_layer_group_name(layer, group_name)
-                self.active_free_group_name = group_name
-                if self.place_layer_at_group_bottom(layer, self.ensure_free_group(group_name)):
-                    self.refresh_counts()
-                    self.set_status(f"✅ レイヤ移動: {self.free_group_title(group_name)} の一番下")
-                self.refresh_context_menu(menu, menu_pos)
-                return
-            after_target = self.is_after_drop_target(target_source)
-            if after_target:
-                target_source = self.source_from_after_drop_target(target_source)
-                if source_name == target_source:
-                    self.refresh_context_menu(menu, menu_pos)
-                    return
-            target_layer = self.layer_by_source(target_source)
-            if not target_layer:
-                self.refresh_context_menu(menu, menu_pos)
-                return
-            if self.layer_inspection_type(target_layer) != INSPECTION_TYPE_FREE:
-                QMessageBox.information(self, "レイヤ移動", "自由式検査レイヤは自由式検査グループ内だけで移動できます。")
-                self.refresh_context_menu(menu, menu_pos)
-                return
-            group_name = target_layer.customProperty(INSPECTION_PROP_PREFIX + "group_name", "")
-            self.set_layer_group_name(layer, group_name)
-            placed = self.place_layer_after(layer, target_layer) if after_target else self.place_layer_before(layer, target_layer)
-            if placed:
-                self.refresh_counts()
-                self.set_status(f"✅ レイヤ並び替え: {self.display_layer_name(layer)}")
-            self.refresh_context_menu(menu, menu_pos)
-            return
-        source_round = int(layer.customProperty(INSPECTION_PROP_PREFIX + "round_no", 0) or 0)
-        if self.is_round_bottom_drop_target(target_source):
-            target_round = self.round_no_from_drop_target(target_source)
-            if target_round is None:
-                self.refresh_context_menu(menu, menu_pos)
-                return
-            if source_round != target_round:
-                if not self.is_manual_layer(layer):
-                    QMessageBox.information(self, "レイヤ移動", "標準検査レイヤは検査回をまたいで移動できません。")
-                    self.refresh_context_menu(menu, menu_pos)
-                    return
-                self.set_layer_round(layer, target_round)
-            if self.place_layer_at_round_bottom(layer, target_round):
-                self.refresh_counts()
-                self.set_status(f"✅ レイヤ移動: {self.round_title(target_round)} の一番下")
-            self.refresh_context_menu(menu, menu_pos)
-            return
-        after_target = self.is_after_drop_target(target_source)
-        if after_target:
-            target_source = self.source_from_after_drop_target(target_source)
-            if source_name == target_source:
-                self.refresh_context_menu(menu, menu_pos)
-                return
-        target_layer = self.layer_by_source(target_source)
-        if not layer or not target_layer:
-            self.refresh_context_menu(menu, menu_pos)
-            return
-        if self.layer_inspection_type(target_layer) != INSPECTION_TYPE_ORTHO:
-            QMessageBox.information(self, "レイヤ移動", "オルソ検査レイヤはオルソ検査グループ内だけで移動できます。")
-            self.refresh_context_menu(menu, menu_pos)
-            return
-        target_round = int(target_layer.customProperty(INSPECTION_PROP_PREFIX + "round_no", 0) or 0)
-        if source_round != target_round:
-            if not self.is_manual_layer(layer):
-                QMessageBox.information(self, "レイヤ移動", "標準検査レイヤは検査回をまたいで移動できません。")
-                self.refresh_context_menu(menu, menu_pos)
-                return
-            self.set_layer_round(layer, target_round)
-        placed = self.place_layer_after(layer, target_layer) if after_target else self.place_layer_before(layer, target_layer)
-        if placed:
-            self.refresh_counts()
-            self.set_status(f"✅ レイヤ並び替え: {self.display_layer_name(layer)}")
-        self.refresh_context_menu(menu, menu_pos)
-
-    def set_continuous_capture(self, enabled):
-        self.continuous_capture_enabled = enabled
-
-    def set_capture_shape(self, shape):
-        self.finish_edit_for_mode_switch()
-        self.active_capture_shape = shape
-        labels = {
-            "polygon": "多角形",
-            "rectangle": "長方形",
-            "ellipse": "楕円",
-            "circle": "正円",
-        }
-        self.set_status(f"作成形状: {labels.get(shape, shape)}")
-
-    def toggle_round_menu(self, round_no, global_pos):
-        self.round_menu_expanded[round_no] = not self.round_menu_expanded.get(round_no, True)
-        QTimer.singleShot(0, lambda: self.show_context_menu(global_pos))
-
-    def toggle_free_group_menu(self, group_name, global_pos):
-        self.free_group_menu_expanded[group_name] = not self.free_group_menu_expanded.get(group_name, True)
-        QTimer.singleShot(0, lambda: self.show_context_menu(global_pos))
-
-    def show_main_menu(self, global_pos):
-        self.finish_edit_for_mode_switch()
-        self.operation_mode = "pan"
-        QTimer.singleShot(0, lambda: self.show_context_menu(global_pos))
-
     def start_layer_change(self):
         self.finish_edit_for_mode_switch()
         if not self.selected_vector_targets():
@@ -6129,64 +6770,125 @@ class InspectionTabWidget(QWidget):
             return
         self.operation_mode = "layer_change"
         self.ensure_map_tool()
-        self.set_status("移層: 右クリックメニューから移動先項目を選択してください")
+        self.set_status(tr_text("移層: 右クリックメニューから移動先項目を選択してください"))
         QTimer.singleShot(0, lambda: self.show_context_menu(QCursor.pos()))
 
     def restart_layer_change_selection(self):
         self.finish_edit_for_mode_switch()
+        if self.map_tool:
+            self.map_tool._clear_select_band()
+            self.map_tool._clear_select_polygon()
+        if self.last_selection_mode == "select_polygon":
+            self.operation_mode = "layer_change_select_polygon"
+            self.ensure_map_tool()
+            self.set_status(tr_text("移層: 多角選で移動対象を再選択してください"))
+            return
         self.operation_mode = "layer_change_select"
         self.ensure_map_tool()
-        self.set_status("移層: 移動対象を再選択してください")
+        self.set_status(tr_text("移層: 移動対象を再選択してください"))
 
     def cancel_layer_change(self):
         self.switch_to_pan()
 
+    def start_restore_mode(self):
+        self.finish_edit_for_mode_switch()
+        has_trash = False
+        for geom_type in TRASH_LAYER_SOURCES:
+            layer = self.ensure_trash_layer(geom_type, visible=True)
+            if layer and layer.featureCount() > 0:
+                has_trash = True
+        if not has_trash:
+            self.set_status(tr_text("復帰: ゴミ箱に図形がありません"))
+            return
+        self.operation_mode = "restore"
+        self.ensure_map_tool()
+        self.update_map_cursor()
+        self.set_status(tr_text("復帰: グレー表示のゴミ箱図形を選択してください"))
+
+    def cancel_restore_mode(self):
+        self.clear_trash_selection()
+        self.set_trash_layers_visible(False)
+        self.return_to_last_selection_mode("復帰モードを終了しました")
+
+    def set_trash_layers_visible(self, visible):
+        for layer in self.trash_layers():
+            self.set_layer_tree_visibility(layer, visible)
+            try:
+                layer.triggerRepaint()
+            except Exception:
+                pass
+        try:
+            self.iface.mapCanvas().refresh()
+        except Exception:
+            pass
+
+    def clear_trash_selection(self):
+        for layer in self.trash_layers():
+            try:
+                layer.removeSelection()
+            except Exception:
+                pass
+
     def start_select(self):
         self.finish_edit_for_mode_switch()
+        if self.map_tool:
+            self.map_tool._clear_select_polygon()
+        self.last_selection_mode = "select"
         self.operation_mode = "select"
         self.ensure_map_tool()
-        self.set_status("選択する検査図形をクリック、またはドラッグ選択してください")
+        self.set_status(tr_text("矩形選: クリック、またはドラッグで範囲選択してください"))
+
+    def start_select_polygon(self):
+        self.finish_edit_for_mode_switch()
+        if self.map_tool:
+            self.map_tool._clear_select_band()
+        self.last_selection_mode = "select_polygon"
+        self.operation_mode = "select_polygon"
+        self.ensure_map_tool()
+        self.set_status(tr_text("多角選: 左クリックで頂点追加、右クリックで確定"))
+
+    def return_to_last_selection_mode(self, status_text=""):
+        if self.last_selection_mode == "select_polygon":
+            self.operation_mode = "select_polygon"
+            self.ensure_map_tool()
+            self.set_status(status_text or tr_text("多角選: 左クリックで頂点追加、右クリックで確定"))
+            return
+        self.operation_mode = "select"
+        self.ensure_map_tool()
+        self.set_status(status_text or tr_text("矩形選: クリック、またはドラッグで範囲選択してください"))
 
     def start_delete(self):
         self.finish_edit_for_mode_switch()
-        if self.operation_mode in ("layer_change", "layer_change_select"):
-            self.set_status("移層中です。パンで解除してください")
+        if self.operation_mode in ("layer_change", "layer_change_select", "layer_change_select_polygon"):
+            self.set_status(tr_text("移層中です。パンで解除してください"))
             return
         if self.delete_selected_features():
             return
-        self.set_status("先に地物選択で削除対象を選択してください")
+        self.set_status(tr_text("先に地物選択で削除対象を選択してください"))
 
     def start_move(self):
         self.finish_edit_for_mode_switch()
-        if self.operation_mode in ("layer_change", "layer_change_select"):
-            self.set_status("移層中です。パンで解除してください")
+        if self.operation_mode in ("layer_change", "layer_change_select", "layer_change_select_polygon"):
+            self.set_status(tr_text("移層中です。パンで解除してください"))
             return
         if self.operation_mode != "move":
             self.feature_move_undo_stack = []
         self.operation_mode = "move"
         self.ensure_map_tool_soon()
         if self.selected_vector_targets():
-            self.set_status("移動: 選択データをドラッグしてください")
+            self.set_status(tr_text("移動: 選択データをドラッグしてください"))
         else:
-            self.set_status("移動: 動かしたい検査データをクリックしてドラッグしてください")
+            self.set_status(tr_text("移動: 動かしたい検査データをクリックしてドラッグしてください"))
 
-    def start_edit(self):
-        if self.operation_mode in ("layer_change", "layer_change_select"):
-            self.set_status("移層中です。パンで解除してください")
-            return
-        self.clear_inspection_selection()
-        self.operation_mode = "edit"
-        self.ensure_map_tool()
-        self.set_status("編集モード: マウス下の検査レイヤを自動で編集対象にします。右クリックで終了します")
 
     def start_merge(self):
         self.finish_edit_for_mode_switch()
-        if self.operation_mode in ("layer_change", "layer_change_select"):
-            self.set_status("移層中です。パンで解除してください")
+        if self.operation_mode in ("layer_change", "layer_change_select", "layer_change_select_polygon"):
+            self.set_status(tr_text("移層中です。パンで解除してください"))
             return
         if self.merge_selected_features():
             return
-        self.set_status("先に地物選択で統合対象を選択してください")
+        self.set_status(tr_text("先に地物選択で統合対象を選択してください"))
 
     def _search_rect(self, point, tolerance_factor=8):
         canvas = self.iface.mapCanvas()
@@ -6201,7 +6903,7 @@ class InspectionTabWidget(QWidget):
             max(point_a.y(), point_b.y()),
         )
 
-    def geometry_from_shape(self, shape, point_a, point_b):
+    def geometry_from_shape(self, shape, point_a, point_b, center_mode=False):
         if shape == "rectangle":
             rect = self.rectangle_from_points(point_a, point_b)
             pts = [
@@ -6215,14 +6917,24 @@ class InspectionTabWidget(QWidget):
         if shape in ("ellipse", "circle"):
             x1, y1 = point_a.x(), point_a.y()
             x2, y2 = point_b.x(), point_b.y()
-            if shape == "circle":
-                side = min(abs(x2 - x1), abs(y2 - y1))
-                x2 = x1 + (side if x2 >= x1 else -side)
-                y2 = y1 + (side if y2 >= y1 else -side)
-            cx = (x1 + x2) / 2.0
-            cy = (y1 + y2) / 2.0
-            rx = abs(x2 - x1) / 2.0
-            ry = abs(y2 - y1) / 2.0
+            if center_mode:
+                cx, cy = x1, y1
+                if shape == "circle":
+                    radius = math.hypot(x2 - x1, y2 - y1)
+                    rx = radius
+                    ry = radius
+                else:
+                    rx = abs(x2 - x1)
+                    ry = abs(y2 - y1)
+            else:
+                if shape == "circle":
+                    side = min(abs(x2 - x1), abs(y2 - y1))
+                    x2 = x1 + (side if x2 >= x1 else -side)
+                    y2 = y1 + (side if y2 >= y1 else -side)
+                cx = (x1 + x2) / 2.0
+                cy = (y1 + y2) / 2.0
+                rx = abs(x2 - x1) / 2.0
+                ry = abs(y2 - y1) / 2.0
             if rx <= 0 or ry <= 0:
                 return None
             pts = []
@@ -6268,6 +6980,27 @@ class InspectionTabWidget(QWidget):
             return candidates[0][1], candidates[0][2]
         return None, None
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     def geometry_hits_selection_rect(self, layer, geom, rect_geom):
         if not geom:
             return False
@@ -6308,10 +7041,10 @@ class InspectionTabWidget(QWidget):
         if not layer:
             if not (modifiers & (Qt.KeyboardModifier.ShiftModifier | Qt.KeyboardModifier.ControlModifier)):
                 self.clear_inspection_selection()
-            if self.operation_mode == "layer_change_select":
-                self.set_status("移層: 移動する検査図形を選択してください")
+            if self.operation_mode in ("layer_change_select", "layer_change_select_polygon"):
+                self.set_status(tr_text("移層: 移動する検査図形を選択してください"))
             else:
-                self.set_status("選択解除")
+                self.set_status(tr_text("選択解除"))
             self.refresh_selection_highlight()
             return False
         current = set(layer.selectedFeatureIds())
@@ -6326,11 +7059,11 @@ class InspectionTabWidget(QWidget):
         layer.selectByIds(list(current))
         self.refresh_selection_highlight()
         self.iface.setActiveLayer(layer)
-        if self.operation_mode == "layer_change_select":
+        if self.operation_mode in ("layer_change_select", "layer_change_select_polygon"):
             self.update_map_cursor()
-            self.set_status("移層: 選択中。右クリックで変更先を選択してください")
+            self.set_status(tr_text("移層: 選択中。右クリックで変更先を選択してください"))
         else:
-            self.set_status(f"選択: {self.display_layer_name(layer)}")
+            self.set_status(tr_text(f"選択: {self.display_layer_name(layer)}"))
         return True
 
     def select_features_in_rect(self, rect, modifiers=Qt.KeyboardModifier.NoModifier):
@@ -6360,16 +7093,57 @@ class InspectionTabWidget(QWidget):
             self.iface.setActiveLayer(selected_layers[0])
         self.refresh_selection_highlight()
         if total:
-            if self.operation_mode == "layer_change_select":
+            if self.operation_mode in ("layer_change_select", "layer_change_select_polygon"):
                 self.update_map_cursor()
-                self.set_status(f"移層: {total} 件選択中。右クリックで変更先を選択してください")
+                self.set_status(tr_text(f"移層: {total} 件選択中。右クリックで変更先を選択してください"))
             else:
-                self.set_status(f"選択: {total} 件")
+                self.set_status(tr_text(f"選択: {total} 件"))
         else:
-            if self.operation_mode == "layer_change_select":
-                self.set_status("移層: 移動する検査図形を選択してください")
+            if self.operation_mode in ("layer_change_select", "layer_change_select_polygon"):
+                self.set_status(tr_text("移層: 移動する検査図形を選択してください"))
             else:
-                self.set_status("選択解除")
+                self.set_status(tr_text("選択解除"))
+        return total > 0
+
+    def select_features_in_geometry(self, selection_geom, modifiers=Qt.KeyboardModifier.NoModifier):
+        if not selection_geom or selection_geom.isEmpty():
+            self.set_status(tr_text("多角選: 範囲が無効です"))
+            return False
+        total = 0
+        selected_layers = []
+        try:
+            rect = selection_geom.boundingBox()
+        except Exception:
+            rect = QgsRectangle()
+        for layer in self.selectable_inspection_layers():
+            ids = []
+            request = QgsFeatureRequest().setFilterRect(rect)
+            for feature in layer.getFeatures(request):
+                geom = feature.geometry()
+                if geom and geom.intersects(selection_geom):
+                    ids.append(feature.id())
+            current = set(layer.selectedFeatureIds())
+            if modifiers & Qt.KeyboardModifier.ControlModifier:
+                current.difference_update(ids)
+            elif modifiers & Qt.KeyboardModifier.ShiftModifier:
+                current.update(ids)
+            else:
+                current = set(ids)
+            layer.selectByIds(list(current))
+            if current:
+                total += len(current)
+                selected_layers.append(layer)
+        if selected_layers:
+            self.iface.setActiveLayer(selected_layers[0])
+        self.refresh_selection_highlight()
+        if self.operation_mode == "layer_change_select_polygon":
+            self.update_map_cursor()
+            if total:
+                self.set_status(tr_text(f"移層: {total} 件選択中。右クリックで変更先を選択してください"))
+            else:
+                self.set_status(tr_text("移層: 移動する検査図形を選択してください"))
+        else:
+            self.set_status(tr_text(f"多角選: {total} 件") if total else tr_text("多角選: 選択解除"))
         return total > 0
 
     def clear_inspection_selection(self):
@@ -6397,45 +7171,585 @@ class InspectionTabWidget(QWidget):
         if self.operation_mode == "move":
             self.ensure_map_tool_soon()
 
+    def selected_trash_targets(self):
+        targets = []
+        for layer in self.trash_layers():
+            try:
+                ids = layer.selectedFeatureIds()
+            except Exception:
+                ids = []
+            if ids:
+                targets.append((layer, list(ids)))
+        return targets
+
+    def select_trash_feature_at(self, point, modifiers=Qt.KeyboardModifier.NoModifier):
+        found_layer, found_feature = self.find_trash_feature_at(point)
+        if not found_layer:
+            if not (modifiers & (Qt.KeyboardModifier.ShiftModifier | Qt.KeyboardModifier.ControlModifier)):
+                self.clear_trash_selection()
+                self.clear_inspection_selection()
+            self.set_status(tr_text("復帰: ゴミ箱図形を選択してください"))
+            return False
+        current = set(found_layer.selectedFeatureIds())
+        if modifiers & Qt.KeyboardModifier.ControlModifier:
+            current.discard(found_feature.id())
+        else:
+            if not (modifiers & Qt.KeyboardModifier.ShiftModifier):
+                self.clear_trash_selection()
+                self.clear_inspection_selection()
+                current = set()
+            current.add(found_feature.id())
+        found_layer.selectByIds(list(current))
+        self.set_status(tr_text(f"復帰: {sum(len(ids) for _layer, ids in self.selected_trash_targets())} 件選択中。右クリックで操作してください"))
+        return True
+
+    def select_trash_features_in_rect(self, rect, modifiers=Qt.KeyboardModifier.NoModifier):
+        rect_geom = QgsGeometry.fromRect(rect)
+        total = 0
+        replace_selection = not (modifiers & (Qt.KeyboardModifier.ShiftModifier | Qt.KeyboardModifier.ControlModifier))
+        if replace_selection:
+            self.clear_inspection_selection()
+        for layer in self.trash_layers():
+            if not layer or not layer.isValid():
+                continue
+            ids = []
+            for feature in layer.getFeatures(QgsFeatureRequest().setFilterRect(rect)):
+                geom = feature.geometry()
+                if geom and not geom.isEmpty() and geom.intersects(rect_geom):
+                    ids.append(feature.id())
+            current = set(layer.selectedFeatureIds())
+            if modifiers & Qt.KeyboardModifier.ControlModifier:
+                current.difference_update(ids)
+            elif modifiers & Qt.KeyboardModifier.ShiftModifier:
+                current.update(ids)
+            else:
+                current = set(ids)
+            layer.selectByIds(list(current))
+            total += len(current)
+        if not total:
+            if replace_selection:
+                self.clear_trash_selection()
+            self.set_status(tr_text("復帰: ゴミ箱図形を選択してください"))
+            return False
+        self.set_status(tr_text(f"復帰: {total} 件選択中。右クリックで操作してください"))
+        return True
+
+    def find_trash_feature_at(self, point, tolerance_factor=14):
+        self.refresh_pending_data_change_layers()
+        rect = self._search_rect(point, tolerance_factor=tolerance_factor)
+        rect_geom = QgsGeometry.fromRect(rect)
+        point_geom = QgsGeometry.fromPointXY(point)
+        tolerance = max(rect.width(), rect.height()) / 2.0
+        polygon_candidates = []
+        for layer in reversed(self.trash_layers()):
+            if not layer or not layer.isValid():
+                continue
+            request = QgsFeatureRequest().setFilterRect(rect)
+            for feature in layer.getFeatures(request):
+                geom = feature.geometry()
+                if not geom or geom.isEmpty():
+                    continue
+                geom_type = self.layer_geom_type_key(layer)
+                if geom_type == "polygon":
+                    try:
+                        if geom.contains(point_geom):
+                            polygon_candidates.append((layer, feature))
+                            continue
+                    except Exception:
+                        pass
+                    try:
+                        if geom.intersects(rect_geom):
+                            return layer, feature
+                    except Exception:
+                        pass
+                else:
+                    try:
+                        if geom.distance(point_geom) <= tolerance or geom.intersects(rect_geom):
+                            return layer, feature
+                    except Exception:
+                        try:
+                            if geom.intersects(rect_geom):
+                                return layer, feature
+                        except Exception:
+                            pass
+        if polygon_candidates:
+            return polygon_candidates[0]
+        return None, None
+
+    def target_layer_for_trash_feature(self, trash_feature):
+        try:
+            source = trash_feature["orig_source"]
+        except Exception:
+            source = ""
+        layer = self.find_loaded_layer_by_source(str(source or ""))
+        if layer:
+            return layer
+        layer_id = self.layers.get(str(source or ""), {}).get("layer_id", "")
+        if layer_id:
+            layer = QgsProject.instance().mapLayer(layer_id)
+            if layer and not self.is_trash_layer(layer):
+                return layer
+        return self.find_native_restore_layer_for_trash_feature(trash_feature)
+
+    def vector_layer_provider_uri(self, layer):
+        try:
+            return str(layer.dataProvider().dataSourceUri() or "")
+        except Exception:
+            return ""
+
+    def native_restore_layer_candidates(self, geom_type):
+        candidates = []
+        for layer in QgsProject.instance().mapLayers().values():
+            if not isinstance(layer, QgsVectorLayer) or self.is_trash_layer(layer):
+                continue
+            try:
+                if not layer.isValid():
+                    continue
+            except Exception:
+                pass
+            try:
+                if self.layer_geom_type_key(layer) != geom_type:
+                    continue
+            except Exception:
+                continue
+            candidates.append(layer)
+        return candidates
+
+    def layer_is_in_inspection_tree(self, layer):
+        if not layer:
+            return False
+        root_names = {self.root_group_name_for_type(inspection_type) for inspection_type in INSPECTION_TYPES}
+        for parent, _node in self.layer_tree_nodes_for_layer(layer.id()):
+            current = parent
+            while current is not None:
+                try:
+                    if current.name() in root_names:
+                        return True
+                    current = current.parent()
+                except Exception:
+                    break
+        return False
+
+    def choose_native_restore_layer(self, candidates, layer_name=""):
+        candidates = [layer for layer in candidates if layer]
+        if layer_name:
+            named = []
+            for layer in candidates:
+                names = {str(layer.name() or ""), str(self.layer_base_name(layer) or "")}
+                if layer_name in names:
+                    named.append(layer)
+            if named:
+                candidates = named
+        in_tree = [layer for layer in candidates if self.layer_is_in_inspection_tree(layer)]
+        if len(in_tree) == 1:
+            return in_tree[0]
+        if len(candidates) == 1:
+            return candidates[0]
+        return None
+
+    def find_native_restore_layer_for_trash_feature(self, trash_feature):
+        geom_type = self.trash_feature_text(trash_feature, "orig_geom_type", "polygon")
+        layer_name = self.trash_feature_text(trash_feature, "orig_layer_name")
+        layer_id = self.trash_feature_text(trash_feature, "orig_layer_id")
+        if layer_id:
+            layer = QgsProject.instance().mapLayer(layer_id)
+            if (
+                isinstance(layer, QgsVectorLayer)
+                and not self.is_trash_layer(layer)
+                and self.layer_geom_type_key(layer) == geom_type
+            ):
+                return layer
+
+        provider_uri = self.trash_feature_text(trash_feature, "orig_provider_uri")
+        source_path = self.trash_feature_text(trash_feature, "orig_layer_source_path")
+        candidates = self.native_restore_layer_candidates(geom_type)
+        if provider_uri:
+            layer = self.choose_native_restore_layer(
+                [candidate for candidate in candidates if self.vector_layer_provider_uri(candidate) == provider_uri],
+                layer_name,
+            )
+            if layer:
+                return layer
+        if source_path:
+            layer = self.choose_native_restore_layer(
+                [candidate for candidate in candidates if self.same_file_path(self.layer_source_path(candidate), source_path)],
+                layer_name,
+            )
+            if layer:
+                return layer
+        if layer_name:
+            return self.choose_native_restore_layer(candidates, layer_name)
+        return None
+
+    def restore_selected_trash_features(self):
+        targets = self.selected_trash_targets()
+        if not targets:
+            self.set_status(tr_text("復帰: 復帰するゴミ箱図形を選択してください"))
+            return False
+        total_selected = sum(len(ids) for _layer, ids in targets)
+        started = time.perf_counter()
+        self.set_status(tr_text(f"復帰中: {total_selected} 件を元レイヤへ戻しています..."))
+        QgsMessageLog.logMessage(f"RESTORE_TRASH_START selected={total_selected}", "OrthoManager", Qgis.MessageLevel.Info)
+        message_item = None
+        try:
+            message_item = self.iface.messageBar().pushMessage(
+                tr_text("復帰中"),
+                tr_text(f"{total_selected} 件を元レイヤへ戻しています。完了まで操作しないでください。"),
+                level=Qgis.MessageLevel.Warning,
+                duration=0,
+            )
+        except Exception:
+            message_item = None
+        QApplication.processEvents()
+        restored = 0
+        missing = []
+        missing_records = []
+        self._missing_restore_cancelled = False
+        restored_targets = []
+        add_batches = {}
+        trash_delete_batches = {}
+        for trash_layer, ids in targets:
+            for trash_feature in trash_layer.getFeatures(QgsFeatureRequest().setFilterFids(ids)):
+                target_layer = self.target_layer_for_trash_feature(trash_feature)
+                if not target_layer:
+                    try:
+                        missing_name = trash_feature["orig_layer_name"]
+                    except Exception:
+                        missing_name = "元レイヤ"
+                    missing.append(str(missing_name or "元レイヤ"))
+                    missing_records.append((trash_layer, QgsFeature(trash_feature)))
+                    continue
+                new_feature = QgsFeature(target_layer.fields())
+                geom = trash_feature.geometry()
+                if geom:
+                    new_feature.setGeometry(QgsGeometry(geom))
+                try:
+                    self.set_restore_feature_attrs_from_json(new_feature, trash_feature["orig_attrs"], target_layer)
+                except Exception:
+                    pass
+                target_id = target_layer.id()
+                if target_id not in add_batches:
+                    add_batches[target_id] = {"layer": target_layer, "features": [], "trash": []}
+                add_batches[target_id]["features"].append(new_feature)
+                add_batches[target_id]["trash"].append((trash_layer, trash_feature.id()))
+        if missing_records:
+            restored_missing = self.prepare_missing_trash_restore_batches(missing_records)
+            for trash_layer, trash_feature, target_layer in restored_missing:
+                new_feature = QgsFeature(target_layer.fields())
+                geom = trash_feature.geometry()
+                if geom:
+                    new_feature.setGeometry(QgsGeometry(geom))
+                try:
+                    self.set_restore_feature_attrs_from_json(new_feature, trash_feature["orig_attrs"], target_layer)
+                except Exception:
+                    pass
+                target_id = target_layer.id()
+                if target_id not in add_batches:
+                    add_batches[target_id] = {"layer": target_layer, "features": [], "trash": []}
+                add_batches[target_id]["features"].append(new_feature)
+                add_batches[target_id]["trash"].append((trash_layer, trash_feature.id()))
+            if restored_missing:
+                restored_keys = {
+                    (trash_layer.id(), trash_feature.id())
+                    for trash_layer, trash_feature, _target_layer in restored_missing
+                }
+                missing = [
+                    name for name, (trash_layer, trash_feature) in zip(missing, missing_records)
+                    if (trash_layer.id(), trash_feature.id()) not in restored_keys
+                ]
+        refreshed_layers = []
+        for batch in add_batches.values():
+            target_layer = batch["layer"]
+            features = batch["features"]
+            if not target_layer or not features:
+                continue
+            safe, error = self.close_edit_buffer_before_provider_change(target_layer)
+            if not safe:
+                QMessageBox.warning(self, tr_text("復帰できません"), tr_text(f"復帰先レイヤを保存できませんでした。\n{error}"))
+                continue
+            ok, added = target_layer.dataProvider().addFeatures(features)
+            if not ok:
+                error_text = self.provider_error_text(target_layer)
+                QgsMessageLog.logMessage(
+                    f"RESTORE_TRASH_ADD_FAILED layer={self.display_layer_name(target_layer)} "
+                    f"count={len(features)} error={error_text}",
+                    "OrthoManager",
+                    Qgis.MessageLevel.Warning,
+                )
+                continue
+            added_ids = [f.id() for f in added if f.id() is not None and f.id() >= 0]
+            if added_ids:
+                restored_targets.append((target_layer, added_ids))
+            restored += len(features)
+            refreshed_layers.append(target_layer)
+            for trash_layer, trash_id in batch["trash"]:
+                trash_layer_id = trash_layer.id()
+                if trash_layer_id not in trash_delete_batches:
+                    trash_delete_batches[trash_layer_id] = {"layer": trash_layer, "ids": []}
+                trash_delete_batches[trash_layer_id]["ids"].append(trash_id)
+        for batch in trash_delete_batches.values():
+            trash_layer = batch["layer"]
+            trash_ids = batch["ids"]
+            if not trash_layer or not trash_ids:
+                continue
+            trash_layer.dataProvider().deleteFeatures(trash_ids)
+            refreshed_layers.append(trash_layer)
+        refreshed_ids = set()
+        for layer in refreshed_layers:
+            if not layer or layer.id() in refreshed_ids:
+                continue
+            refreshed_ids.add(layer.id())
+            self.refresh_vector_layer_after_data_change(layer, reload_data=True)
+        if missing:
+            unique = []
+            for name in missing:
+                if name not in unique:
+                    unique.append(name)
+            if not self._missing_restore_cancelled:
+                QMessageBox.information(
+                    self,
+                    tr_text("元レイヤがありません"),
+                    tr_text("元のレイヤが見つからないため、一部の図形は復帰しませんでした。\n"
+                    + "\n".join(unique[:8])
+                    + "\n\n新規復帰レイヤを作成できなかったため、復帰できませんでした。"),
+                )
+        if restored_targets:
+            self.clear_trash_selection()
+            self.clear_inspection_selection()
+            merged_targets = {}
+            for layer, ids in restored_targets:
+                if not layer:
+                    continue
+                layer_id = layer.id()
+                if layer_id not in merged_targets:
+                    merged_targets[layer_id] = [layer, set()]
+                merged_targets[layer_id][1].update(ids)
+            for layer, ids in merged_targets.values():
+                try:
+                    layer.selectByIds(list(ids))
+                except Exception:
+                    pass
+            self.refresh_selection_highlight()
+        self.refresh_counts()
+        elapsed = time.perf_counter() - started
+        QgsMessageLog.logMessage(
+            f"RESTORE_TRASH_DONE restored={restored} selected={total_selected} sec={elapsed:.2f}",
+            "OrthoManager",
+            Qgis.MessageLevel.Info,
+        )
+        self.clear_message_bar_item(message_item, "復帰中")
+        if restored:
+            self.set_status(tr_text(f"復帰: {restored} 件を元に戻しました"))
+        elif self._missing_restore_cancelled:
+            self.set_status(tr_text("復帰をキャンセルしました"))
+        else:
+            self.set_status(tr_text("復帰できませんでした"))
+        return restored > 0
+
+    def prepare_missing_trash_restore_batches(self, missing_records):
+        if not missing_records:
+            return []
+        count = len(missing_records)
+        names = []
+        for _trash_layer, trash_feature in missing_records:
+            name = self.trash_feature_text(trash_feature, "orig_layer_name", "元レイヤ")
+            if name not in names:
+                names.append(name)
+        reply = QMessageBox.question(
+            self,
+            tr_text("元レイヤがありません"),
+            tr_text("元レイヤが見つからない図形があります。\n"
+            f"{count} 件を新規復帰レイヤへ復帰しますか？\n\n"
+            + "\n".join(names[:8])),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            self._missing_restore_cancelled = True
+            return []
+        grouped = {}
+        for trash_layer, trash_feature in missing_records:
+            key = self.trash_restore_group_key(trash_feature)
+            grouped.setdefault(key, []).append((trash_layer, trash_feature))
+        restored = []
+        for records in grouped.values():
+            target_layer = self.create_restore_target_layer(records)
+            if not target_layer:
+                continue
+            for trash_layer, trash_feature in records:
+                restored.append((trash_layer, trash_feature, target_layer))
+        return restored
+
+    def trash_feature_text(self, trash_feature, field_name, default=""):
+        try:
+            value = trash_feature[field_name]
+        except Exception:
+            value = default
+        return str(value or default or "").strip()
+
+    def trash_restore_group_key(self, trash_feature):
+        return (
+            self.trash_feature_text(trash_feature, "orig_source"),
+            self.trash_feature_text(trash_feature, "orig_layer_name", "復帰レイヤ"),
+            self.trash_feature_text(trash_feature, "orig_geom_type", "polygon"),
+            self.trash_feature_text(trash_feature, "orig_inspection_type", INSPECTION_TYPE_ORTHO),
+            self.trash_feature_text(trash_feature, "orig_group_name"),
+            self.trash_feature_text(trash_feature, "orig_color", "ff0000"),
+            self.trash_feature_text(trash_feature, "orig_round_no", "0"),
+            self.trash_feature_text(trash_feature, "orig_code"),
+            self.trash_feature_text(trash_feature, "orig_item_name"),
+        )
+
+    def create_restore_target_layer(self, records):
+        if not records:
+            return None
+        _trash_layer, first_feature = records[0]
+        geom_type = self.trash_feature_text(first_feature, "orig_geom_type", "polygon")
+        if geom_type not in GEOM_TYPE_LABELS:
+            geom_type = "polygon"
+        inspection_type = self.trash_feature_text(first_feature, "orig_inspection_type", INSPECTION_TYPE_ORTHO)
+        if inspection_type not in INSPECTION_TYPES:
+            inspection_type = INSPECTION_TYPE_ORTHO
+        group_name = self.trash_feature_text(first_feature, "orig_group_name")
+        color = self.trash_feature_text(first_feature, "orig_color", "ff0000") or "ff0000"
+        try:
+            round_no = int(self.trash_feature_text(first_feature, "orig_round_no", "0") or 0)
+        except Exception:
+            round_no = 0
+        code = self.trash_feature_text(first_feature, "orig_code")
+        base_name = self.trash_feature_text(first_feature, "orig_layer_name", "復帰レイヤ")
+        display_name = self.unique_restore_layer_display_name(f"{base_name}_復帰")
+        prefix = "inspection" if inspection_type == INSPECTION_TYPE_FREE else "manual"
+        source_base = f"{prefix}_{geom_type}_{display_name}"
+        extra_fields = self.restore_extra_fields_from_trash_records(records)
+        try:
+            driver = ogr.GetDriverByName("GPKG")
+            restore_path = self.ensure_gpkg_path(inspection_type)
+            ds = self.open_or_create_inspection_gpkg(restore_path, driver)
+            if ds is None:
+                return None
+            source_name = self.unique_source_layer_name(source_base, ds)
+            self.create_inspection_layer(
+                round_no, code, display_name, color, geom_type, custom=True,
+                inspection_type=inspection_type, extra_fields=extra_fields,
+                source_name_override=source_name, multi_geometry=True, dataset=ds,
+            )
+        except Exception as exc:
+            QgsMessageLog.logMessage(f"復帰先レイヤ作成エラー: {exc}", "OrthoManager", Qgis.MessageLevel.Warning)
+            return None
+        finally:
+            try:
+                ds = None
+            except Exception:
+                pass
+        descriptor = {
+            "round_no": round_no,
+            "code": code,
+            "name": display_name,
+            "color": color,
+            "geom_type": geom_type,
+            "stroke_width": self.default_stroke_width(geom_type),
+            "point_size": self.default_point_size(),
+            "source_name": source_name,
+            "inspection_type": inspection_type,
+            "group_name": group_name,
+            "custom": True,
+        }
+        layer = self.load_layer(source_name, descriptor)
+        if layer:
+            QgsMessageLog.logMessage(
+                f"RESTORE_TRASH_CREATED_TARGET layer={display_name} source={source_name} count={len(records)}",
+                "OrthoManager",
+                Qgis.MessageLevel.Info,
+            )
+        return layer
+
+    def unique_restore_layer_display_name(self, base_name):
+        base = str(base_name or "復帰レイヤ").strip() or "復帰レイヤ"
+        used = set()
+        for layer in self.inspection_layers():
+            try:
+                used.add(self.layer_base_name(layer))
+            except Exception:
+                used.add(layer.name())
+        if base not in used:
+            return base
+        number = 2
+        while True:
+            candidate = f"{base}_{number}"
+            if candidate not in used:
+                return candidate
+            number += 1
+
+    def restore_extra_fields_from_trash_records(self, records):
+        standard = {
+            "fid", "fid_1", "ogc_fid", "id", "geom", "geometry",
+            "memo", "round_no", "item_code", "item_name", "geom_type", "created_at", "updated_at",
+        }
+        names = []
+        seen = set(standard)
+        for _trash_layer, trash_feature in records:
+            try:
+                values = json.loads(trash_feature["orig_attrs"] or "{}")
+            except Exception:
+                values = {}
+            if not isinstance(values, dict):
+                continue
+            for name in values.keys():
+                field_name = str(name or "").strip()
+                key = field_name.lower()
+                if not field_name or key in seen:
+                    continue
+                seen.add(key)
+                names.append(field_name)
+        extra_fields = []
+        for field_name in names:
+            field = ogr.FieldDefn(field_name, ogr.OFTString)
+            field.SetWidth(8000)
+            extra_fields.append({"field_defn": field})
+        return extra_fields
+
+    def permanently_delete_selected_trash_features(self):
+        targets = self.selected_trash_targets()
+        total = sum(len(ids) for _layer, ids in targets)
+        if not total:
+            self.set_status(tr_text("完全削除: ゴミ箱図形を選択してください"))
+            return False
+        reply = QMessageBox.question(
+            self,
+            tr_text("完全削除"),
+            tr_text(f"選択中の {total} 件をゴミ箱から完全削除します。\nこの操作後は復帰できません。よろしいですか？"),
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return False
+        deleted = 0
+        for layer, ids in targets:
+            if layer.dataProvider().deleteFeatures(ids):
+                deleted += len(ids)
+                self.refresh_vector_layer_after_data_change(layer, reload_data=True)
+        self.clear_trash_selection()
+        self.set_status(tr_text(f"完全削除: {deleted} 件"))
+        return deleted > 0
+
     def delete_feature_at(self, point):
         layer, feature = self.find_feature_at(point)
         if not layer:
-            self.set_status("削除対象が見つかりません")
+            self.set_status(tr_text("削除対象が見つかりません"))
             return
         if not self.confirm_delete_if_needed("検査図形を削除", "選択した検査図形を削除しますか？"):
             return
         self._delete_features(layer, [feature.id()])
         self.operation_mode = "create"
 
-    def edit_feature_at(self, point):
-        layer, feature = self.find_feature_at(point, tolerance_factor=12)
-        if not layer:
-            self.set_status("編集対象が見つかりません")
-            return
-        self.clear_inspection_selection()
-        self._activate_vertex_edit(layer)
-        self.operation_mode = "create"
 
-    def prepare_edit_layer_at(self, point, activate_tool=True, quiet=False):
-        layer, feature = self.find_feature_at(point, allow_polygon_fill=True, tolerance_factor=12)
-        if not layer:
-            if not quiet:
-                self.set_status("編集対象が見つかりません")
-            return False
-        self.clear_inspection_selection()
-        if not self.prepare_layer_edit(layer, activate_tool=activate_tool):
-            return False
-        if not quiet:
-            self.set_status(f"編集モード: {self.display_layer_name(layer)}")
-        return True
 
     def toggle_merge_feature_at(self, point):
         layer, feature = self.find_feature_at(point)
         if not layer:
-            self.set_status("統合対象が見つかりません")
+            self.set_status(tr_text("統合対象が見つかりません"))
             return
         if layer.geometryType() not in (Qgis.GeometryType.Polygon, Qgis.GeometryType.Line):
-            QMessageBox.warning(self, "統合できません", "統合はポリゴンまたはラインだけ対象です。")
+            QMessageBox.warning(self, tr_text("統合できません"), tr_text("統合はポリゴンまたはラインだけ対象です。"))
             return
         for other in self.current_inspection_layers():
             if other.id() != layer.id() and other.geometryType() != layer.geometryType():
@@ -6495,12 +7809,12 @@ class InspectionTabWidget(QWidget):
             if not self.continuous_capture_enabled:
                 self.operation_mode = "pan_pending"
             self.refresh_vector_layer_after_data_change(layer, reload_data=True)
-            self.set_status(f"✅ 検査図形を追加: {self.layer_base_name(layer)}")
+            self.set_status(tr_text(f"✅ 検査図形を追加: {self.layer_base_name(layer)}"))
             if not self.continuous_capture_enabled:
-                QTimer.singleShot(0, self.switch_to_pan_if_still_create)
+                QTimer.singleShot(0, self.return_to_pre_create_mode_if_still_create)
             self.schedule_refresh_counts()
         else:
-            QMessageBox.warning(self, "追加失敗", "検査図形を追加できませんでした。")
+            QMessageBox.warning(self, tr_text("追加失敗"), tr_text("検査図形を追加できませんでした。"))
 
     def now_text(self):
         return QDateTime.currentDateTime().toString(Qt.DateFormat.ISODate)
@@ -6508,30 +7822,85 @@ class InspectionTabWidget(QWidget):
     def selected_vector_targets(self):
         return [(l, list(l.selectedFeatureIds())) for l in self.selectable_inspection_layers() if l.selectedFeatureIds()]
 
-    def begin_feature_move_at(self, point):
+    def find_selected_feature_at(self, point, targets=None, allow_polygon_fill=False, tolerance_factor=8):
+        self.refresh_pending_data_change_layers()
+        rect = self._search_rect(point, tolerance_factor=tolerance_factor)
+        rect_geom = QgsGeometry.fromRect(rect)
+        point_geom = QgsGeometry.fromPointXY(point)
+        tolerance = max(rect.width(), rect.height()) / 2.0
+        candidates = []
+        selected_targets = targets if targets is not None else self.selected_vector_targets()
+        for layer, ids in reversed(selected_targets):
+            if not layer or not ids:
+                continue
+            for feature in layer.getFeatures(QgsFeatureRequest().setFilterFids(ids)):
+                geom = feature.geometry()
+                if not geom:
+                    continue
+                if layer.geometryType() == Qgis.GeometryType.Polygon:
+                    if allow_polygon_fill and (geom.contains(point_geom) or geom.intersects(rect_geom)):
+                        try:
+                            area = geom.area()
+                        except Exception:
+                            area = 0
+                        candidates.append((area, layer, feature))
+                        continue
+                    if self.polygon_edges_hit_rect(geom, rect_geom):
+                        return layer, feature
+                elif geom.intersects(rect_geom):
+                    return layer, feature
+                else:
+                    try:
+                        if geom.distance(point_geom) <= tolerance:
+                            return layer, feature
+                    except Exception:
+                        pass
+        if candidates:
+            candidates.sort(key=lambda item: item[0])
+            return candidates[0][1], candidates[0][2]
+        return None, None
+
+    def begin_feature_move_at(self, point, anchor_point=None):
         targets = self.selected_vector_targets()
         clicked_layer, clicked_feature = self.find_feature_at(point, allow_polygon_fill=True, tolerance_factor=12)
-        if clicked_layer and clicked_feature:
-            clicked_selected = clicked_feature.id() in set(clicked_layer.selectedFeatureIds())
-            if not targets or not clicked_selected:
+        if targets:
+            selected_layer, _selected_feature = self.find_selected_feature_at(
+                anchor_point if anchor_point is not None else point,
+                targets=targets,
+                allow_polygon_fill=True,
+                tolerance_factor=12,
+            )
+            if not selected_layer:
+                selected_layer, _selected_feature = self.find_selected_feature_at(
+                    point,
+                    targets=targets,
+                    allow_polygon_fill=True,
+                    tolerance_factor=12,
+                )
+            if not selected_layer and clicked_layer and clicked_feature:
                 self.clear_inspection_selection()
                 clicked_layer.selectByIds([clicked_feature.id()])
                 self.iface.setActiveLayer(clicked_layer)
                 targets = [(clicked_layer, [clicked_feature.id()])]
-        if not targets:
-            if not clicked_layer:
-                self.set_status("移動対象が見つかりません")
-                return False
+        elif clicked_layer and clicked_feature:
+            self.clear_inspection_selection()
+            clicked_layer.selectByIds([clicked_feature.id()])
+            self.iface.setActiveLayer(clicked_layer)
+            targets = [(clicked_layer, [clicked_feature.id()])]
+        else:
+            self.set_status(tr_text("移動対象が見つかりません"))
+            return False
         self.feature_move_targets = [(layer, list(ids)) for layer, ids in targets if layer and ids]
         if self.block_locked_layers([layer for layer, _ids in self.feature_move_targets], "移動できません", "図形を移動"):
             self.feature_move_targets = []
             return False
         total = sum(len(ids) for _layer, ids in self.feature_move_targets)
         if not total:
-            self.set_status("移動対象が選択されていません")
+            self.set_status(tr_text("移動対象が選択されていません"))
             return False
-        self.update_feature_move_preview(point, point)
-        self.set_status(f"移動: {total} 件をドラッグ中")
+        move_anchor = anchor_point if anchor_point is not None else point
+        self.update_feature_move_preview(move_anchor, move_anchor)
+        self.set_status(tr_text(f"移動: {total} 件をドラッグ中"))
         return True
 
     def clear_feature_move_preview(self):
@@ -6598,7 +7967,7 @@ class InspectionTabWidget(QWidget):
         targets = self.feature_move_targets or self.selected_vector_targets()
         if not targets:
             self.clear_feature_move_preview()
-            self.set_status("移動対象が選択されていません")
+            self.set_status(tr_text("移動対象が選択されていません"))
             return False
         if self.block_locked_layers([layer for layer, _ids in targets], "移動できません", "図形を移動"):
             self.clear_feature_move_preview()
@@ -6651,11 +8020,11 @@ class InspectionTabWidget(QWidget):
         else:
             self.refresh_selection_highlight()
         if failed_layers:
-            QMessageBox.warning(self, "移動できません", "一部レイヤを移動できませんでした。\n" + "\n".join(failed_layers[:8]))
+            QMessageBox.warning(self, tr_text("移動できません"), tr_text("一部レイヤを移動できませんでした。\n" + "\n".join(failed_layers[:8])))
         if moved:
-            self.set_status(f"✅ 移動: {moved} 件 / 続けて移動できます（右クリックで終了）")
+            self.set_status(tr_text(f"✅ 移動: {moved} 件 / 続けて移動できます（右クリックで終了）"))
             return True
-        self.set_status("移動できませんでした")
+        self.set_status(tr_text("移動できませんでした"))
         return False
 
     def undo_last_feature_move(self):
@@ -6664,7 +8033,7 @@ class InspectionTabWidget(QWidget):
         else:
             entries = list(self.feature_move_undo_stack.pop() or [])
         if not entries:
-            self.set_status("戻す移動がありません")
+            self.set_status(tr_text("戻す移動がありません"))
             return False
         layers = []
         for layer, _fid, _geom in entries:
@@ -6692,25 +8061,28 @@ class InspectionTabWidget(QWidget):
                 restored_targets.append((layer, list(changes.keys())))
         if not restored:
             self.feature_move_undo_stack.append(entries)
-            self.set_status("移動を戻せませんでした")
+            self.set_status(tr_text("移動を戻せませんでした"))
             return False
         self.clear_feature_move_preview()
         self.refresh_counts()
         self.operation_mode = "move"
         self.restore_feature_move_selection(restored_targets)
         QTimer.singleShot(0, lambda targets=restored_targets: self.restore_feature_move_selection(targets))
-        self.set_status(f"↶ 移動を戻しました: {restored} 件")
+        self.set_status(tr_text(f"↶ 移動を戻しました: {restored} 件"))
         return True
 
     def move_selected_to_layer(self, target_layer):
         targets = self.selected_vector_targets()
         if not targets:
-            self.set_status("移動対象が選択されていません")
-            self.operation_mode = "layer_change_select"
+            self.set_status(tr_text("移動対象が選択されていません"))
+            if self.last_selection_mode == "select_polygon":
+                self.operation_mode = "layer_change_select_polygon"
+            else:
+                self.operation_mode = "layer_change_select"
             self.ensure_map_tool()
             return False
         if any(layer.geometryType() != target_layer.geometryType() for layer, _ids in targets):
-            QMessageBox.warning(self, "移層できません", "形状タイプが違うレイヤへは移動できません。")
+            QMessageBox.warning(self, tr_text("移層できません"), tr_text("形状タイプが違うレイヤへは移動できません。"))
             self.operation_mode = "layer_change"
             self.ensure_map_tool()
             QTimer.singleShot(0, lambda: self.show_context_menu(QCursor.pos()))
@@ -6721,14 +8093,10 @@ class InspectionTabWidget(QWidget):
             self.ensure_map_tool()
             return True
         total = sum(len(ids) for _layer, ids in targets)
-        if QMessageBox.question(
-            self,
-            "移層",
-            f"選択中の {total} 件を「{self.layer_base_name(target_layer)}」へ移動しますか？",
-        ) != QMessageBox.StandardButton.Yes:
+        if not self.confirm_layer_change_if_needed(target_layer, total):
             self.operation_mode = "layer_change"
             self.ensure_map_tool()
-            self.set_status("移層: 右クリックメニューから移動先項目を選択してください")
+            self.set_status(tr_text("移層: 右クリックメニューから移動先項目を選択してください"))
             QTimer.singleShot(0, lambda: self.show_context_menu(QCursor.pos()))
             return True
         desc = self.layer_descriptor(target_layer)
@@ -6736,7 +8104,7 @@ class InspectionTabWidget(QWidget):
         now = self.now_text()
         safe, error = self.close_edit_buffer_before_provider_change(target_layer)
         if not safe:
-            QMessageBox.warning(self, "移層できません", f"移動先レイヤを保存できませんでした。\n{error}")
+            QMessageBox.warning(self, tr_text("移層できません"), tr_text(f"移動先レイヤを保存できませんでした。\n{error}"))
             self.operation_mode = "layer_change"
             self.ensure_map_tool()
             return True
@@ -6745,7 +8113,7 @@ class InspectionTabWidget(QWidget):
                 continue
             safe, error = self.close_edit_buffer_before_provider_change(layer)
             if not safe:
-                QMessageBox.warning(self, "移層できません", f"移動元レイヤを保存できませんでした。\n{error}")
+                QMessageBox.warning(self, tr_text("移層できません"), tr_text(f"移動元レイヤを保存できませんでした。\n{error}"))
                 self.operation_mode = "layer_change"
                 self.ensure_map_tool()
                 return True
@@ -6779,7 +8147,7 @@ class InspectionTabWidget(QWidget):
         for layer, ids, layer_features in source_moves:
             add_ok, added_features = target_layer.dataProvider().addFeatures(layer_features)
             if not add_ok:
-                QMessageBox.warning(self, "移層できません", "移動先レイヤへ図形を追加できませんでした。")
+                QMessageBox.warning(self, tr_text("移層できません"), tr_text("移動先レイヤへ図形を追加できませんでした。"))
                 self.operation_mode = "layer_change"
                 self.ensure_map_tool()
                 return True
@@ -6791,8 +8159,8 @@ class InspectionTabWidget(QWidget):
                     self.refresh_vector_layer_after_data_change(target_layer, reload_data=True)
                 QMessageBox.warning(
                     self,
-                    "移層できません",
-                    "移動元レイヤから図形を削除できなかったため、移動先への追加を取り消しました。",
+                    tr_text("移層できません"),
+                    tr_text("移動元レイヤから図形を削除できなかったため、移動先への追加を取り消しました。"),
                 )
                 self.operation_mode = "layer_change"
                 self.ensure_map_tool()
@@ -6806,8 +8174,8 @@ class InspectionTabWidget(QWidget):
         self.active_color = target_layer.customProperty(INSPECTION_PROP_PREFIX + "color", "ff0000")
         self.iface.setActiveLayer(target_layer)
         self.refresh_counts()
-        self.switch_to_pan()
-        self.set_status(f"✅ 移層: {self.layer_base_name(target_layer)}")
+        self.return_to_last_selection_mode()
+        self.set_status(tr_text(f"✅ 移層: {self.layer_base_name(target_layer)}"))
         return True
 
     def delete_selected_features(self):
@@ -6826,202 +8194,96 @@ class InspectionTabWidget(QWidget):
     def _delete_features(self, layer, ids):
         safe, error = self.close_edit_buffer_before_provider_change(layer)
         if not safe:
-            QMessageBox.warning(self, "削除できません", f"レイヤを保存できませんでした。\n{error}")
+            QMessageBox.warning(self, tr_text("削除できません"), tr_text(f"レイヤを保存できませんでした。\n{error}"))
+            return
+        ids = list(ids or [])
+        if not ids:
+            return
+        features = list(layer.getFeatures(QgsFeatureRequest().setFilterFids(ids)))
+        if not self.move_features_to_trash(layer, features):
             return
         layer.dataProvider().deleteFeatures(ids)
         layer.removeSelection()
         self.refresh_selection_highlight()
         self.refresh_vector_layer_after_data_change(layer, reload_data=True)
+        self.force_vector_delete_canvas_refresh(layer)
         self.refresh_counts()
-        self.set_status(f"🗑 {len(ids)} 件を削除しました")
+        self.set_status(tr_text(f"🗑 {len(ids)} 件をゴミ箱へ移動しました"))
 
-    def edit_selected_feature(self):
-        targets = self.selected_vector_targets()
-        if len(targets) != 1 or len(targets[0][1]) != 1:
-            return False
-        self.clear_inspection_selection()
-        return self._activate_vertex_edit(targets[0][0])
+    def force_vector_delete_canvas_refresh(self, layer):
+        def refresh_once():
+            try:
+                self.refresh_vector_layer_after_data_change(layer, reload_data=True, mark_edit_refresh=False)
+            except Exception:
+                pass
+            try:
+                canvas = self.iface.mapCanvas()
+                if hasattr(canvas, "refreshAllLayers"):
+                    canvas.refreshAllLayers()
+                else:
+                    canvas.refresh()
+            except Exception:
+                pass
+        refresh_once()
+        QTimer.singleShot(80, refresh_once)
 
-    def _activate_vertex_edit(self, layer):
-        if self.block_locked_layers([layer], "編集できません", "図形を編集"):
+    def move_features_to_trash(self, source_layer, features):
+        geom_type = self.layer_geom_type_key(source_layer)
+        trash_layer = self.ensure_trash_layer(geom_type, visible=False)
+        if not trash_layer:
+            QMessageBox.warning(self, tr_text("削除できません"), tr_text("ゴミ箱レイヤを作成できませんでした。"))
             return False
-        if not self.prepare_layer_edit(layer, activate_tool=True):
+        provider = trash_layer.dataProvider()
+        desc = self.layer_descriptor(source_layer)
+        deleted_at = self.now_text()
+        trash_features = []
+        for src_feature in features:
+            geom = src_feature.geometry()
+            if not geom or geom.isEmpty():
+                continue
+            feature = QgsFeature(trash_layer.fields())
+            feature.setGeometry(QgsGeometry(geom))
+            values = {
+                "orig_source": desc.get("source_name", ""),
+                "orig_layer_name": self.layer_base_name(source_layer),
+                "orig_color": desc.get("color", "ff0000"),
+                "orig_geom_type": geom_type,
+                "orig_round_no": str(desc.get("round_no", 0)),
+                "orig_code": desc.get("code", ""),
+                "orig_item_name": desc.get("name", ""),
+                "orig_inspection_type": desc.get("inspection_type", ""),
+                "orig_group_name": desc.get("group_name", ""),
+                "orig_layer_id": source_layer.id(),
+                "orig_layer_source_path": self.layer_source_path(source_layer),
+                "orig_provider_uri": self.vector_layer_provider_uri(source_layer),
+                "orig_attrs": self.feature_attrs_json(src_feature),
+                "deleted_at": deleted_at,
+            }
+            for name, value in values.items():
+                idx = trash_layer.fields().indexOf(name)
+                if idx >= 0:
+                    feature.setAttribute(idx, value)
+            trash_features.append(feature)
+        if not trash_features:
+            QMessageBox.warning(self, tr_text("削除できません"), tr_text("ゴミ箱へ移動する図形がありません。"))
             return False
-        self.set_status(f"編集モード: {self.display_layer_name(layer)}")
+        ok, _added = provider.addFeatures(trash_features)
+        if not ok:
+            QMessageBox.warning(self, tr_text("削除できません"), tr_text("ゴミ箱レイヤへ保存できませんでした。"))
+            return False
+        self.refresh_vector_layer_after_data_change(trash_layer, reload_data=True)
         return True
 
-    def edit_layer_detail(self, layer):
-        details = []
-        try:
-            details.append(f"provider={layer.providerType()}")
-        except Exception:
-            pass
-        try:
-            if layer.readOnly():
-                details.append("readOnly=True")
-        except Exception:
-            pass
-        try:
-            if not layer.supportsEditing():
-                details.append("supportsEditing=False")
-        except Exception:
-            pass
-        try:
-            provider = layer.dataProvider()
-            if provider:
-                details.append(f"caps={provider.capabilitiesString()}")
-                try:
-                    caps = provider.capabilities()
-                    change_geom = Qgis.VectorProviderCapability.ChangeGeometries
-                    if not caps & change_geom:
-                        details.append("ChangeGeometriesなし")
-                except Exception:
-                    pass
-        except Exception:
-            pass
-        return " / ".join(details) if details else "詳細不明"
 
-    def log_edit_start_failed(self, layer, reason):
-        try:
-            detail = self.edit_layer_detail(layer)
-            source = layer.source()
-            QgsMessageLog.logMessage(
-                f"INSPECTION_EDIT_START_FAILED layer={self.display_layer_name(layer)} "
-                f"reason={reason} detail={detail} source={source}",
-                "OrthoManager",
-                Qgis.MessageLevel.Warning,
-            )
-        except Exception:
-            pass
 
-    def prepare_layer_edit(self, layer, activate_tool=False):
-        if self.block_locked_layers([layer], "編集できません", "図形を編集"):
-            return False
-        try:
-            needs_refresh = layer.id() in self._layers_needing_edit_refresh
-        except Exception:
-            needs_refresh = False
-        if needs_refresh and not layer.isEditable():
-            self.refresh_vector_layer_after_data_change(layer, reload_data=True, mark_edit_refresh=False)
-            try:
-                self._layers_needing_edit_refresh.discard(layer.id())
-            except Exception:
-                pass
-        self.active_layer_id = layer.id()
-        self.active_geom_type = layer.customProperty(INSPECTION_PROP_PREFIX + "geom_type", self.layer_geom_type_key(layer))
-        self.active_color = layer.customProperty(INSPECTION_PROP_PREFIX + "color", "ff0000")
-        self.set_qgis_active_edit_layer(layer)
-        if not layer.isEditable():
-            try:
-                try:
-                    if layer.readOnly():
-                        layer.setReadOnly(False)
-                except Exception:
-                    pass
-                if not layer.supportsEditing():
-                    detail = self.edit_layer_detail(layer)
-                    self.set_status(f"編集開始できません: {self.display_layer_name(layer)}（{detail}）")
-                    self.log_edit_start_failed(layer, "supportsEditing=False")
-                    return False
-                started = False
-                try:
-                    tools = self.iface.vectorLayerTools()
-                    if tools:
-                        result = tools.startEditing(layer)
-                        started = bool(result) or layer.isEditable()
-                except Exception as exc:
-                    self.log_edit_start_failed(layer, f"vectorLayerTools.startEditing例外: {exc}")
-                if not started and not layer.isEditable():
-                    started = bool(layer.startEditing())
-                if not started and not layer.isEditable():
-                    detail = self.edit_layer_detail(layer)
-                    self.set_status(f"編集開始できません: {self.display_layer_name(layer)}（{detail}）")
-                    self.log_edit_start_failed(layer, "startEditing=False")
-                    return False
-            except Exception as exc:
-                self.set_status(f"編集開始できません: {self.display_layer_name(layer)}（{exc}）")
-                self.log_edit_start_failed(layer, f"例外: {exc}")
-                return False
-        if not activate_tool:
-            return True
-        self.apply_edit_preview_width(layer)
-        QTimer.singleShot(0, lambda l=layer: self.trigger_vertex_tool(l, force_restart=True))
-        return True
 
-    def set_qgis_active_edit_layer(self, layer):
-        try:
-            self.iface.setActiveLayer(layer)
-        except Exception:
-            pass
-        try:
-            view = self.iface.layerTreeView()
-            if view:
-                view.setCurrentLayer(layer)
-        except Exception:
-            pass
-        try:
-            nodes = self.layer_tree_nodes_for_layer(layer.id())
-            visible_nodes = [node for _parent, node in nodes if self.layer_tree_node_visible(node)]
-            target_node = visible_nodes[0] if visible_nodes else (nodes[0][1] if nodes else None)
-            if target_node is not None:
-                target_node.setItemVisibilityChecked(True)
-        except Exception:
-            pass
 
-    def trigger_vertex_tool(self, layer=None, force_restart=False):
-        if layer is not None:
-            self.set_qgis_active_edit_layer(layer)
-        try:
-            action = self.iface.actionVertexToolActiveLayer()
-            if force_restart and action.isChecked():
-                action.trigger()
-                QApplication.processEvents()
-            if not action.isChecked():
-                action.trigger()
-            return True
-        except Exception:
-            try:
-                action = self.iface.actionVertexTool()
-                if force_restart and action.isChecked():
-                    action.trigger()
-                    QApplication.processEvents()
-                if not action.isChecked():
-                    action.trigger()
-                return True
-            except Exception:
-                pass
-        return False
 
-    def finish_edit_mode(self, defer_pan=False, switch_to_pan_after=True):
-        saved = 0
-        touched_layers = []
-        for layer in self.inspection_layers():
-            try:
-                if layer.isEditable():
-                    if layer.commitChanges():
-                        saved += 1
-                        touched_layers.append(layer)
-                    else:
-                        layer.rollBack()
-                layer.removeSelection()
-            except Exception:
-                pass
-        for layer in touched_layers:
-            self.refresh_vector_layer_after_data_change(layer, reload_data=True, mark_edit_refresh=False)
-            try:
-                self._layers_needing_edit_refresh.discard(layer.id())
-            except Exception:
-                pass
-        self.restore_edit_preview_width()
-        self.refresh_counts()
-        if switch_to_pan_after:
-            if defer_pan:
-                self.operation_mode = "pan_pending"
-                QTimer.singleShot(160, self.switch_to_pan)
-            else:
-                self.operation_mode = "pan_pending"
-                self.switch_to_pan()
-        self.set_status(f"編集保存完了: {saved} レイヤ")
+
+
+
+
+
 
     def merge_selected_features(self, forced_layer=None):
         targets = [(forced_layer, list(forced_layer.selectedFeatureIds()))] if forced_layer else self.selected_vector_targets()
@@ -7033,7 +8295,7 @@ class InspectionTabWidget(QWidget):
             return False
         geometry_types = {layer.geometryType() for layer, _ids in targets}
         if len(geometry_types) != 1 or next(iter(geometry_types)) not in (Qgis.GeometryType.Polygon, Qgis.GeometryType.Line):
-            QMessageBox.warning(self, "統合できません", "統合は同じ種類のポリゴンまたはラインだけ対象です。")
+            QMessageBox.warning(self, tr_text("統合できません"), tr_text("統合は同じ種類のポリゴンまたはラインだけ対象です。"))
             return True
         geometry_type = next(iter(geometry_types))
         is_line_merge = geometry_type == Qgis.GeometryType.Line
@@ -7045,22 +8307,22 @@ class InspectionTabWidget(QWidget):
             return True
         features, geoms = self.collect_merge_features(targets, target_layer)
         if len(features) != total_count or len(geoms) != total_count:
-            QMessageBox.warning(self, "統合できません", f"選択した{feature_label}を正しく取得できませんでした。")
+            QMessageBox.warning(self, tr_text("統合できません"), tr_text(f"選択した{feature_label}を正しく取得できませんでした。"))
             return True
         if is_line_merge:
             geom = self.build_single_line_merge_geometry(geoms)
             if not geom:
                 QMessageBox.warning(
                     self,
-                    "統合できません",
-                    "端点がつながっているラインだけ統合できます。\n離れているライン、分岐するライン、複数線になる形状は保存しません。",
+                    tr_text("統合できません"),
+                    tr_text("端点がつながっているラインだけ統合できます。\n離れているライン、分岐するライン、複数線になる形状は保存しません。"),
                 )
                 return True
         elif not self.merge_geometries_have_area_overlap(geoms):
             QMessageBox.warning(
                 self,
-                "統合できません",
-                "面で重なっているポリゴンだけ統合できます。\n離れている、または辺だけ接しているポリゴンは統合できません。",
+                tr_text("統合できません"),
+                tr_text("面で重なっているポリゴンだけ統合できます。\n離れている、または辺だけ接しているポリゴンは統合できません。"),
             )
             return True
         else:
@@ -7068,14 +8330,14 @@ class InspectionTabWidget(QWidget):
             if not geom:
                 QMessageBox.warning(
                     self,
-                    "統合できません",
-                    "統合後の形状が単一ポリゴンになりませんでした。\n離れた形状や不正な形状は保存しません。",
+                    tr_text("統合できません"),
+                    tr_text("統合後の形状が単一ポリゴンになりませんでした。\n離れた形状や不正な形状は保存しません。"),
                 )
                 return True
         if QMessageBox.question(
             self,
-            f"{feature_label}統合",
-            f"{total_count} 件の{feature_label}を統合し、統合後レイヤ「{self.display_layer_name(target_layer)}」へ保存しますか？",
+            tr_text(f"{feature_label}統合"),
+            tr_text(f"{total_count} 件の{feature_label}を統合し、統合後レイヤ「{self.display_layer_name(target_layer)}」へ保存しますか？"),
         ) != QMessageBox.StandardButton.Yes:
             return True
         new_feature = self.build_merge_feature(target_layer, features, geom)
@@ -7090,7 +8352,7 @@ class InspectionTabWidget(QWidget):
         self.active_color = target_layer.customProperty(INSPECTION_PROP_PREFIX + "color", "ff0000")
         self.iface.setActiveLayer(target_layer)
         self.refresh_counts()
-        self.set_status(f"✅ {feature_label}を統合しました")
+        self.set_status(tr_text(f"✅ {feature_label}を統合しました"))
         return True
 
     def build_merge_feature(self, target_layer, features, geom):
@@ -7127,17 +8389,17 @@ class InspectionTabWidget(QWidget):
             for layer in involved:
                 if not layer.isEditable():
                     if not layer.startEditing():
-                        QMessageBox.warning(self, "統合できません", f"レイヤを編集状態にできませんでした。\n{self.display_layer_name(layer)}")
+                        QMessageBox.warning(self, tr_text("統合できません"), tr_text(f"レイヤを編集状態にできませんでした。\n{self.display_layer_name(layer)}"))
                         return False
                     started.append(layer)
                 layer.beginEditCommand(f"{feature_label}統合")
                 commanded.append(layer)
             if not target_layer.addFeature(new_feature):
-                QMessageBox.warning(self, "統合できません", f"統合後{feature_label}を保存できませんでした。元の{feature_label}は残しています。")
+                QMessageBox.warning(self, tr_text("統合できません"), tr_text(f"統合後{feature_label}を保存できませんでした。元の{feature_label}は残しています。"))
                 return False
             for layer, ids in targets:
                 if ids and not layer.deleteFeatures(ids):
-                    QMessageBox.warning(self, "統合できません", f"元{feature_label}を削除できませんでした。\n{self.display_layer_name(layer)}")
+                    QMessageBox.warning(self, tr_text("統合できません"), tr_text(f"元{feature_label}を削除できませんでした。\n{self.display_layer_name(layer)}"))
                     return False
             for layer in commanded:
                 layer.endEditCommand()
@@ -7150,8 +8412,8 @@ class InspectionTabWidget(QWidget):
             if commit_errors:
                 QMessageBox.warning(
                     self,
-                    "統合保存エラー",
-                    "統合の保存でエラーが出ました。\n" + "\n".join(commit_errors),
+                    tr_text("統合保存エラー"),
+                    tr_text("統合の保存でエラーが出ました。\n" + "\n".join(commit_errors)),
                 )
                 return False
             return True
@@ -7308,7 +8570,7 @@ class InspectionTabWidget(QWidget):
         if not candidate_layers:
             return None
         labels = [self.display_layer_name(layer) for layer in candidate_layers]
-        label, ok = QInputDialog.getItem(self, "統合後レイヤ選択", "統合後の保存先レイヤ:", labels, 0, False)
+        label, ok = QInputDialog.getItem(self, tr_text("統合後レイヤ選択"), tr_text("統合後の保存先レイヤ:"), labels, 0, False)
         if not ok:
             return None
         return candidate_layers[labels.index(label)]
@@ -7321,14 +8583,14 @@ class InspectionTabWidget(QWidget):
     def export_inspection(self):
         layers = [layer for layer in self.current_inspection_layers() if layer.featureCount() > 0]
         if not layers:
-            QMessageBox.information(self, "検査書出", "書き出す検査データがありません。")
+            QMessageBox.information(self, tr_text("検査書出"), tr_text("書き出す検査データがありません。"))
             return
         dialog = InspectionExportDialog(self, layers, self)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         selected = dialog.selected_layers()
         if not selected:
-            QMessageBox.information(self, "検査書出", "データがあるレイヤが選択されていません。")
+            QMessageBox.information(self, tr_text("検査書出"), tr_text("データがあるレイヤが選択されていません。"))
             return
         mode = dialog.selected_output_mode()
         selected_format = dialog.selected_format()
@@ -7404,21 +8666,21 @@ class InspectionTabWidget(QWidget):
             if err != QgsVectorFileWriter.WriterError.NoError:
                 errors.append(f"{layer.name()}: {msg}")
         if errors:
-            QMessageBox.warning(self, "SHP書き出し", "\n".join(errors))
+            QMessageBox.warning(self, tr_text("SHP書き出し"), "\n".join(errors))
         else:
-            self.set_status(f"✅ SHP書き出し完了: {len(layers)} レイヤ")
+            self.set_status(tr_text(f"✅ SHP書き出し完了: {len(layers)} レイヤ"))
 
     def export_shp_merged(self, layers, folder):
         if not OGR_OK:
-            QMessageBox.critical(self, "SHP書き出し", "GDAL/OGRを読み込めないためSHPを書き出せません。")
+            QMessageBox.critical(self, tr_text("SHP書き出し"), tr_text("GDAL/OGRを読み込めないためSHPを書き出せません。"))
             return
         geom_types = self.selected_geom_type_keys(layers)
         if len(geom_types) != 1:
             labels = "、".join(GEOM_TYPE_LABELS.get(key, key) for key in sorted(geom_types))
             QMessageBox.warning(
                 self,
-                "SHP書き出し",
-                f"1つのSHPには同じ図形タイプだけ出力できます。\n選択データには {labels} が混在しているため、1つのSHPにまとめられません。\n「レイヤごとにSHP作成」を選んでください。",
+                tr_text("SHP書き出し"),
+                tr_text(f"1つのSHPには同じ図形タイプだけ出力できます。\n選択データには {labels} が混在しているため、1つのSHPにまとめられません。\n「レイヤごとにSHP作成」を選んでください。"),
             )
             return
         geom_type = next(iter(geom_types))
@@ -7428,7 +8690,7 @@ class InspectionTabWidget(QWidget):
         driver = ogr.GetDriverByName("ESRI Shapefile")
         ds = driver.CreateDataSource(out_path)
         if ds is None:
-            QMessageBox.critical(self, "SHP書き出し", "SHPを作成できませんでした。")
+            QMessageBox.critical(self, tr_text("SHP書き出し"), tr_text("SHPを作成できませんでした。"))
             return
         ogr_type = {"polygon": ogr.wkbPolygon, "line": ogr.wkbLineString, "point": ogr.wkbPoint}.get(geom_type, ogr.wkbPolygon)
         ogr_layer = ds.CreateLayer(os.path.splitext(os.path.basename(out_path))[0], self._ogr_srs_from_layer(layers[0]), ogr_type, options=["ENCODING=UTF-8"])
@@ -7473,9 +8735,9 @@ class InspectionTabWidget(QWidget):
                     errors.append(f"{self.layer_base_name(layer)}: {exc}")
         ds = None
         if errors:
-            QMessageBox.warning(self, "SHP書き出し", "\n".join(errors[:20]))
+            QMessageBox.warning(self, tr_text("SHP書き出し"), "\n".join(errors[:20]))
         else:
-            self.set_status(f"✅ SHP書き出し完了: 1 ファイル（{count} 件）")
+            self.set_status(tr_text(f"✅ SHP書き出し完了: 1 ファイル（{count} 件）"))
 
     def _delete_shapefile_set(self, shp_path):
         base, _ext = os.path.splitext(shp_path)
@@ -7489,7 +8751,7 @@ class InspectionTabWidget(QWidget):
 
     def export_dxf(self, layers, path):
         if self._write_legacy_dxf(layers, path):
-            self.set_status(f"✅ DXF（R12）書き出し完了: 1 ファイル（{len(layers)} レイヤ）")
+            self.set_status(tr_text(f"✅ DXF（R12）書き出し完了: 1 ファイル（{len(layers)} レイヤ）"))
 
     def export_dxf_per_layer(self, layers, folder):
         os.makedirs(folder, exist_ok=True)
@@ -7502,16 +8764,16 @@ class InspectionTabWidget(QWidget):
             else:
                 errors.append(self.layer_base_name(layer))
         if errors:
-            QMessageBox.warning(self, "DXF（R12）書き出し", "書き出しに失敗したレイヤがあります。\n" + "\n".join(errors[:20]))
+            QMessageBox.warning(self, tr_text("DXF（R12）書き出し"), tr_text("書き出しに失敗したレイヤがあります。\n" + "\n".join(errors[:20])))
         else:
-            self.set_status(f"✅ DXF（R12）書き出し完了: {written} ファイル")
+            self.set_status(tr_text(f"✅ DXF（R12）書き出し完了: {written} ファイル"))
 
 
 
 
     def export_test_dxf(self, layers, path):
         if self._write_test_dxf(layers, path):
-            self.set_status(f"✅ DXF（AutoCAD 2000系）書き出し完了: 1 ファイル（{len(layers)} レイヤ）")
+            self.set_status(tr_text(f"✅ DXF（AutoCAD 2000系）書き出し完了: 1 ファイル（{len(layers)} レイヤ）"))
 
     def export_test_dxf_per_layer(self, layers, folder):
         os.makedirs(folder, exist_ok=True)
@@ -7524,9 +8786,9 @@ class InspectionTabWidget(QWidget):
             else:
                 errors.append(self.layer_base_name(layer))
         if errors:
-            QMessageBox.warning(self, "DXF（AutoCAD 2000系）書き出し", "書き出しに失敗したレイヤがあります。\n" + "\n".join(errors[:20]))
+            QMessageBox.warning(self, tr_text("DXF（AutoCAD 2000系）書き出し"), tr_text("書き出しに失敗したレイヤがあります。\n" + "\n".join(errors[:20])))
         else:
-            self.set_status(f"✅ DXF（AutoCAD 2000系）書き出し完了: {written} ファイル")
+            self.set_status(tr_text(f"✅ DXF（AutoCAD 2000系）書き出し完了: {written} ファイル"))
 
     def _write_test_dxf(self, layers, path):
         return self._write_ogr_dxf(layers, path)
@@ -7534,11 +8796,11 @@ class InspectionTabWidget(QWidget):
     def _write_ogr_dxf(self, layers, path):
         title = "DXF（AutoCAD 2000系）書き出し"
         if not OGR_OK:
-            QMessageBox.critical(self, title, "GDAL/OGRを読み込めないためDXFを書き出せません。")
+            QMessageBox.critical(self, title, tr_text("GDAL/OGRを読み込めないためDXFを書き出せません。"))
             return False
         driver = ogr.GetDriverByName("DXF")
         if driver is None:
-            QMessageBox.critical(self, title, "このQGIS環境ではDXF書き出しドライバが使えません。")
+            QMessageBox.critical(self, title, tr_text("このQGIS環境ではDXF書き出しドライバが使えません。"))
             return False
         if os.path.exists(path):
             try:
@@ -7552,10 +8814,10 @@ class InspectionTabWidget(QWidget):
         old_hatch = gdal.GetConfigOption("DXF_WRITE_HATCH")
         try:
             gdal.SetConfigOption("DXF_ENCODING", "CP932")
-            gdal.SetConfigOption("DXF_WRITE_HATCH", "FALSE")
+            gdal.SetConfigOption("DXF_WRITE_HATCH", "TRUE")
             ds = driver.CreateDataSource(path)
             if ds is None:
-                QMessageBox.critical(self, title, "DXFを作成できませんでした。")
+                QMessageBox.critical(self, title, tr_text("DXFを作成できませんでした。"))
                 return False
             srs = self._ogr_srs_from_layer(layers[0]) if layers else None
             ogr_layer = ds.CreateLayer("entities", srs, ogr.wkbUnknown)
@@ -7569,7 +8831,7 @@ class InspectionTabWidget(QWidget):
             self._patch_dxf_codepage(path)
             return True
         except Exception as exc:
-            QMessageBox.critical(self, title, f"DXFを書き出せませんでした。\n{exc}")
+            QMessageBox.critical(self, title, tr_text(f"DXFを書き出せませんでした。\n{exc}"))
             return False
         finally:
             gdal.SetConfigOption("DXF_ENCODING", old_encoding)
@@ -7681,7 +8943,7 @@ class InspectionTabWidget(QWidget):
                 f.write("\n")
             return True
         except Exception as exc:
-            QMessageBox.critical(self, error_title, f"DXFを書き出せませんでした。\n{exc}")
+            QMessageBox.critical(self, error_title, tr_text(f"DXFを書き出せませんでした。\n{exc}"))
             return False
 
 
@@ -7867,7 +9129,7 @@ class InspectionTabWidget(QWidget):
     def export_dgn(self, layers, path, legacy=False):
         if self._write_dgn(layers, path, legacy=legacy):
             label = "DGN V7" if legacy else "DGN V8/2004以降"
-            self.set_status(f"✅ {label}書き出し完了: 1 ファイル（{len(layers)} レイヤ）")
+            self.set_status(tr_text(f"✅ {label}書き出し完了: 1 ファイル（{len(layers)} レイヤ）"))
 
     def export_dgn_per_layer(self, layers, folder, legacy=False):
         os.makedirs(folder, exist_ok=True)
@@ -7882,27 +9144,27 @@ class InspectionTabWidget(QWidget):
                 errors.append(self.layer_base_name(layer))
         label = "DGN V7" if legacy else "DGN V8/2004以降"
         if errors:
-            QMessageBox.warning(self, f"{label}書き出し", "書き出しに失敗したレイヤがあります。\n" + "\n".join(errors[:20]))
+            QMessageBox.warning(self, tr_text(f"{label}書き出し"), tr_text("書き出しに失敗したレイヤがあります。\n" + "\n".join(errors[:20])))
         else:
-            self.set_status(f"✅ {label}書き出し完了: {written} ファイル")
+            self.set_status(tr_text(f"✅ {label}書き出し完了: {written} ファイル"))
 
     def _write_dgn(self, layers, path, legacy=False):
         label = "DGN V7" if legacy else "DGN V8/2004以降"
         if not OGR_OK:
-            QMessageBox.critical(self, f"{label}書き出し", "GDAL/OGRを読み込めないためDGNを書き出せません。")
+            QMessageBox.critical(self, tr_text(f"{label}書き出し"), tr_text("GDAL/OGRを読み込めないためDGNを書き出せません。"))
             return False
         driver_name = "DGN" if legacy else "DGNv8"
         driver = ogr.GetDriverByName(driver_name)
         if driver is None:
             if legacy:
-                QMessageBox.critical(self, "DGN V7書き出し", "このQGIS環境ではDGN V7書き出しドライバが使えません。")
+                QMessageBox.critical(self, tr_text("DGN V7書き出し"), tr_text("このQGIS環境ではDGN V7書き出しドライバが使えません。"))
             else:
                 QMessageBox.critical(
                     self,
-                    "DGN V8/2004以降 書き出し",
-                    "このQGIS環境にはDGN V8/2004以降を書き出すDGNv8ドライバがありません。\n"
+                    tr_text("DGN V8/2004以降 書き出し"),
+                    tr_text("このQGIS環境にはDGN V8/2004以降を書き出すDGNv8ドライバがありません。\n"
                     "標準のQGIS/GDALではDGN V7だけが作成可能です。\n"
-                    "DXF（R12）またはDGN V7を使ってください。",
+                    "DXF（R12）またはDGN V7を使ってください。"),
                 )
             return False
         if os.path.exists(path):
@@ -7914,7 +9176,7 @@ class InspectionTabWidget(QWidget):
         try:
             ds = driver.CreateDataSource(path, options=options)
             if ds is None:
-                QMessageBox.critical(self, f"{label}書き出し", f"{label}を作成できませんでした。")
+                QMessageBox.critical(self, tr_text(f"{label}書き出し"), tr_text(f"{label}を作成できませんでした。"))
                 return False
             if legacy:
                 srs = self._ogr_srs_from_layer(layers[0]) if layers else None
@@ -7934,7 +9196,7 @@ class InspectionTabWidget(QWidget):
             ds = None
             return True
         except Exception as exc:
-            QMessageBox.critical(self, f"{label}書き出し", f"{label}を書き出せませんでした。\n{exc}")
+            QMessageBox.critical(self, tr_text(f"{label}書き出し"), tr_text(f"{label}を書き出せませんでした。\n{exc}"))
             return False
 
     def _export_layer_to_dgn_ogr_layer(self, ogr_layer, defn, layer, level):
@@ -8025,55 +9287,104 @@ class InspectionTabWidget(QWidget):
         return None
 
     def save_state(self):
+        self.write_gpkg_management_state()
         return {
-            "version": 2,
+            "version": 4,
             "gpkg_path": self.gpkg_path,
-            "inspection_type": self.active_inspection_type,
-            "last_free_geom_type": self.last_free_geom_type,
-            "free_groups": self.free_group_names(),
-            "layers": [self.layer_descriptor(layer) for layer in self.inspection_layers()],
+            "gpkg_paths": dict(self.gpkg_paths),
         }
 
     def restore_state(self, state):
         if not isinstance(state, dict):
             return
         self.layers.clear()
-        inspection_type = state.get("inspection_type", INSPECTION_TYPE_ORTHO)
-        self.active_inspection_type = inspection_type if inspection_type in (INSPECTION_TYPE_ORTHO, INSPECTION_TYPE_FREE) else INSPECTION_TYPE_ORTHO
-        self.last_free_geom_type = state.get("last_free_geom_type", "line") or "line"
-        self.free_groups = [str(name).strip() for name in state.get("free_groups", []) if str(name).strip()]
-        for layer in self.inspection_layers():
-            source = layer.customProperty(INSPECTION_PROP_PREFIX + "source_name", "")
-            if source:
-                self.layers[source] = {**self.layer_descriptor(layer), "layer_id": layer.id()}
-        path = state.get("gpkg_path", "")
+        self.active_inspection_type = INSPECTION_TYPE_FREE
+        self.last_free_geom_type = "line"
+        self.free_groups = []
+        self.gpkg_paths = {inspection_type: "" for inspection_type in INSPECTION_TYPES}
+        saved_paths = state.get("gpkg_paths", {})
+        if isinstance(saved_paths, dict):
+            for key, path in saved_paths.items():
+                if key in INSPECTION_TYPES:
+                    self.gpkg_paths[key] = self.resolve_saved_gpkg_path(path)
+        legacy_path = self.resolve_saved_gpkg_path(state.get("gpkg_path", ""))
+        if legacy_path and not any(self.gpkg_paths.values()):
+            self.gpkg_paths[INSPECTION_TYPE_FREE] = legacy_path
+        self.sync_active_gpkg_path()
+        if self.gpkg_path:
+            for key in INSPECTION_TYPES:
+                self.gpkg_paths[key] = self.gpkg_path
+        if self.gpkg_path and os.path.exists(self.gpkg_path):
+            self.load_layers_from_gpkg()
+        self.refresh_ui()
+
+    def resolve_saved_gpkg_path(self, path):
+        path = path or ""
         if path and not os.path.exists(path):
             alt = os.path.join(self.project_home(), os.path.basename(path)) if self.project_home() else ""
             if alt and os.path.exists(alt):
                 path = alt
-        self.gpkg_path = path if path else ""
-        descriptors = {d.get("source_name"): d for d in state.get("layers", []) if isinstance(d, dict)}
-        if self.gpkg_path and os.path.exists(self.gpkg_path):
-            for source, descriptor in descriptors.items():
-                self.load_layer(source, descriptor)
-            if not descriptors:
-                self.load_layers_from_gpkg()
-        for group_name in self.free_group_names():
-            self.ensure_free_group(group_name)
-        self.refresh_ui()
+        return path if path else ""
 
     def clear_inspection_state(self, remove_layers=True):
         if remove_layers:
+            removed_any = False
             for layer in list(self.inspection_layers()):
-                QgsProject.instance().removeMapLayer(layer.id())
+                try:
+                    self.force_removed_layer_canvas_refresh(layer)
+                    QgsProject.instance().removeMapLayer(layer.id())
+                    removed_any = True
+                except Exception:
+                    pass
+            if self.close_project_trash_layers_and_group():
+                removed_any = True
+            if removed_any:
+                QApplication.processEvents()
+                self.force_removed_layer_canvas_refresh()
         self.layers.clear()
+        self.trash_layer_ids.clear()
         self.free_groups.clear()
         self.active_layer_id = ""
         self.gpkg_path = ""
+        self.gpkg_paths = {inspection_type: "" for inspection_type in INSPECTION_TYPES}
+        self.active_inspection_type = INSPECTION_TYPE_FREE
         self.operation_mode = "create"
         self.refresh_ui()
 
+    def clear_inspection_type_state(self, inspection_type, remove_layers=True, clear_path=True):
+        inspection_type = inspection_type if inspection_type in INSPECTION_TYPES else self.active_inspection_type
+        if remove_layers:
+            removed_any = False
+            for layer in list(self.inspection_layers()):
+                if self.layer_inspection_type(layer) == inspection_type:
+                    try:
+                        self.force_removed_layer_canvas_refresh(layer)
+                        QgsProject.instance().removeMapLayer(layer.id())
+                        removed_any = True
+                    except Exception:
+                        pass
+            if inspection_type == self.active_inspection_type:
+                if self.close_project_trash_layers_and_group():
+                    removed_any = True
+            if removed_any:
+                QApplication.processEvents()
+                self.force_removed_layer_canvas_refresh()
+        for source, info in list(self.layers.items()):
+            if info.get("inspection_type") == inspection_type:
+                self.layers.pop(source, None)
+        if inspection_type == INSPECTION_TYPE_FREE:
+            self.free_groups.clear()
+            self.active_free_group_name = ""
+        if clear_path:
+            self.set_inspection_gpkg_path(inspection_type, "")
+        if inspection_type == self.active_inspection_type:
+            self.trash_layer_ids.clear()
+            self.active_layer_id = ""
+        self.refresh_ui()
+
     def cleanup_before_unload(self):
+        self.cleanup_layer_tree_copy_menu()
+        self.disconnect_guide_layer_refresh_signals()
         self.restore_selection_color()
         try:
             if self.map_tool and self.iface.mapCanvas().mapTool() == self.map_tool:
@@ -8081,13 +9392,3 @@ class InspectionTabWidget(QWidget):
         except Exception:
             pass
         self.map_tool = None
-
-
-
-
-
-
-
-
-
-

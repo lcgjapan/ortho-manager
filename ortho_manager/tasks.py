@@ -8,8 +8,13 @@ import json
 import subprocess
 import sys
 import tempfile
+import math
+from fractions import Fraction
+from math import gcd
 from qgis.core import QgsTask, QgsMessageLog, Qgis
 from qgis.PyQt.QtCore import pyqtSignal, QObject
+
+from .utils import get_plugin_version
 
 try:
     from osgeo import gdal, ogr, osr
@@ -142,7 +147,7 @@ def run_external_vrt_engine_sync(tif_list, vrt_path, gpkg_path, rebuild_gpkg, en
 
 class ExternalVrtEngineTask(QgsTask):
     def __init__(self, tif_list, vrt_path, gpkg_path, rebuild_gpkg, engine_path):
-        task_name = f"OrthoManager v3.3: 外部VRTエンジン ({datetime.datetime.now().strftime('%H:%M:%S')})"
+        task_name = f"OrthoManager v{get_plugin_version('unknown')}: 外部VRTエンジン ({datetime.datetime.now().strftime('%H:%M:%S')})"
         super().__init__(task_name, QgsTask.Flag.CanCancel)
         self.tif_list = list(tif_list)
         self.vrt_path = vrt_path
@@ -263,6 +268,155 @@ class BuildVrtAndGpkgTask(QgsTask):
         self.temp_vrt = self.vrt_path + ".tmp.vrt"
         self.temp_gpkg = self.gpkg_path + ".tmp.gpkg"
 
+    def _is_integer_pixel_offset(self, value, tolerance=1e-7):
+        return math.isfinite(value) and abs(value - round(value)) <= tolerance
+
+    def _ensure_fast_update_grid_safe(self, vrt_gt, diff_gt):
+        checks = [
+            ("既存VRTのX回転", vrt_gt[2], 0.0),
+            ("既存VRTのY回転", vrt_gt[4], 0.0),
+            ("追加VRTのX回転", diff_gt[2], 0.0),
+            ("追加VRTのY回転", diff_gt[4], 0.0),
+            ("ピクセル幅", diff_gt[1], vrt_gt[1]),
+            ("ピクセル高さ", diff_gt[5], vrt_gt[5]),
+        ]
+        for label, actual, expected in checks:
+            if abs(actual - expected) > 1e-9:
+                raise Exception(f"座標精度維持のため高速差分更新を停止します: {label}={actual} 基準={expected}")
+
+    def _lcm(self, a, b):
+        return abs(a * b) // gcd(a, b) if a and b else 1
+
+    def _offset_denominator(self, offset, pixel_size, tolerance=1e-7):
+        if not math.isfinite(offset) or not math.isfinite(pixel_size) or pixel_size == 0:
+            return 1
+        ratio = offset / pixel_size
+        if self._is_integer_pixel_offset(ratio, tolerance):
+            return 1
+        frac = Fraction(ratio).limit_denominator(10000)
+        if abs((float(frac) - ratio) * pixel_size) <= tolerance:
+            return max(1, frac.denominator)
+        return 1
+
+    def _analyze_vrt_grid(self, paths):
+        rasters = []
+        for path in paths:
+            ds = gdal.Open(path)
+            if ds is None:
+                continue
+            gt = ds.GetGeoTransform(can_return_null=True)
+            width = ds.RasterXSize
+            height = ds.RasterYSize
+            ds = None
+            if not gt:
+                continue
+            rasters.append(
+                {
+                    "path": path,
+                    "gt": gt,
+                    "width": width,
+                    "height": height,
+                    "pixel_x": abs(gt[1]),
+                    "pixel_y": abs(gt[5]),
+                    "left": gt[0],
+                    "top": gt[3],
+                }
+            )
+
+        if not rasters:
+            QgsMessageLog.logMessage(
+                "VRT_GRID_MODE normal reason=no_georeferenced_sources",
+                "OrthoManager",
+                Qgis.MessageLevel.Warning,
+            )
+            return {"mode": "normal", "reason": "no_georeferenced_sources"}
+
+        base_x = min(r["pixel_x"] for r in rasters if r["pixel_x"] > 0)
+        base_y = min(r["pixel_y"] for r in rasters if r["pixel_y"] > 0)
+        unsupported = []
+        for r in rasters:
+            gt = r["gt"]
+            if abs(gt[2]) > 1e-12 or abs(gt[4]) > 1e-12:
+                unsupported.append("rotation")
+            if abs(r["pixel_x"] - base_x) > 1e-9 or abs(r["pixel_y"] - base_y) > 1e-9:
+                unsupported.append("mixed_pixel_size")
+        if unsupported:
+            reason = ",".join(sorted(set(unsupported)))
+            QgsMessageLog.logMessage(
+                f"VRT_GRID_MODE normal pixel_size=({base_x:.12g},{base_y:.12g}) reason={reason}",
+                "OrthoManager",
+                Qgis.MessageLevel.Warning,
+            )
+            return {"mode": "normal", "reason": reason}
+
+        min_left = min(r["left"] for r in rasters)
+        max_top = max(r["top"] for r in rasters)
+        factor_x = 1
+        factor_y = 1
+        for r in rasters:
+            factor_x = self._lcm(factor_x, self._offset_denominator(r["left"] - min_left, base_x))
+            factor_y = self._lcm(factor_y, self._offset_denominator(max_top - r["top"], base_y))
+
+        if factor_x == 1 and factor_y == 1:
+            QgsMessageLog.logMessage(
+                f"VRT_GRID_MODE normal pixel_size=({base_x:.12g},{base_y:.12g}) reason=all_offsets_integer",
+                "OrthoManager",
+                Qgis.MessageLevel.Info,
+            )
+            QgsMessageLog.logMessage(
+                "通常VRTグリッド: すべての画像が元ピクセルサイズの整数位置に配置できます。",
+                "OrthoManager",
+                Qgis.MessageLevel.Info,
+            )
+            return {
+                "mode": "normal",
+                "reason": "all_offsets_integer",
+                "x_res": base_x,
+                "y_res": base_y,
+                "factor_x": factor_x,
+                "factor_y": factor_y,
+            }
+
+        x_res = base_x / factor_x
+        y_res = base_y / factor_y
+        axes = []
+        if factor_x > 1:
+            axes.append(f"X factor={factor_x}")
+            QgsMessageLog.logMessage(
+                f"VRT_GRID_PRECISION axis=X factor={factor_x}",
+                "OrthoManager",
+                Qgis.MessageLevel.Info,
+            )
+        if factor_y > 1:
+            axes.append(f"Y factor={factor_y}")
+            QgsMessageLog.logMessage(
+                f"VRT_GRID_PRECISION axis=Y factor={factor_y}",
+                "OrthoManager",
+                Qgis.MessageLevel.Info,
+            )
+        QgsMessageLog.logMessage(
+            f"VRT_GRID_MODE precision pixel_size=({x_res:.12g},{y_res:.12g}) "
+            f"source_pixel_size=({base_x:.12g},{base_y:.12g}) reason=subpixel_offsets_detected",
+            "OrthoManager",
+            Qgis.MessageLevel.Info,
+        )
+        QgsMessageLog.logMessage(
+            f"座標精度優先モード: 小数ピクセル配置を検出したため、VRT内部グリッドを "
+            f"{x_res:.12g}m x {y_res:.12g}m にします（{', '.join(axes)}）。元画像とJGWは変更しません。",
+            "OrthoManager",
+            Qgis.MessageLevel.Info,
+        )
+        return {
+            "mode": "precision",
+            "reason": "subpixel_offsets_detected",
+            "x_res": x_res,
+            "y_res": y_res,
+            "source_x_res": base_x,
+            "source_y_res": base_y,
+            "factor_x": factor_x,
+            "factor_y": factor_y,
+        }
+
     def _get_existing_tifs_from_vrt(self, vrt_path):
         """VRTのXMLから登録されているTIFリストを高速に抽出する"""
         tifs = set()
@@ -324,6 +478,7 @@ class BuildVrtAndGpkgTask(QgsTask):
             diff_root = diff_tree.getroot()
             diff_gt_elem = diff_root.find("GeoTransform")
             diff_gt = [float(x) for x in diff_gt_elem.text.strip().split(',')]
+            self._ensure_fast_update_grid_safe(vrt_gt, diff_gt)
             
             diff_minx = diff_gt[0]
             diff_maxy = diff_gt[3]
@@ -341,11 +496,25 @@ class BuildVrtAndGpkgTask(QgsTask):
             new_raster_y_size = int(round((new_miny - new_maxy) / pixel_height))
             
             # 座標オフセットのシフト量を計算
-            shift_x = int(round((vrt_gt[0] - new_vrt_gt[0]) / pixel_width))
-            shift_y = int(round((vrt_gt[3] - new_vrt_gt[3]) / pixel_height))
+            shift_x_raw = (vrt_gt[0] - new_vrt_gt[0]) / pixel_width
+            shift_y_raw = (vrt_gt[3] - new_vrt_gt[3]) / pixel_height
+            diff_shift_x_raw = (diff_gt[0] - new_vrt_gt[0]) / pixel_width
+            diff_shift_y_raw = (diff_gt[3] - new_vrt_gt[3]) / pixel_height
+            for label, value in (
+                ("既存VRT X", shift_x_raw),
+                ("既存VRT Y", shift_y_raw),
+                ("追加画像 X", diff_shift_x_raw),
+                ("追加画像 Y", diff_shift_y_raw),
+            ):
+                if not self._is_integer_pixel_offset(value):
+                    raise Exception(
+                        f"座標精度維持のため高速差分更新を停止します: {label} offset={value}"
+                    )
+            shift_x = int(round(shift_x_raw))
+            shift_y = int(round(shift_y_raw))
             
-            diff_shift_x = int(round((diff_gt[0] - new_vrt_gt[0]) / pixel_width))
-            diff_shift_y = int(round((diff_gt[3] - new_vrt_gt[3]) / pixel_height))
+            diff_shift_x = int(round(diff_shift_x_raw))
+            diff_shift_y = int(round(diff_shift_y_raw))
             
             root.set('rasterXSize', str(new_raster_x_size))
             root.set('rasterYSize', str(new_raster_y_size))
@@ -397,6 +566,8 @@ class BuildVrtAndGpkgTask(QgsTask):
             if self.isCanceled(): return False
 
             target_tifs_norm = set(os.path.normpath(p) for p in self.tif_list)
+            grid_spec = self._analyze_vrt_grid(self.tif_list)
+            precision_grid_required = grid_spec.get("mode") == "precision"
             
             fast_update_success = False
             tifs_to_add = set()
@@ -405,7 +576,18 @@ class BuildVrtAndGpkgTask(QgsTask):
             # --- 1. 超高速差分更新のトライ ---
             vrt_update_start = time.perf_counter()
             update_mode = "変更なしコピー"
-            if os.path.exists(self.vrt_path):
+            if precision_grid_required:
+                QgsMessageLog.logMessage(
+                    "VRT_FAST_UPDATE disabled reason=precision_grid_required",
+                    "OrthoManager",
+                    Qgis.MessageLevel.Info,
+                )
+                QgsMessageLog.logMessage(
+                    "座標精度優先モードのため、XML差分更新は使わずフルビルドします。",
+                    "OrthoManager",
+                    Qgis.MessageLevel.Info,
+                )
+            if not precision_grid_required and os.path.exists(self.vrt_path):
                 existing_tifs = self._get_existing_tifs_from_vrt(self.vrt_path)
                 if existing_tifs:
                     tifs_to_add = target_tifs_norm - existing_tifs
@@ -434,7 +616,17 @@ class BuildVrtAndGpkgTask(QgsTask):
                     self.setProgress(int(5 + (complete * 75))) 
                     return 1
 
-                opts = gdal.BuildVRTOptions(resolution="highest", addAlpha=True, hideNodata=True, callback=gdal_progress)
+                if precision_grid_required:
+                    opts = gdal.BuildVRTOptions(
+                        resolution="user",
+                        xRes=grid_spec["x_res"],
+                        yRes=grid_spec["y_res"],
+                        addAlpha=True,
+                        hideNodata=True,
+                        callback=gdal_progress,
+                    )
+                else:
+                    opts = gdal.BuildVRTOptions(resolution="highest", addAlpha=True, hideNodata=True, callback=gdal_progress)
                 ds = gdal.BuildVRT(self.temp_vrt, self.tif_list, options=opts)
                 if ds is None:
                     raise Exception("VRTの生成に失敗しました。")
@@ -448,6 +640,10 @@ class BuildVrtAndGpkgTask(QgsTask):
                 ds = None
             self.timing["vrt_update_sec"] = time.perf_counter() - vrt_update_start
             self.timing["vrt_update_mode"] = update_mode
+            self.timing["vrt_grid_mode"] = grid_spec.get("mode", "normal")
+            if grid_spec.get("x_res") and grid_spec.get("y_res"):
+                self.timing["vrt_grid_x_res"] = grid_spec["x_res"]
+                self.timing["vrt_grid_y_res"] = grid_spec["y_res"]
             self.timing["tif_count"] = len(self.tif_list)
 
             if self.isCanceled(): return False

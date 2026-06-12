@@ -17,6 +17,23 @@ PROJECT_ENTRY = "vrt_registry_v2"
 DEFAULT_MIN_SCALE = 500
 DEFAULT_OVERLAY_COLOR = QColor(0x76, 0xa3, 0x2a, 255)
 NODATA_VALUE = 0
+SUPPORTED_RASTER_EXTENSIONS = (".tif", ".tiff", ".jpg", ".jpeg")
+SUPPORTED_RASTER_FILTER = "Raster files (*.tif *.tiff *.jpg *.jpeg)"
+
+def get_plugin_version(default=""):
+    metadata_path = os.path.join(os.path.dirname(__file__), "metadata.txt")
+    try:
+        with open(metadata_path, "r", encoding="utf-8") as handle:
+            for line in handle:
+                line = line.strip()
+                if line.startswith("version="):
+                    return line.split("=", 1)[1].strip() or default
+    except Exception:
+        pass
+    return default
+
+def is_supported_raster_path(path):
+    return str(path).lower().endswith(SUPPORTED_RASTER_EXTENSIONS)
 
 def get_bounds_safe(tif_path):
     """直列スレッド/並列スレッドから呼ばれるTIF座標読み取り関数（安全版）"""

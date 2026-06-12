@@ -1,3 +1,4 @@
+from .i18n import tr_text
 from qgis.PyQt.QtCore import QObject, QTimer, QSize
 from qgis.PyQt.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
 from qgis.core import (
@@ -12,6 +13,13 @@ from qgis.gui import QgsLayerTreeViewIndicator
 
 
 LOCK_PROPERTY = "OrthoManager/vector_data_locked"
+SELECT_LOCK_PROPERTY = "OrthoManager/vector_select_locked"
+LOCK_INDICATOR_PROPERTY = "ortho_manager_lock_indicator"
+LOCK_INDICATOR_KIND_PROPERTY = "ortho_manager_lock_indicator_kind"
+
+LOCK_STATE_NONE = "none"
+LOCK_STATE_SELECT = "select"
+LOCK_STATE_FULL = "full"
 
 
 def _truthy(value):
@@ -27,10 +35,12 @@ class LayerLockManager(QObject):
         super().__init__(parent)
         self.iface = iface
         self._indicators = {}
+        self._indicator_nodes = {}
         self._connected_nodes = {}
         self._selection_connections = {}
-        self._locked_icon = self._make_lock_icon(True)
-        self._unlocked_icon = self._make_lock_icon(False)
+        self._full_locked_icon = self._make_lock_icon(LOCK_STATE_FULL)
+        self._select_locked_icon = self._make_lock_icon(LOCK_STATE_SELECT)
+        self._unlocked_icon = self._make_lock_icon(LOCK_STATE_NONE)
         self._refresh_timer = QTimer(self)
         self._refresh_timer.setSingleShot(True)
         self._refresh_timer.setInterval(120)
@@ -42,6 +52,7 @@ class LayerLockManager(QObject):
         self._disconnect_tree_signals()
         self._disconnect_node_signals()
         self._disconnect_layer_selection_signals()
+        self.release_read_only_state()
         self._remove_all_indicators()
 
     def schedule_refresh(self, *args):
@@ -59,61 +70,134 @@ class LayerLockManager(QObject):
         self._connect_layer_selection_signals()
         self.apply_read_only_state()
 
+    def rebuild_indicators(self):
+        self._remove_all_indicators()
+        self.refresh()
+
     def is_layer_locked(self, layer):
-        if layer is None:
-            return False
-        try:
-            if _truthy(layer.customProperty(LOCK_PROPERTY, False)):
-                return True
-        except Exception:
-            pass
-        for _parent, node in self._layer_nodes(layer):
-            if self.is_node_effectively_locked(node):
-                return True
-        return False
+        return self.layer_effective_lock_state(layer) == LOCK_STATE_FULL
+
+    def is_layer_selection_locked(self, layer):
+        return self.layer_effective_lock_state(layer) in (LOCK_STATE_SELECT, LOCK_STATE_FULL)
 
     def is_node_effectively_locked(self, node):
+        return self.node_effective_lock_state(node) == LOCK_STATE_FULL
+
+    def is_node_effectively_selection_locked(self, node):
+        return self.node_effective_lock_state(node) in (LOCK_STATE_SELECT, LOCK_STATE_FULL)
+
+    def layer_effective_lock_state(self, layer):
+        if layer is None:
+            return LOCK_STATE_NONE
+        try:
+            if _truthy(layer.customProperty(LOCK_PROPERTY, False)):
+                return LOCK_STATE_FULL
+            if _truthy(layer.customProperty(SELECT_LOCK_PROPERTY, False)):
+                return LOCK_STATE_SELECT
+        except Exception:
+            pass
+        effective = LOCK_STATE_NONE
+        for _parent, node in self._layer_nodes(layer):
+            state = self.node_effective_lock_state(node)
+            if state == LOCK_STATE_FULL:
+                return LOCK_STATE_FULL
+            if state == LOCK_STATE_SELECT:
+                effective = LOCK_STATE_SELECT
+        return effective
+
+    def node_effective_lock_state(self, node):
         current = node
+        effective = LOCK_STATE_NONE
         while current is not None:
             try:
                 if isinstance(current, QgsLayerTreeLayer):
                     layer = current.layer()
-                    if layer is not None and _truthy(layer.customProperty(LOCK_PROPERTY, False)):
-                        return True
-                elif _truthy(current.customProperty(LOCK_PROPERTY, False)):
-                    return True
+                    state = self.layer_direct_lock_state(layer)
+                else:
+                    state = self.node_direct_lock_state(current)
+                if state == LOCK_STATE_FULL:
+                    return LOCK_STATE_FULL
+                if state == LOCK_STATE_SELECT:
+                    effective = LOCK_STATE_SELECT
             except Exception:
                 pass
             try:
                 current = current.parent()
             except Exception:
                 current = None
-        return False
+        return effective
+
+    def layer_direct_lock_state(self, layer):
+        if layer is None:
+            return LOCK_STATE_NONE
+        try:
+            if _truthy(layer.customProperty(LOCK_PROPERTY, False)):
+                return LOCK_STATE_FULL
+            if _truthy(layer.customProperty(SELECT_LOCK_PROPERTY, False)):
+                return LOCK_STATE_SELECT
+        except Exception:
+            pass
+        return LOCK_STATE_NONE
+
+    def node_direct_lock_state(self, node):
+        if node is None:
+            return LOCK_STATE_NONE
+        try:
+            if isinstance(node, QgsLayerTreeLayer):
+                return self.layer_direct_lock_state(node.layer())
+            if _truthy(node.customProperty(LOCK_PROPERTY, False)):
+                return LOCK_STATE_FULL
+            if _truthy(node.customProperty(SELECT_LOCK_PROPERTY, False)):
+                return LOCK_STATE_SELECT
+        except Exception:
+            pass
+        return LOCK_STATE_NONE
 
     def set_layer_locked(self, layer, locked):
+        self.set_layer_lock_state(layer, LOCK_STATE_FULL if locked else LOCK_STATE_NONE)
+
+    def set_group_locked(self, group, locked):
+        self.set_group_lock_state(group, LOCK_STATE_FULL if locked else LOCK_STATE_NONE)
+
+    def set_layer_selection_locked(self, layer, locked):
+        self.set_layer_lock_state(layer, LOCK_STATE_SELECT if locked else LOCK_STATE_NONE)
+
+    def set_group_selection_locked(self, group, locked):
+        self.set_group_lock_state(group, LOCK_STATE_SELECT if locked else LOCK_STATE_NONE)
+
+    def set_layer_lock_state(self, layer, state):
         if layer is None:
             return
+        state = state if state in (LOCK_STATE_NONE, LOCK_STATE_SELECT, LOCK_STATE_FULL) else LOCK_STATE_NONE
         try:
-            if locked:
+            layer.removeCustomProperty(LOCK_PROPERTY)
+            layer.removeCustomProperty(SELECT_LOCK_PROPERTY)
+            if state == LOCK_STATE_FULL:
                 layer.setCustomProperty(LOCK_PROPERTY, True)
                 self._clear_layer_selection(layer)
-            else:
-                layer.removeCustomProperty(LOCK_PROPERTY)
+            elif state == LOCK_STATE_SELECT:
+                layer.setCustomProperty(SELECT_LOCK_PROPERTY, True)
+                self._clear_layer_selection(layer)
         except Exception:
             pass
         self.apply_read_only_state()
         self.schedule_refresh()
 
-    def set_group_locked(self, group, locked):
+    def set_group_lock_state(self, group, state):
         if group is None:
             return
+        state = state if state in (LOCK_STATE_NONE, LOCK_STATE_SELECT, LOCK_STATE_FULL) else LOCK_STATE_NONE
         try:
-            if locked:
+            group.removeCustomProperty(LOCK_PROPERTY)
+            group.removeCustomProperty(SELECT_LOCK_PROPERTY)
+            if state == LOCK_STATE_FULL:
                 group.setCustomProperty(LOCK_PROPERTY, True)
                 for layer in self._group_vector_layers(group):
                     self._clear_layer_selection(layer)
-            else:
-                group.removeCustomProperty(LOCK_PROPERTY)
+            elif state == LOCK_STATE_SELECT:
+                group.setCustomProperty(SELECT_LOCK_PROPERTY, True)
+                for layer in self._group_vector_layers(group):
+                    self._clear_layer_selection(layer)
         except Exception:
             pass
         self.apply_read_only_state()
@@ -209,7 +293,7 @@ class LayerLockManager(QObject):
         self._selection_connections.clear()
 
     def _on_layer_selection_changed(self, layer):
-        if self.is_layer_locked(layer):
+        if self.is_layer_selection_locked(layer):
             self._clear_layer_selection(layer)
 
     def _walk_nodes(self, node):
@@ -234,6 +318,8 @@ class LayerLockManager(QObject):
 
     def _layer_nodes(self, layer):
         nodes = []
+        if layer is None:
+            return nodes
         layer_id = layer.id()
         for node in self._walk_nodes(self.root()):
             if isinstance(node, QgsLayerTreeLayer) and node.layerId() == layer_id:
@@ -269,21 +355,42 @@ class LayerLockManager(QObject):
             return
         key = self._node_key(node)
         indicator = self._indicators.get(key)
+        self._remove_duplicate_indicators(view, node, keep_indicator=indicator)
         if indicator is None:
             indicator = QgsLayerTreeViewIndicator(view)
+            try:
+                indicator.setProperty(LOCK_INDICATOR_PROPERTY, True)
+                indicator.setProperty(LOCK_INDICATOR_KIND_PROPERTY, "ortho_manager")
+            except Exception:
+                pass
             try:
                 indicator.clicked.connect(lambda *args, n=node: self._toggle_node(n))
             except Exception:
                 pass
             self._indicators[key] = indicator
+            self._indicator_nodes[key] = node
             try:
                 view.addIndicator(node, indicator)
             except Exception:
                 self._indicators.pop(key, None)
+                self._indicator_nodes.pop(key, None)
                 return
-        locked = self.is_node_effectively_locked(node)
-        indicator.setIcon(self._locked_icon if locked else self._unlocked_icon)
-        indicator.setToolTip("OrthoManager: ベクタデータロック ON" if locked else "OrthoManager: ベクタデータロック OFF")
+        self._remove_duplicate_indicators(view, node, keep_indicator=indicator)
+        state = self.node_effective_lock_state(node)
+        if state == LOCK_STATE_FULL:
+            indicator.setIcon(self._full_locked_icon)
+            indicator.setToolTip(tr_text("OrthoManager: 完全ロック ON"))
+        elif state == LOCK_STATE_SELECT:
+            indicator.setIcon(self._select_locked_icon)
+            indicator.setToolTip(tr_text("OrthoManager: 選択ロック ON"))
+        else:
+            indicator.setIcon(self._unlocked_icon)
+            indicator.setToolTip(tr_text("OrthoManager: ロック OFF"))
+        try:
+            indicator.setProperty(LOCK_INDICATOR_PROPERTY, True)
+            indicator.setProperty(LOCK_INDICATOR_KIND_PROPERTY, "ortho_manager")
+        except Exception:
+            pass
         try:
             indicator.changed.emit()
         except Exception:
@@ -294,12 +401,19 @@ class LayerLockManager(QObject):
 
     def _toggle_node(self, node):
         try:
+            current = self.node_direct_lock_state(node)
+            if current == LOCK_STATE_NONE:
+                next_state = LOCK_STATE_SELECT
+            elif current == LOCK_STATE_SELECT:
+                next_state = LOCK_STATE_FULL
+            else:
+                next_state = LOCK_STATE_NONE
             if isinstance(node, QgsLayerTreeLayer):
                 layer = node.layer()
                 if layer is not None:
-                    self.set_layer_locked(layer, not _truthy(layer.customProperty(LOCK_PROPERTY, False)))
+                    self.set_layer_lock_state(layer, next_state)
             elif isinstance(node, QgsLayerTreeGroup):
-                self.set_group_locked(node, not _truthy(node.customProperty(LOCK_PROPERTY, False)))
+                self.set_group_lock_state(node, next_state)
         except RuntimeError:
             self.schedule_refresh()
 
@@ -307,31 +421,103 @@ class LayerLockManager(QObject):
         view = self.iface.layerTreeView()
         if view is not None:
             for node in list(self._walk_nodes(self.root())):
-                key = self._node_key(node)
-                indicator = self._indicators.get(key)
-                if indicator is not None:
+                self._remove_lock_indicators_from_node(view, node)
+            for key, indicator in list(self._indicators.items()):
+                node = self._indicator_nodes.get(key)
+                if node is not None:
                     try:
                         view.removeIndicator(node, indicator)
                     except Exception:
                         pass
         self._indicators.clear()
+        self._indicator_nodes.clear()
 
     def _remove_stale_indicators(self):
         live_keys = {self._node_key(node) for node in self._walk_nodes(self.root())}
+        view = self.iface.layerTreeView()
         for key in list(self._indicators.keys()):
             if key not in live_keys:
+                indicator = self._indicators.get(key)
+                node = self._indicator_nodes.get(key)
+                if view is not None and node is not None and indicator is not None:
+                    try:
+                        view.removeIndicator(node, indicator)
+                    except Exception:
+                        pass
                 self._indicators.pop(key, None)
+                self._indicator_nodes.pop(key, None)
         for key in list(self._connected_nodes.keys()):
             if key not in live_keys:
                 self._connected_nodes.pop(key, None)
+        if view is not None:
+            live_nodes = list(self._walk_nodes(self.root()))
+            for node in live_nodes:
+                self._remove_duplicate_indicators(view, node, keep_indicator=self._indicators.get(self._node_key(node)))
+
+    def _remove_duplicate_indicators(self, view, node, keep_indicator=None):
+        try:
+            indicators = list(view.indicators(node))
+        except Exception:
+            return
+        lock_indicators = [indicator for indicator in indicators if self._is_lock_indicator(indicator)]
+        if keep_indicator is None and lock_indicators:
+            keep_indicator = lock_indicators[0]
+        removed = 0
+        for indicator in lock_indicators:
+            if indicator is keep_indicator:
+                continue
+            try:
+                view.removeIndicator(node, indicator)
+                removed += 1
+            except Exception:
+                pass
+        if removed:
+            QgsMessageLog.logMessage(
+                f"LAYER_LOCK_DUPLICATE_INDICATORS_REMOVED node={self._node_label(node)} count={removed}",
+                "OrthoManager",
+                Qgis.MessageLevel.Info,
+            )
+
+    def _remove_lock_indicators_from_node(self, view, node, keep_indicator=None):
+        try:
+            indicators = list(view.indicators(node))
+        except Exception:
+            return
+        for indicator in indicators:
+            if indicator is keep_indicator:
+                continue
+            if not self._is_lock_indicator(indicator):
+                continue
+            try:
+                view.removeIndicator(node, indicator)
+            except Exception:
+                pass
+
+    def _is_lock_indicator(self, indicator):
+        try:
+            if bool(indicator.property(LOCK_INDICATOR_PROPERTY)):
+                return True
+        except Exception:
+            pass
+        try:
+            if str(indicator.property(LOCK_INDICATOR_KIND_PROPERTY) or "") == "ortho_manager":
+                return True
+        except Exception:
+            pass
+        try:
+            tooltip = str(indicator.toolTip() or "")
+        except Exception:
+            tooltip = ""
+        return tooltip.startswith("OrthoManager: ベクタデータロック") or tooltip.startswith("OrthoManager: ロック") or tooltip.startswith("OrthoManager: 選択ロック") or tooltip.startswith("OrthoManager: 完全ロック")
 
     def apply_read_only_state(self):
         for layer in QgsProject.instance().mapLayers().values():
             if not self._is_vector_layer(layer):
                 continue
-            locked = self.is_layer_locked(layer)
-            if locked:
+            state = self.layer_effective_lock_state(layer)
+            if state in (LOCK_STATE_SELECT, LOCK_STATE_FULL):
                 self._clear_layer_selection(layer)
+            locked = state == LOCK_STATE_FULL
             try:
                 if layer.readOnly() != locked:
                     layer.setReadOnly(locked)
@@ -342,17 +528,48 @@ class LayerLockManager(QObject):
                     Qgis.MessageLevel.Warning,
                 )
 
-    def _make_lock_icon(self, locked):
+    def release_read_only_state(self):
+        for layer in QgsProject.instance().mapLayers().values():
+            if not self._is_vector_layer(layer):
+                continue
+            try:
+                if layer.readOnly():
+                    layer.setReadOnly(False)
+            except Exception as exc:
+                QgsMessageLog.logMessage(
+                    f"LAYER_LOCK_RELEASE_READONLY_FAILED layer={layer.name()} error={exc}",
+                    "OrthoManager",
+                    Qgis.MessageLevel.Warning,
+                )
+
+    def _node_label(self, node):
+        try:
+            if isinstance(node, QgsLayerTreeLayer):
+                layer = node.layer()
+                return layer.name() if layer is not None else str(node.layerId())
+            return str(node.name())
+        except Exception:
+            return str(id(node))
+
+    def _make_lock_icon(self, state):
         pixmap = QPixmap(QSize(18, 18))
         pixmap.fill(QColor(0, 0, 0, 0))
         painter = QPainter(pixmap)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        color = QColor("#d93025" if locked else "#5f6368")
+        if state == LOCK_STATE_FULL:
+            color = QColor("#d93025")
+            fill = QColor("#d93025")
+        elif state == LOCK_STATE_SELECT:
+            color = QColor("#f9ab00")
+            fill = QColor("#f9ab00")
+        else:
+            color = QColor("#5f6368")
+            fill = QColor("#ffffff")
         painter.setPen(QPen(color, 1.8))
-        painter.setBrush(QColor("#d93025" if locked else "#ffffff"))
+        painter.setBrush(fill)
         painter.drawRoundedRect(4, 8, 10, 7, 1.5, 1.5)
         painter.setBrush(QColor(0, 0, 0, 0))
-        if locked:
+        if state in (LOCK_STATE_SELECT, LOCK_STATE_FULL):
             painter.drawArc(6, 3, 6, 8, 0, 180 * 16)
         else:
             painter.drawArc(7, 3, 6, 8, 25 * 16, 210 * 16)

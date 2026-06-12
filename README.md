@@ -6,6 +6,8 @@ OrthoManager is a QGIS plugin for orthophoto inspection workflows, designed for 
 
 - Create and manage inspection layers for orthophoto quality checks
 - Draw and edit inspection vectors directly in QGIS
+- Use the inspection right-click menu while Inspection ON is enabled for quick pan, select, draw, edit, move, delete, restore, layer, and group operations
+- Use drawing helper shortcuts while creating vectors: Z for parallel direction copy, X for reference-point alignment, C for edge-length copy, and V for angle copy
 - Import existing vector data into inspection GeoPackage layers
 - Organize inspection layers and free-form inspection groups
 - Export inspection data to common GIS/CAD formats

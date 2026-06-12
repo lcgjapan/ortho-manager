@@ -15,9 +15,9 @@ from qgis.core import (
     QgsSimpleLineSymbolLayer, QgsLayerTreeLayer, QgsApplication
 )
 
-from .utils import DEFAULT_MIN_SCALE
+from .utils import DEFAULT_MIN_SCALE, SUPPORTED_RASTER_FILTER, is_supported_raster_path
 from .tasks import BuildVrtAndGpkgTask, ExternalVrtEngineTask, find_external_vrt_engine_path
-from .i18n import current_language, tr
+from .i18n import current_language, tr, tr_text
 
 try:
     from osgeo import ogr
@@ -681,7 +681,7 @@ class VrtTabWidget(QWidget):
         """オーバーレイレイヤをアクティブにし、QGISの選択ツールをオンにする"""
         name = self.main_ui.current_vrt_name
         if not name: 
-            QMessageBox.warning(self, "警告", "VRTが選択されていません。")
+            QMessageBox.warning(self, tr_text("警告"), tr_text("VRTが選択されていません。"))
             return
             
         overlay_layer = self.main_ui._get_overlay_layer(name)
@@ -695,13 +695,59 @@ class VrtTabWidget(QWidget):
             # マップキャンバスの「シングルクリック選択」ツールを起動
             try:
                 self.main_ui.iface.actionSelect().trigger()
-                self.main_ui._set_status("🖱 マップ上で削除したい図郭（ポリゴン）をクリックして選択してください。")
+                self.main_ui._set_status(tr_text("🖱 マップ上で削除したい図郭（ポリゴン）をクリックして選択してください。"))
             except Exception as e:
                 QgsMessageLog.logMessage(f"選択ツールの起動に失敗しました: {e}", "OrthoManager", Qgis.MessageLevel.Warning)
         else:
-            QMessageBox.information(self, "情報", "このVRTにはオーバーレイ（図郭）レイヤがありません。")
+            QMessageBox.information(self, tr_text("情報"), tr_text("このVRTにはオーバーレイ（図郭）レイヤがありません。"))
 
     # --- イベントハンドラ ---
+    def _project_default_dir(self):
+        project = QgsProject.instance()
+        try:
+            home = project.homePath()
+            if home and os.path.isdir(home):
+                return home
+        except Exception:
+            pass
+        try:
+            project_path = project.fileName()
+            if project_path:
+                folder = os.path.dirname(project_path)
+                if folder and os.path.isdir(folder):
+                    return folder
+        except Exception:
+            pass
+        return ""
+
+    def _current_vrt_file_dir(self):
+        try:
+            entry = self.main_ui.vrt_registry.get(self.main_ui.current_vrt_name, {})
+            vrt_path = entry.get("path", "") if isinstance(entry, dict) else ""
+        except Exception:
+            vrt_path = ""
+        if vrt_path:
+            folder = os.path.dirname(os.path.normpath(vrt_path))
+            if folder and os.path.isdir(folder):
+                return folder
+        return ""
+
+    def _current_vrt_image_dir(self):
+        for path in list(getattr(self.main_ui, "tif_list", []) or []):
+            try:
+                folder = os.path.dirname(os.path.normpath(os.path.abspath(path)))
+            except Exception:
+                folder = ""
+            if folder and os.path.isdir(folder):
+                return folder
+        return ""
+
+    def _raster_add_default_dir(self):
+        return self._current_vrt_image_dir() or self._project_default_dir() or self._current_vrt_file_dir() or ""
+
+    def _new_vrt_default_dir(self):
+        return self._project_default_dir() or self._current_vrt_file_dir() or ""
+
     def _switch_vrt(self, index):
         name = self.current_vrt_combo_name()
         if not name or name == self.main_ui.current_vrt_name:
@@ -722,16 +768,16 @@ class VrtTabWidget(QWidget):
         self.vrt_combo.setToolTip(name)
         self._update_vrt_combo_tooltip()
         self._refresh_vrt_action_buttons()
-        self.main_ui._set_status(f"🔄 VRT切り替え: {name}（{len(self.main_ui.tif_list)} ファイル）")
+        self.main_ui._set_status(tr_text(f"🔄 VRT切り替え: {name}（{len(self.main_ui.tif_list)} ファイル）"))
         self.main_ui._schedule_custom_cache_prefetch()
 
     def _new_vrt(self):
-        path, _ = QFileDialog.getSaveFileName(self, "新しいVRTの保存先", "", "VRT Files (*.vrt)")
+        path, _ = QFileDialog.getSaveFileName(self, "新しいVRTの保存先", self._new_vrt_default_dir(), "VRT Files (*.vrt)")
         if not path: return
         if not path.lower().endswith(".vrt"): path += ".vrt"
         name = self.main_ui.format_vrt_display_name(os.path.splitext(os.path.basename(path))[0])
         if name in self.main_ui.vrt_registry:
-            QMessageBox.warning(self, "警告", f"「{name}」はすでに登録されています")
+            QMessageBox.warning(self, tr_text("警告"), tr_text(f"「{name}」はすでに登録されています"))
             return
         self.main_ui.vrt_registry[name] = {
             "path": path,
@@ -746,7 +792,7 @@ class VrtTabWidget(QWidget):
         self.reload_tif_listwidget()
         self.update_path_display()
         self._refresh_vrt_action_buttons()
-        self.main_ui._set_status(f"✅ 新規VRT: {name}")
+        self.main_ui._set_status(tr_text(f"✅ 新規VRT: {name}"))
         self.main_ui._show_map_center_alert("フォルダ追加 または ファイル追加で\nラスタファイルを追加してください")
         QTimer.singleShot(0, self._open_tif_list_window)
 
@@ -756,7 +802,7 @@ class VrtTabWidget(QWidget):
             return
 
         old_base_name = self.main_ui.strip_vrt_display_prefix(old_name)
-        new_base_name, ok = QInputDialog.getText(self, "VRT名前変更", "新しいVRT名:", text=old_base_name)
+        new_base_name, ok = QInputDialog.getText(self, tr_text("VRT名前変更"), tr_text("新しいVRT名:"), text=old_base_name)
         if not ok:
             return
         new_base_name = self.main_ui.strip_vrt_display_prefix(new_base_name)
@@ -766,10 +812,10 @@ class VrtTabWidget(QWidget):
         new_name = self.main_ui.format_vrt_display_name(new_base_name)
         ok_name, message = self.main_ui.validate_vrt_base_name(new_base_name)
         if not ok_name:
-            QMessageBox.warning(self, "警告", message)
+            QMessageBox.warning(self, tr_text("警告"), message)
             return
         if new_name in self.main_ui.vrt_registry and new_name != old_name:
-            QMessageBox.warning(self, "警告", f"「{new_name}」はすでに登録されています")
+            QMessageBox.warning(self, tr_text("警告"), tr_text(f"「{new_name}」はすでに登録されています"))
             return
         if new_name == old_name:
             return
@@ -778,15 +824,15 @@ class VrtTabWidget(QWidget):
         if not ok:
             if reason == "file_exists":
                 names = "\n".join(os.path.basename(p) for p in detail)
-                QMessageBox.warning(self, "警告", f"同じ名前の関連ファイルがすでに存在します。\n\n{names}")
+                QMessageBox.warning(self, tr_text("警告"), tr_text(f"同じ名前の関連ファイルがすでに存在します。\n\n{names}"))
             elif reason == "invalid":
-                QMessageBox.warning(self, "警告", str(detail))
+                QMessageBox.warning(self, tr_text("警告"), str(detail))
             elif reason == "rename_failed":
-                QMessageBox.warning(self, "警告", f"関連ファイル名の変更に失敗しました。\n\n{detail}")
+                QMessageBox.warning(self, tr_text("警告"), tr_text(f"関連ファイル名の変更に失敗しました。\n\n{detail}"))
             elif reason == "duplicate":
-                QMessageBox.warning(self, "警告", f"「{new_name}」はすでに登録されています")
+                QMessageBox.warning(self, tr_text("警告"), tr_text(f"「{new_name}」はすでに登録されています"))
             else:
-                QMessageBox.warning(self, "警告", "VRT名の変更に失敗しました")
+                QMessageBox.warning(self, tr_text("警告"), tr_text("VRT名の変更に失敗しました"))
             return
 
         self.populate_vrt_combo()
@@ -794,11 +840,11 @@ class VrtTabWidget(QWidget):
         self.reload_tif_listwidget()
         self.update_path_display()
         self.main_ui.iface.mapCanvas().refresh()
-        self.main_ui._set_status(f"✏️ VRT名を変更しました: {old_name} → {new_name}")
+        self.main_ui._set_status(tr_text(f"✏️ VRT名を変更しました: {old_name} → {new_name}"))
 
     def _delete_vrt(self):
         if not self.main_ui.current_vrt_name: return
-        reply = QMessageBox.question(self, "確認", f"「{self.main_ui.current_vrt_name}」を削除しますか？\n※VRTファイル自体は削除されません", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        reply = QMessageBox.question(self, tr_text("確認"), tr_text(f"「{self.main_ui.current_vrt_name}」を削除しますか？\n※VRTファイル自体は削除されません"), QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         if reply != QMessageBox.StandardButton.Yes: return
         self.main_ui._disconnect_scale_signal(self.main_ui.current_vrt_name)
         self.main_ui._remove_vrt_group(self.main_ui.current_vrt_name)
@@ -809,7 +855,7 @@ class VrtTabWidget(QWidget):
         self._update_vrt_combo_tooltip()
         self._refresh_vrt_action_buttons()
         self.main_ui.iface.mapCanvas().refresh()
-        self.main_ui._set_status("🗑 VRTを削除しました")
+        self.main_ui._set_status(tr_text("🗑 VRTを削除しました"))
 
     def _load_existing_vrt(self):
         path, _ = QFileDialog.getOpenFileName(self, "VRTファイルを選択", "", "VRT Files (*.vrt)")
@@ -820,7 +866,7 @@ class VrtTabWidget(QWidget):
         group_crs_authid = self.main_ui._load_group_crs_authid_from_json(path)
 
         if name in self.main_ui.vrt_registry:
-            reply = QMessageBox.question(self, "確認", f"「{name}」はすでに登録されています。上書きしますか？", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            reply = QMessageBox.question(self, tr_text("確認"), tr_text(f"「{name}」はすでに登録されています。上書きしますか？"), QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
             if reply != QMessageBox.StandardButton.Yes: return
             self.main_ui._remove_vrt_group(name)
             self.main_ui.vrt_registry[name] = {
@@ -845,14 +891,14 @@ class VrtTabWidget(QWidget):
         self.update_path_display()
         saved_crs, saved_overlay_crs = self.main_ui._load_crs_json(path)
         self.main_ui._load_vrt_with_overlay(path, name, apply_default_style=False, saved_crs=saved_crs, saved_overlay_crs=saved_overlay_crs, rebuild_gpkg=False)
-        self.main_ui._set_status(f"✅ VRT読み込み完了: {name}（{len(tif_list)} ファイル）")
+        self.main_ui._set_status(tr_text(f"✅ VRT読み込み完了: {name}（{len(tif_list)} ファイル）"))
 
-    # --- TIFリスト操作 ---
+        # --- ラスタリスト操作 ---
     def _build_after_tif_add_if_needed(self, added_count):
         if added_count <= 0:
             return
         if hasattr(self, "btn_build") and not self.btn_build.isEnabled():
-            self.main_ui._set_status("⏳ VRT生成中のため、追加後の自動生成をスキップしました")
+            self.main_ui._set_status(tr_text("⏳ VRT生成中のため、追加後の自動生成をスキップしました"))
             return
         QTimer.singleShot(0, self._build_and_load_vrt)
 
@@ -862,29 +908,29 @@ class VrtTabWidget(QWidget):
         parent = self.tif_list_window if self.tif_list_window is not None else self
         QMessageBox.warning(
             parent,
-            "同じファイルは追加済みです",
-            f"同じファイルが既に追加されています。\n\n追加済みのため、{count} 件は追加しませんでした。",
+            tr_text("同じファイルは追加済みです"),
+            tr_text(f"同じファイルが既に追加されています。\n\n追加済みのため、{count} 件は追加しませんでした。"),
         )
 
     def _add_from_folder(self):
         if not self.main_ui.current_vrt_name: return
-        folder = QFileDialog.getExistingDirectory(self, "フォルダを選択")
+        folder = QFileDialog.getExistingDirectory(self, "フォルダを選択", self._raster_add_default_dir())
         if not folder: return
         found = []
         include_subfolders = bool(getattr(self, "include_subfolders", False))
         if include_subfolders:
             for root, dirs, files in os.walk(folder):
                 for f in files:
-                    if f.lower().endswith((".tif", ".tiff")):
+                    if is_supported_raster_path(f):
                         found.append(os.path.normpath(os.path.abspath(os.path.join(root, f))))
         else:
             try:
                 for f in os.listdir(folder):
                     p = os.path.join(folder, f)
-                    if os.path.isfile(p) and f.lower().endswith((".tif", ".tiff")):
+                    if os.path.isfile(p) and is_supported_raster_path(f):
                         found.append(os.path.normpath(os.path.abspath(p)))
             except Exception as e:
-                QMessageBox.warning(self, "警告", f"フォルダの読み込みに失敗しました。\n\n{e}")
+                QMessageBox.warning(self, tr_text("警告"), tr_text(f"フォルダの読み込みに失敗しました。\n\n{e}"))
                 return
         QgsMessageLog.logMessage(
             f"VRT_ADD_FOLDER folder={folder} include_subfolders={include_subfolders} found={len(found)}",
@@ -905,22 +951,22 @@ class VrtTabWidget(QWidget):
         self.reload_tif_listwidget()
         msg = f"✅ {added} ファイルを追加"
         if skipped_same_path: msg += f"　⚠ 同じファイル {skipped_same_path} 件"
-        if skipped_same_name: msg += f"　⚠ 同名TIF {skipped_same_name} 件禁止"
+        if skipped_same_name: msg += f"　⚠ 同名画像 {skipped_same_name} 件禁止"
         self.main_ui._set_status(msg)
         if skipped_same_name:
             QMessageBox.warning(
                 self,
-                "同名TIFを追加できません",
-                f"同じTIF名のファイルが {skipped_same_name} 件見つかりました。\n\n"
+                tr_text("同名画像を追加できません"),
+                tr_text(f"同じ画像ファイル名が {skipped_same_name} 件見つかりました。\n\n"
                 "OrthoManager v2.8では、誤削除やVRT管理の混乱を防ぐため、"
-                "別フォルダでも同じTIF名は追加できません。"
+                "別フォルダでも同じ画像ファイル名は追加できません。")
             )
         self._warn_same_path_skipped(skipped_same_path)
         self._build_after_tif_add_if_needed(added)
 
     def _add_files(self):
         if not self.main_ui.current_vrt_name: return
-        files, _ = QFileDialog.getOpenFileNames(self, "TIFファイルを選択", "", "GeoTIFF (*.tif *.tiff)")
+        files, _ = QFileDialog.getOpenFileNames(self, "画像ファイルを選択", self._raster_add_default_dir(), SUPPORTED_RASTER_FILTER)
         added, skipped_same_path, skipped_same_name = 0, 0, 0
         for path in files:
             p = os.path.normpath(os.path.abspath(path))
@@ -936,15 +982,15 @@ class VrtTabWidget(QWidget):
         self.reload_tif_listwidget()
         msg = f"✅ {added} ファイルを追加"
         if skipped_same_path: msg += f"　⚠ 同じファイル {skipped_same_path} 件"
-        if skipped_same_name: msg += f"　⚠ 同名TIF {skipped_same_name} 件禁止"
+        if skipped_same_name: msg += f"　⚠ 同名画像 {skipped_same_name} 件禁止"
         self.main_ui._set_status(msg)
         if skipped_same_name:
             QMessageBox.warning(
                 self,
-                "同名TIFを追加できません",
-                f"同じTIF名のファイルが {skipped_same_name} 件含まれていました。\n\n"
+                tr_text("同名画像を追加できません"),
+                tr_text(f"同じ画像ファイル名が {skipped_same_name} 件含まれていました。\n\n"
                 "OrthoManager v2.8では、誤削除やVRT管理の混乱を防ぐため、"
-                "別フォルダでも同じTIF名は追加できません。"
+                "別フォルダでも同じ画像ファイル名は追加できません。")
             )
         self._warn_same_path_skipped(skipped_same_path)
         self._build_after_tif_add_if_needed(added)
@@ -981,11 +1027,11 @@ class VrtTabWidget(QWidget):
                     to_remove_paths.add(os.path.normpath(loc))
 
         if not to_remove_paths:
-            QMessageBox.information(self, "情報", "削除対象がありません。\nリストから選択するか、「🖱 マップから削除」ボタンで対象の枠（ポリゴン）をクリックして選択してください。")
+            QMessageBox.information(self, tr_text("情報"), tr_text("削除対象がありません。\nリストから選択するか、「🖱 マップから削除」ボタンで対象の枠（ポリゴン）をクリックして選択してください。"))
             return
 
         # 削除・即時更新の確認
-        reply = QMessageBox.question(self, "確認", f"{len(to_remove_paths)} 件の画像をVRTから削除し、即座に更新しますか？", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        reply = QMessageBox.question(self, tr_text("確認"), tr_text(f"{len(to_remove_paths)} 件の画像をVRTから削除し、即座に更新しますか？"), QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         if reply != QMessageBox.StandardButton.Yes:
             return
 
@@ -999,7 +1045,7 @@ class VrtTabWidget(QWidget):
             clear_all=False,
         )
         if not ok:
-            QMessageBox.warning(self, "警告", f"VRTの中身更新に失敗しました。\n\n{err_msg}")
+            QMessageBox.warning(self, tr_text("警告"), tr_text(f"VRTの中身更新に失敗しました。\n\n{err_msg}"))
             return
 
         # リストの実体から削除
@@ -1027,10 +1073,10 @@ class VrtTabWidget(QWidget):
             except:
                 pass
 
-        self.main_ui._set_status(f"🗑 {len(to_remove_paths)} ファイルをVRTから削除しました")
+        self.main_ui._set_status(tr_text(f"🗑 {len(to_remove_paths)} ファイルをVRTから削除しました"))
 
     def _clear_list(self):
-        reply = QMessageBox.question(self, "確認", "リストを全てクリアしますか？", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        reply = QMessageBox.question(self, tr_text("確認"), tr_text("リストを全てクリアしますか？"), QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         if reply == QMessageBox.StandardButton.Yes:
             name = self.main_ui.current_vrt_name
             if not name:
@@ -1041,11 +1087,11 @@ class VrtTabWidget(QWidget):
                 clear_all=True,
             )
             if not ok:
-                QMessageBox.warning(self, "警告", f"VRTの中身更新に失敗しました。\n\n{err_msg}")
+                QMessageBox.warning(self, tr_text("警告"), tr_text(f"VRTの中身更新に失敗しました。\n\n{err_msg}"))
                 return
             self.main_ui.vrt_registry[name]["tif_list"] = []
             self.reload_tif_listwidget()
-            self.main_ui._set_status("🗑 リストをクリアし、VRTの中身を空にしました")
+            self.main_ui._set_status(tr_text("🗑 リストをクリアし、VRTの中身を空にしました"))
 
     # --- 縮尺設定 ---
     def _layer_tree_nodes_for_layer(self, layer_id):
@@ -1129,12 +1175,12 @@ class VrtTabWidget(QWidget):
     def _organize_vrt_layers(self):
         name = self.main_ui.current_vrt_name
         if not name:
-            QMessageBox.warning(self, "警告", "VRTが選択されていません。")
+            QMessageBox.warning(self, tr_text("警告"), tr_text("VRTが選択されていません。"))
             return
         vrt_layer = self.main_ui._get_vrt_layer(name)
         overlay_layer = self.main_ui._get_overlay_layer(name)
         if not vrt_layer and not overlay_layer:
-            QMessageBox.information(self, "情報", "整理できるVRTレイヤがありません。")
+            QMessageBox.information(self, tr_text("情報"), tr_text("整理できるVRTレイヤがありません。"))
             return
         group = self._ensure_vrt_group(name)
         allowed_ids = {layer.id() for layer in (overlay_layer, vrt_layer) if layer}
@@ -1163,7 +1209,7 @@ class VrtTabWidget(QWidget):
             moved += 1
         self.main_ui.iface.layerTreeView().refreshLayerSymbology(None)
         self.main_ui.iface.mapCanvas().refresh()
-        self.main_ui._set_status(f"✅ レイヤ整理: {self.main_ui.strip_vrt_display_prefix(name)} (戻し{moved}件 / 外出し{removed_extra}件)")
+        self.main_ui._set_status(tr_text(f"✅ レイヤ整理: {self.main_ui.strip_vrt_display_prefix(name)} (戻し{moved}件 / 外出し{removed_extra}件)"))
     def _apply_scale_preset(self, scale_value):
         name = self.main_ui.current_vrt_name
         if not name: return
@@ -1176,14 +1222,14 @@ class VrtTabWidget(QWidget):
         self.update_scale_btn_highlight(scale_value)
         if vrt_p and os.path.exists(vrt_p):
             self.main_ui._save_qml(vrt_layer, vrt_p, overlay_layer)
-        self.main_ui._set_status(f"✅ 縮尺 1:{scale_value:,} を適用・保存")
+        self.main_ui._set_status(tr_text(f"✅ 縮尺 1:{scale_value:,} を適用・保存"))
 
     def _apply_scale_manual(self):
         try:
             val = int(self.scale_manual_edit.text().strip().replace(',', ''))
             if val <= 0: raise ValueError
         except ValueError:
-            QMessageBox.warning(self, "警告", "正しい数値を入力してください（例: 3000）")
+            QMessageBox.warning(self, tr_text("警告"), tr_text("正しい数値を入力してください（例: 3000）"))
             return
         self._apply_scale_preset(val)
 
@@ -1199,8 +1245,8 @@ class VrtTabWidget(QWidget):
         if tif_count >= 100:
             reply = QMessageBox.question(
                 self, 
-                "確認", 
-                f"{tif_count} 枚の写真を全表示してもよろしいでしょうか？\n枚数が多いため、描画に時間がかかる場合があります。", 
+                tr_text("確認"), 
+                tr_text(f"{tif_count} 枚の写真を全表示してもよろしいでしょうか？\n枚数が多いため、描画に時間がかかる場合があります。"), 
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
             )
             if reply != QMessageBox.StandardButton.Yes:
@@ -1222,7 +1268,7 @@ class VrtTabWidget(QWidget):
         self.update_scale_btn_highlight(0)
         if vrt_p and os.path.exists(vrt_p):
             self.main_ui._save_qml(vrt_layer, vrt_p, overlay_layer)
-        self.main_ui._set_status("✅ 全表示（縮尺制限なし）を適用・保存")
+        self.main_ui._set_status(tr_text("✅ 全表示（縮尺制限なし）を適用・保存"))
 
     # --- ビルド(VRT構築)タスク ---
     def _build_and_load_vrt(self):
@@ -1238,16 +1284,16 @@ class VrtTabWidget(QWidget):
             )
             if ok:
                 self.reload_tif_listwidget()
-                self.main_ui._set_status("🗑 TIFなし：VRTの中身を空にしました")
+                self.main_ui._set_status(tr_text("🗑 TIFなし：VRTの中身を空にしました"))
             else:
-                self.main_ui._set_status(f"❌ VRT空更新エラー: {err_msg}")
-                QMessageBox.warning(self, "警告", f"VRTの中身更新に失敗しました。\n\n{err_msg}")
+                self.main_ui._set_status(tr_text(f"❌ VRT空更新エラー: {err_msg}"))
+                QMessageBox.warning(self, tr_text("警告"), tr_text(f"VRTの中身更新に失敗しました。\n\n{err_msg}"))
             return
 
         self.btn_build.setEnabled(False)
         self.vrt_progress_bar.setVisible(True)
         self.vrt_progress_bar.setValue(0)
-        self.main_ui._set_status("⏳ バックグラウンド処理の準備中...")
+        self.main_ui._set_status(tr_text("⏳ バックグラウンド処理の準備中..."))
 
         vrt_path = self.main_ui.vrt_path
         layer_name = self.main_ui.current_vrt_name
@@ -1285,6 +1331,8 @@ class VrtTabWidget(QWidget):
         gpkg_path = os.path.splitext(vrt_path)[0] + "_tiles.gpkg"
         insert_index = self.main_ui._vrt_group_insert_index(layer_name)
 
+        if hasattr(self.main_ui, "_invalidate_vrt_display_caches"):
+            self.main_ui._invalidate_vrt_display_caches(refresh=True, schedule_prefetch=False)
         self.main_ui._disconnect_scale_signal(layer_name)
         self.main_ui._remove_vrt_group(layer_name)
         QApplication.processEvents()
@@ -1299,15 +1347,15 @@ class VrtTabWidget(QWidget):
                 clear_all=True,
             )
             if ok:
-                self.main_ui._set_status("🗑 TIFなし：VRTの中身を空にしました")
+                self.main_ui._set_status(tr_text("🗑 TIFなし：VRTの中身を空にしました"))
             else:
-                self.main_ui._set_status(f"❌ VRT空更新エラー: {err_msg}")
-                QMessageBox.warning(self, "警告", f"VRTの中身更新に失敗しました。\n\n{err_msg}")
+                self.main_ui._set_status(tr_text(f"❌ VRT空更新エラー: {err_msg}"))
+                QMessageBox.warning(self, tr_text("警告"), tr_text(f"VRTの中身更新に失敗しました。\n\n{err_msg}"))
             self.btn_build.setEnabled(True)
             self.vrt_progress_bar.setVisible(False)
             return
 
-        self.main_ui._set_status("⏳ バックグラウンドで生成中（画面操作は可能です）...")
+        self.main_ui._set_status(tr_text("⏳ バックグラウンドで生成中（画面操作は可能です）..."))
         
         engine_path = find_external_vrt_engine_path()
         if engine_path:
@@ -1321,7 +1369,7 @@ class VrtTabWidget(QWidget):
             QgsMessageLog.logMessage(
                 "VRT_ENGINE_MODE internal fallback",
                 "OrthoManager",
-                Qgis.MessageLevel.Warning,
+                Qgis.MessageLevel.Info,
             )
             self.build_task = BuildVrtAndGpkgTask(self.main_ui.tif_list, vrt_path, gpkg_path, True)
         self.build_task.signals.completed.connect(
@@ -1338,8 +1386,8 @@ class VrtTabWidget(QWidget):
         self.vrt_progress_bar.setVisible(False)
 
         if not result:
-            self.main_ui._set_status(f"❌ 生成エラー: {err_msg}")
-            QMessageBox.critical(self, "エラー", f"VRT/GPKGの生成に失敗しました:\n{err_msg}")
+            self.main_ui._set_status(tr_text(f"❌ 生成エラー: {err_msg}"))
+            QMessageBox.critical(self, tr_text("エラー"), tr_text(f"VRT/GPKGの生成に失敗しました:\n{err_msg}"))
             for t_file in [temp_vrt, temp_gpkg]:
                  if t_file and os.path.exists(t_file):
                       try: os.remove(t_file)
@@ -1355,8 +1403,8 @@ class VrtTabWidget(QWidget):
                 gpkg_path = os.path.splitext(vrt_path)[0] + "_tiles.gpkg"
                 shutil.move(temp_gpkg, gpkg_path)
         except Exception as e:
-            self.main_ui._set_status(f"❌ ファイル移動エラー: {e}")
-            QMessageBox.critical(self, "エラー", f"一時ファイルの適用に失敗しました:\n{e}")
+            self.main_ui._set_status(tr_text(f"❌ ファイル移動エラー: {e}"))
+            QMessageBox.critical(self, tr_text("エラー"), tr_text(f"一時ファイルの適用に失敗しました:\n{e}"))
             return
         move_sec = time.perf_counter() - move_start
 
@@ -1370,6 +1418,8 @@ class VrtTabWidget(QWidget):
                                     saved_overlay_crs=saved_overlay_crs,
                                     rebuild_gpkg=False,
                                     insert_index=insert_index)
+        if hasattr(self.main_ui, "_invalidate_vrt_display_caches"):
+            self.main_ui._invalidate_vrt_display_caches(refresh=True, schedule_prefetch=True)
         load_sec = time.perf_counter() - load_start
         crs_start = time.perf_counter()
         self.main_ui._handle_group_crs_after_vrt_update(layer_name)
@@ -1385,6 +1435,9 @@ class VrtTabWidget(QWidget):
             f"total_sec={total_sec:.2f} ui_total_sec={ui_total_sec:.2f} "
             f"task_total_sec={float(timing.get('task_total_sec', 0.0)):.2f} "
             f"mode={str(timing.get('vrt_update_mode', 'VRT更新')).replace(' ', '_')} "
+            f"grid_mode={str(timing.get('vrt_grid_mode', 'normal'))} "
+            f"grid_x_res={float(timing.get('vrt_grid_x_res', 0.0)):.12g} "
+            f"grid_y_res={float(timing.get('vrt_grid_y_res', 0.0)):.12g} "
             f"vrt_update_sec={float(timing.get('vrt_update_sec', 0.0)):.2f} "
             f"gpkg_sec={float(timing.get('gpkg_sec', 0.0)):.2f} "
             f"move_sec={move_sec:.2f} qgis_reload_sec={load_sec:.2f} crs_apply_sec={crs_sec:.2f} "
@@ -1402,6 +1455,8 @@ class VrtTabWidget(QWidget):
             f"一時ファイル移動={move_sec:.2f}s / "
             f"QGISレイヤ再読込={load_sec:.2f}s / "
             f"CRS適用={crs_sec:.2f}s（選択待ち除外） / "
+            f"VRTグリッド={timing.get('vrt_grid_mode', 'normal')} "
+            f"({float(timing.get('vrt_grid_x_res', 0.0)):.12g}m x {float(timing.get('vrt_grid_y_res', 0.0)):.12g}m) / "
             f"aux.xml抑制={'ON' if timing.get('pam_disabled', False) else 'OFF'} / "
             f"TIF={int(timing.get('tif_count', len(self.main_ui.tif_list)))}",
             "OrthoManager",
