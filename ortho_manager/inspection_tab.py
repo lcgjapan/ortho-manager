@@ -814,7 +814,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
             if not table_exists:
                 return ""
             row = con.execute(
-                f"select value from {INSPECTION_GPKG_META_TABLE} where key=?",
+                "select value from om_metadata where key=?",
                 (INSPECTION_GPKG_TYPE_KEY,),
             ).fetchone()
             value = str(row[0] or "") if row else ""
@@ -832,9 +832,9 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
         con = None
         try:
             con = sqlite3.connect(path)
-            con.execute(f"create table if not exists {INSPECTION_GPKG_META_TABLE} (key text primary key, value text)")
+            con.execute("create table if not exists om_metadata (key text primary key, value text)")
             con.execute(
-                f"insert or replace into {INSPECTION_GPKG_META_TABLE} (key, value) values (?, ?)",
+                "insert or replace into om_metadata (key, value) values (?, ?)",
                 (INSPECTION_GPKG_TYPE_KEY, "inspection"),
             )
             con.commit()
@@ -876,7 +876,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
             if not table_exists:
                 return None
             row = con.execute(
-                f"select value from {INSPECTION_GPKG_META_TABLE} where key=?",
+                "select value from om_metadata where key=?",
                 (INSPECTION_GPKG_STATE_KEY,),
             ).fetchone()
             if not row or not row[0]:
@@ -900,13 +900,13 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
         try:
             state = self.inspection_gpkg_management_state()
             con = sqlite3.connect(path)
-            con.execute(f"create table if not exists {INSPECTION_GPKG_META_TABLE} (key text primary key, value text)")
+            con.execute("create table if not exists om_metadata (key text primary key, value text)")
             con.execute(
-                f"insert or replace into {INSPECTION_GPKG_META_TABLE} (key, value) values (?, ?)",
+                "insert or replace into om_metadata (key, value) values (?, ?)",
                 (INSPECTION_GPKG_TYPE_KEY, "inspection"),
             )
             con.execute(
-                f"insert or replace into {INSPECTION_GPKG_META_TABLE} (key, value) values (?, ?)",
+                "insert or replace into om_metadata (key, value) values (?, ?)",
                 (INSPECTION_GPKG_STATE_KEY, json.dumps(state, ensure_ascii=False, separators=(",", ":"))),
             )
             con.commit()
@@ -9392,3 +9392,4 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
         except Exception:
             pass
         self.map_tool = None
+

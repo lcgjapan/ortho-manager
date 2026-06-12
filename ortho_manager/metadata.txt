@@ -3,7 +3,7 @@ name=OrthoManager
 qgisMinimumVersion=3.40
 qgisMaximumVersion=4.99
 description=Orthophoto inspection tool with VRT management, inspection right-click menu, and ZXCV drawing shortcuts
-version=4.77
+version=4.78
 author=劉春光
 email=91273604+lcgjapan@users.noreply.github.com
 about=QGIS plugin for orthophoto inspection, VRT management, inspection vector editing, vector import, and orthophoto export workflows. When Inspection ON is enabled, a dedicated right-click menu provides fast access to pan, select, draw, edit, move, delete, restore, layer, and group operations. During vector creation, helper shortcuts are available: Z copies a parallel direction, X sets a reference point for alignment, C copies an edge length, and V copies an angle.
@@ -15,7 +15,8 @@ category=Raster
 icon=icon.png
 experimental=False
 deprecated=False
-changelog=Version 4.77:<br>- Major inspection workflow update with the Inspection ON right-click menu for drawing, editing, moving, deleting, restoring, layer, and group operations.<br>- Adds vector drawing helper shortcuts: Z for parallel direction copy, X for reference-point alignment, C for edge-length copy, and V for angle copy.<br>- Adds inspection mesh creation from map sheet polygons with configurable horizontal/vertical splits and selectable ID field.<br>- Improves layer/group independent copy, feature copy/paste, lock controls, trash restore, VRT refresh behavior, and English/Chinese UI translations.<br><br>バージョン 4.77:<br>- 検査ON時の右クリックメニューを強化し、作図、編集、移動、削除、復帰、レイヤ/グループ操作をすばやく使えるようにしました。<br>- ベクタ作図時の補助キーを追加しました。Z=平行方向コピー、X=参照点整列、C=辺長コピー、V=角度コピーです。<br>- 図郭ポリゴンから検査メッシュを作成できるようにしました。横/縦分割数とIDフィールドを指定できます。<br>- レイヤ/グループ独立コピー、地物コピー/貼り付け、ロック、ゴミ箱復帰、VRT更新、英語/中国語UI翻訳を改善しました。
+changelog=Version 4.78: Fixes the QGIS official security scan block by replacing fixed metadata-table SQL f-strings with static SQL strings. No user-facing behavior changes from 4.77.<br><br>バージョン 4.78: QGIS公式のセキュリティスキャンでブロックされた固定メタ情報テーブルのSQL f-stringを、固定SQL文字列へ変更しました。v4.77から利用者向け機能の変更はありません。
+
 
 
 
