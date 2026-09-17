@@ -1,3 +1,4 @@
+from .diagnostics import record_ignored_exception as _om_record_ignored_exception
 from .i18n import tr_text
 import math
 
@@ -243,7 +244,7 @@ class InspectionMapTool(QgsMapTool):
         try:
             self.tab.clear_direct_overlap_vertex_edit()
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 246)
         self._clear_snap_indicator()
         super().deactivate()
 
@@ -257,7 +258,7 @@ class InspectionMapTool(QgsMapTool):
             try:
                 self.canvas.scene().removeItem(self.rubber_band)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 260)
         self.rubber_band = None
 
     def _clear_direct_vertex_state(self):
@@ -284,7 +285,7 @@ class InspectionMapTool(QgsMapTool):
             try:
                 self.canvas.scene().removeItem(marker)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 287)
         self.vertex_markers = []
 
     def _clear_fixed_angle_90_reference(self):
@@ -292,12 +293,12 @@ class InspectionMapTool(QgsMapTool):
             try:
                 self.canvas.scene().removeItem(self.fixed_angle_90_reference_marker)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 295)
         if self.fixed_angle_90_reference_band:
             try:
                 self.canvas.scene().removeItem(self.fixed_angle_90_reference_band)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 300)
         self.fixed_angle_90_reference_marker = None
         self.fixed_angle_90_reference_band = None
         self.fixed_angle_90_reference_point = None
@@ -308,7 +309,7 @@ class InspectionMapTool(QgsMapTool):
             try:
                 self.canvas.scene().removeItem(self.fixed_angle_90_length_band)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 311)
         self.fixed_angle_90_length_band = None
         self.fixed_angle_90_copied_length = None
 
@@ -317,7 +318,7 @@ class InspectionMapTool(QgsMapTool):
             try:
                 self.canvas.scene().removeItem(self.parallel_direction_band)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 320)
         self.parallel_direction_band = None
         self.parallel_direction_unit = None
 
@@ -326,7 +327,7 @@ class InspectionMapTool(QgsMapTool):
             try:
                 self.canvas.scene().removeItem(self.angle_copy_band)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 329)
         self.angle_copy_band = None
         self.angle_copy_small_radians = None
         self.angle_copy_vertex = None
@@ -349,11 +350,11 @@ class InspectionMapTool(QgsMapTool):
             try:
                 marker.setIconType(QgsVertexMarker.ICON_CIRCLE)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 352)
         try:
             marker.setZValue(1200)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 356)
         self.fixed_angle_90_reference_marker = marker
         if len(self.points) >= 2:
             previous_unit = self._fixed_angle_90_unit(self._fixed_angle_90_vector(self.points[-2], self.points[-1]))
@@ -406,14 +407,14 @@ class InspectionMapTool(QgsMapTool):
             try:
                 self.fixed_angle_90_reference_band.setLineStyle(Qt.PenStyle.DashLine)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 409)
         try:
             self.fixed_angle_90_reference_band.reset(Qgis.GeometryType.Line)
             self.fixed_angle_90_reference_band.addPoint(start, False)
             self.fixed_angle_90_reference_band.addPoint(end, True)
             self.fixed_angle_90_reference_band.show()
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 416)
 
     def _aux_copy_tolerance(self):
         try:
@@ -448,7 +449,7 @@ class InspectionMapTool(QgsMapTool):
                 if layer.geometryType() not in (Qgis.GeometryType.Line, Qgis.GeometryType.Polygon):
                     continue
             except Exception:
-                continue
+                _om_record_ignored_exception(__name__, 451); continue
             seen_ids.add(layer.id())
             layers.append(layer)
         return layers
@@ -474,7 +475,7 @@ class InspectionMapTool(QgsMapTool):
                         if ring and len(ring) >= 3:
                             parts.append([QgsPointXY(point) for point in ring])
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 477)
         return parts
 
     def _nearest_edge_from_points(self, raw, points, tolerance, nearest=None, nearest_distance=None):
@@ -518,7 +519,7 @@ class InspectionMapTool(QgsMapTool):
                 )
                 request = QgsFeatureRequest().setFilterRect(rect)
             except Exception:
-                continue
+                _om_record_ignored_exception(__name__, 521); continue
             for feature in layer.getFeatures(request):
                 for part in self._geometry_aux_parts(feature.geometry(), layer):
                     map_part = []
@@ -579,7 +580,7 @@ class InspectionMapTool(QgsMapTool):
                 request = QgsFeatureRequest().setFilterRect(rect)
                 closed = layer.geometryType() == Qgis.GeometryType.Polygon
             except Exception:
-                continue
+                _om_record_ignored_exception(__name__, 582); continue
             for feature in layer.getFeatures(request):
                 for part in self._geometry_aux_parts(feature.geometry(), layer):
                     map_part = []
@@ -615,14 +616,14 @@ class InspectionMapTool(QgsMapTool):
         try:
             band.setZValue(1150)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 618)
         try:
             band.reset(Qgis.GeometryType.Line)
             band.addPoint(QgsPointXY(start), False)
             band.addPoint(QgsPointXY(end), True)
             band.show()
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 625)
         self.fixed_angle_90_length_band = band
         self.tab.set_status(tr_text(f"{self._capture_shape_label()}: 辺長をコピーしました: {length:.3f}"))
         return True
@@ -651,14 +652,14 @@ class InspectionMapTool(QgsMapTool):
         try:
             band.setZValue(1140)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 654)
         try:
             band.reset(Qgis.GeometryType.Line)
             band.addPoint(QgsPointXY(start), False)
             band.addPoint(QgsPointXY(end), True)
             band.show()
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 661)
         self.parallel_direction_band = band
         self.tab.set_status(tr_text(f"{self._capture_shape_label()}: 平行方向をコピーしました"))
         return True
@@ -724,11 +725,11 @@ class InspectionMapTool(QgsMapTool):
             try:
                 self.angle_copy_band.setLineStyle(Qt.PenStyle.DashLine)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 727)
             try:
                 self.angle_copy_band.setZValue(1160)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 731)
         try:
             self.angle_copy_band.reset(Qgis.GeometryType.Line)
             for index in range(steps + 1):
@@ -741,7 +742,7 @@ class InspectionMapTool(QgsMapTool):
                 self.angle_copy_band.addPoint(arc_point, index == steps)
             self.angle_copy_band.show()
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 744)
 
     def _clear_select_band(self):
         if self.select_band:
@@ -749,7 +750,7 @@ class InspectionMapTool(QgsMapTool):
                 self.select_band.hide()
                 self.select_band.deleteLater()
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 752)
             self.select_band = None
         self.select_start_point = None
         self.select_start_pixel = None
@@ -759,13 +760,13 @@ class InspectionMapTool(QgsMapTool):
             try:
                 self.canvas.scene().removeItem(self.select_polygon_band)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 762)
             self.select_polygon_band = None
         for marker in self.select_polygon_markers:
             try:
                 self.canvas.scene().removeItem(marker)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 768)
         self.select_polygon_markers = []
         self.select_polygon_points = []
         self.select_polygon_modifiers = Qt.KeyboardModifier.NoModifier
@@ -780,7 +781,7 @@ class InspectionMapTool(QgsMapTool):
         try:
             self.snap_indicator.setVisible(False)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 783)
 
     def _snap_match(self, event, set_current_layer=True):
         try:
@@ -792,18 +793,18 @@ class InspectionMapTool(QgsMapTool):
                         if layer:
                             utils.setCurrentLayer(layer)
                     except Exception:
-                        pass
+                        _om_record_ignored_exception(__name__, 795)
                 match = utils.snapToMap(event.pixelPoint())
                 if match and match.isValid():
                     return match
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 800)
         try:
             match = event.mapPointMatch()
             if match and match.isValid():
                 return match
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 806)
         return None
 
     def _update_snap_indicator(self, match):
@@ -814,7 +815,7 @@ class InspectionMapTool(QgsMapTool):
             else:
                 self.snap_indicator.setVisible(False)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 817)
 
     def _direct_overlap_vertex_snap_point(self, event):
         try:
@@ -840,7 +841,7 @@ class InspectionMapTool(QgsMapTool):
                 try:
                     return QgsPointXY(match.point())
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 843)
             if direct_overlap_edit:
                 direct_overlap_point = self._direct_overlap_vertex_snap_point(event)
                 if direct_overlap_point is not None:
@@ -849,7 +850,7 @@ class InspectionMapTool(QgsMapTool):
             try:
                 return QgsPointXY(event.snapPoint())
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 852)
         return QgsPointXY(event.mapPoint())
 
     def _angle_constrained_point(self, start_point, end_point, modifiers, basis_angle=None):
@@ -1339,7 +1340,7 @@ class InspectionMapTool(QgsMapTool):
             if (dx * dx + dy * dy) <= 144:
                 return first
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 1342)
         return None
 
     def _ensure_select_band(self):
@@ -1383,11 +1384,11 @@ class InspectionMapTool(QgsMapTool):
             try:
                 marker.setIconType(QgsVertexMarker.ICON_CROSS)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 1386)
         try:
             marker.setZValue(1000)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 1390)
         self.select_polygon_markers.append(marker)
 
     def _rebuild_select_polygon_preview(self, preview_point=None):
@@ -1401,7 +1402,7 @@ class InspectionMapTool(QgsMapTool):
             try:
                 self.canvas.scene().removeItem(self.select_polygon_band)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 1404)
             self.select_polygon_band = None
             self._ensure_select_polygon_band()
         draw_points = [QgsPointXY(point) for point in self.select_polygon_points]
@@ -1465,7 +1466,7 @@ class InspectionMapTool(QgsMapTool):
             try:
                 self.canvas.scene().removeItem(self.rubber_band)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 1468)
             self.rubber_band = None
 
     def _rebuild_capture_preview(self, preview_point=None):
@@ -1499,7 +1500,7 @@ class InspectionMapTool(QgsMapTool):
             try:
                 self.canvas.scene().removeItem(marker)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 1502)
         self._remove_rubber_band_only()
         layer = self.tab.active_layer()
         if layer and self.points:
@@ -1520,11 +1521,11 @@ class InspectionMapTool(QgsMapTool):
             try:
                 marker.setIconType(QgsVertexMarker.ICON_CROSS)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 1523)
         try:
             marker.setZValue(1000)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 1527)
         self.vertex_markers.append(marker)
 
     def canvasPressEvent(self, event):
@@ -1533,14 +1534,14 @@ class InspectionMapTool(QgsMapTool):
                 try:
                     event.accept()
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 1536)
                 self._finish_select_polygon()
                 return
             if self.tab.operation_mode == "move":
                 try:
                     event.accept()
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 1543)
                 self._clear_move_state()
                 self.tab.return_to_last_selection_mode("移動終了")
                 return
@@ -1548,14 +1549,14 @@ class InspectionMapTool(QgsMapTool):
                 try:
                     event.accept()
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 1551)
                 self._finish_capture()
                 return
             if self.tab.operation_mode == "edit":
                 try:
                     event.accept()
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 1558)
                 self._clear_direct_vertex_state()
                 point = self._event_map_point(event)
                 if self.tab.switch_direct_overlap_vertex_candidate_at(point):
@@ -1700,7 +1701,7 @@ class InspectionMapTool(QgsMapTool):
                             return
                     self.last_shape_preview_pixel = pixel
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 1703)
                 modifiers = event.modifiers()
                 self._update_shape_preview(
                     snap_point,
@@ -1722,7 +1723,7 @@ class InspectionMapTool(QgsMapTool):
             try:
                 event.accept()
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 1725)
             return
         if self.move_start_point and self.tab.operation_mode != "move":
             self._clear_move_state()
@@ -1755,7 +1756,7 @@ class InspectionMapTool(QgsMapTool):
             try:
                 event.accept()
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 1758)
             if self.tab.ignore_next_direct_overlap_release:
                 self.tab.ignore_next_direct_overlap_release = False
                 return
@@ -1823,7 +1824,7 @@ class InspectionMapTool(QgsMapTool):
             try:
                 event.accept()
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 1826)
             return
         if self.tab.operation_mode == "edit":
             return
@@ -1831,7 +1832,7 @@ class InspectionMapTool(QgsMapTool):
             try:
                 event.accept()
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 1834)
             return
         else:
             if self.tab.operation_mode != "edit":
@@ -1865,7 +1866,7 @@ class InspectionMapTool(QgsMapTool):
                         try:
                             self.canvas.scene().removeItem(marker)
                         except Exception:
-                            pass
+                            _om_record_ignored_exception(__name__, 1868)
                     if self.select_polygon_points:
                         self._rebuild_select_polygon_preview()
                     else:
@@ -1879,7 +1880,7 @@ class InspectionMapTool(QgsMapTool):
                         event.accept()
                         return
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 1882)
                 self._toggle_fixed_angle_90_constraint()
                 event.accept()
                 return
@@ -1928,7 +1929,7 @@ class InspectionMapTool(QgsMapTool):
                     and event.modifiers() & Qt.KeyboardModifier.ControlModifier
                 )
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 1931)
             if is_undo:
                 if self.tab.undo_last_feature_move():
                     event.accept()
@@ -2064,7 +2065,7 @@ class InspectionMapTool(QgsMapTool):
             self.rubber_band.show()
             return
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 2067)
         polygons = geometry.asPolygon()
         if not polygons:
             return

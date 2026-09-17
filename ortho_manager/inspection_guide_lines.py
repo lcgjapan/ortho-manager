@@ -1,3 +1,4 @@
+from .diagnostics import record_ignored_exception as _om_record_ignored_exception
 from .i18n import tr_text
 import math
 
@@ -43,7 +44,7 @@ class InspectionGuideLineBuilder:
                     continue
                 layers.append(layer)
             except Exception:
-                continue
+                _om_record_ignored_exception(__name__, 46); continue
         layers.sort(key=lambda layer: layer.name())
         return layers
 
@@ -333,7 +334,7 @@ class InspectionGuideLineBuilder:
                 try:
                     ogr_geom = ogr.ForceToMultiPolygon(ogr_geom)
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 336)
                 feature = ogr.Feature(defn)
                 feature.SetGeometry(ogr_geom)
                 values = {
@@ -533,7 +534,7 @@ class InspectionGuideLineBuilder:
             if left.intersects(right):
                 return True
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 536)
         try:
             return left.distance(right) <= CONNECT_TOLERANCE_M
         except Exception:
@@ -550,7 +551,7 @@ class InspectionGuideLineBuilder:
                 try:
                     merged = merged.combine(geom)
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 553)
             return self._make_valid(merged)
 
     def _make_valid(self, geom):
@@ -562,7 +563,7 @@ class InspectionGuideLineBuilder:
                 if fixed and not fixed.isEmpty():
                     return fixed
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 565)
         return geom
 
     def _sort_areas(self, areas):
@@ -615,7 +616,7 @@ class InspectionGuideLineBuilder:
             if polygon_geom.convertGeometryCollectionToSubclass(Qgis.GeometryType.Polygon):
                 geom = polygon_geom
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 618)
         parts = []
         try:
             if geom.isMultipart():
@@ -630,7 +631,7 @@ class InspectionGuideLineBuilder:
                 if self._has_polygon_area(part):
                     return [part]
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 633)
         return parts
 
     def _has_polygon_area(self, geom):

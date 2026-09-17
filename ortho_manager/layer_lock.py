@@ -1,3 +1,4 @@
+from .diagnostics import record_ignored_exception as _om_record_ignored_exception
 from .i18n import tr_text
 from qgis.PyQt.QtCore import QObject, QTimer, QSize
 from qgis.PyQt.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
@@ -59,7 +60,7 @@ class LayerLockManager(QObject):
         try:
             self._refresh_timer.start()
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 62)
 
     def refresh(self):
         self._remove_stale_indicators()
@@ -95,7 +96,7 @@ class LayerLockManager(QObject):
             if _truthy(layer.customProperty(SELECT_LOCK_PROPERTY, False)):
                 return LOCK_STATE_SELECT
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 98)
         effective = LOCK_STATE_NONE
         for _parent, node in self._layer_nodes(layer):
             state = self.node_effective_lock_state(node)
@@ -120,7 +121,7 @@ class LayerLockManager(QObject):
                 if state == LOCK_STATE_SELECT:
                     effective = LOCK_STATE_SELECT
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 123)
             try:
                 current = current.parent()
             except Exception:
@@ -136,7 +137,7 @@ class LayerLockManager(QObject):
             if _truthy(layer.customProperty(SELECT_LOCK_PROPERTY, False)):
                 return LOCK_STATE_SELECT
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 139)
         return LOCK_STATE_NONE
 
     def node_direct_lock_state(self, node):
@@ -150,7 +151,7 @@ class LayerLockManager(QObject):
             if _truthy(node.customProperty(SELECT_LOCK_PROPERTY, False)):
                 return LOCK_STATE_SELECT
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 153)
         return LOCK_STATE_NONE
 
     def set_layer_locked(self, layer, locked):
@@ -179,7 +180,7 @@ class LayerLockManager(QObject):
                 layer.setCustomProperty(SELECT_LOCK_PROPERTY, True)
                 self._clear_layer_selection(layer)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 182)
         self.apply_read_only_state()
         self.schedule_refresh()
 
@@ -199,7 +200,7 @@ class LayerLockManager(QObject):
                 for layer in self._group_vector_layers(group):
                     self._clear_layer_selection(layer)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 202)
         self.apply_read_only_state()
         self.schedule_refresh()
 
@@ -212,15 +213,15 @@ class LayerLockManager(QObject):
             try:
                 getattr(root, signal_name).connect(self.schedule_refresh)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 215)
         try:
             QgsProject.instance().layersAdded.connect(self.schedule_refresh)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 219)
         try:
             QgsProject.instance().layersWillBeRemoved.connect(self.schedule_refresh)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 223)
 
     def _disconnect_tree_signals(self):
         root = self.root()
@@ -228,15 +229,15 @@ class LayerLockManager(QObject):
             try:
                 getattr(root, signal_name).disconnect(self.schedule_refresh)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 231)
         try:
             QgsProject.instance().layersAdded.disconnect(self.schedule_refresh)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 235)
         try:
             QgsProject.instance().layersWillBeRemoved.disconnect(self.schedule_refresh)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 239)
 
     def _connect_node_signals(self, node):
         key = self._node_key(node)
@@ -249,7 +250,7 @@ class LayerLockManager(QObject):
                 signal.connect(self.schedule_refresh)
                 connected.append(signal)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 252)
         self._connected_nodes[key] = connected
 
     def _disconnect_node_signals(self):
@@ -258,7 +259,7 @@ class LayerLockManager(QObject):
                 try:
                     signal.disconnect(self.schedule_refresh)
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 261)
         self._connected_nodes.clear()
 
     def _connect_layer_selection_signals(self):
@@ -275,21 +276,21 @@ class LayerLockManager(QObject):
                 layer.selectionChanged.connect(handler)
                 self._selection_connections[layer_id] = (layer, handler)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 278)
         for layer_id in list(self._selection_connections.keys()):
             if layer_id not in live_ids:
                 layer, handler = self._selection_connections.pop(layer_id)
                 try:
                     layer.selectionChanged.disconnect(handler)
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 285)
 
     def _disconnect_layer_selection_signals(self):
         for layer, handler in self._selection_connections.values():
             try:
                 layer.selectionChanged.disconnect(handler)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 292)
         self._selection_connections.clear()
 
     def _on_layer_selection_changed(self, layer):
@@ -338,7 +339,7 @@ class LayerLockManager(QObject):
                 if self._is_vector_layer(layer):
                     layers.append(layer)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 341)
         return layers
 
     def _clear_layer_selection(self, layer):
@@ -347,7 +348,7 @@ class LayerLockManager(QObject):
         try:
             layer.removeSelection()
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 350)
 
     def _ensure_indicator(self, node):
         view = self.iface.layerTreeView()
@@ -362,11 +363,11 @@ class LayerLockManager(QObject):
                 indicator.setProperty(LOCK_INDICATOR_PROPERTY, True)
                 indicator.setProperty(LOCK_INDICATOR_KIND_PROPERTY, "ortho_manager")
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 365)
             try:
                 indicator.clicked.connect(lambda *args, n=node: self._toggle_node(n))
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 369)
             self._indicators[key] = indicator
             self._indicator_nodes[key] = node
             try:
@@ -390,14 +391,14 @@ class LayerLockManager(QObject):
             indicator.setProperty(LOCK_INDICATOR_PROPERTY, True)
             indicator.setProperty(LOCK_INDICATOR_KIND_PROPERTY, "ortho_manager")
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 393)
         try:
             indicator.changed.emit()
         except Exception:
             try:
                 indicator.changed()
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 400)
 
     def _toggle_node(self, node):
         try:
@@ -428,7 +429,7 @@ class LayerLockManager(QObject):
                     try:
                         view.removeIndicator(node, indicator)
                     except Exception:
-                        pass
+                        _om_record_ignored_exception(__name__, 431)
         self._indicators.clear()
         self._indicator_nodes.clear()
 
@@ -443,7 +444,7 @@ class LayerLockManager(QObject):
                     try:
                         view.removeIndicator(node, indicator)
                     except Exception:
-                        pass
+                        _om_record_ignored_exception(__name__, 446)
                 self._indicators.pop(key, None)
                 self._indicator_nodes.pop(key, None)
         for key in list(self._connected_nodes.keys()):
@@ -470,7 +471,7 @@ class LayerLockManager(QObject):
                 view.removeIndicator(node, indicator)
                 removed += 1
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 473)
         if removed:
             QgsMessageLog.logMessage(
                 f"LAYER_LOCK_DUPLICATE_INDICATORS_REMOVED node={self._node_label(node)} count={removed}",
@@ -491,19 +492,19 @@ class LayerLockManager(QObject):
             try:
                 view.removeIndicator(node, indicator)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 494)
 
     def _is_lock_indicator(self, indicator):
         try:
             if bool(indicator.property(LOCK_INDICATOR_PROPERTY)):
                 return True
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 501)
         try:
             if str(indicator.property(LOCK_INDICATOR_KIND_PROPERTY) or "") == "ortho_manager":
                 return True
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 506)
         try:
             tooltip = str(indicator.toolTip() or "")
         except Exception:

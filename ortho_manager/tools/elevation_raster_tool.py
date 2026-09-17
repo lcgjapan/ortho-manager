@@ -1,9 +1,11 @@
+from ..process_args import validated_process_args
+from ..diagnostics import record_ignored_exception as _om_record_ignored_exception
 import json
 import hashlib
 import math
 import os
 import shutil
-import subprocess
+import subprocess  # nosec B404 # local GIS helpers use validated argument lists and shell=False.
 import struct
 import time
 
@@ -127,7 +129,7 @@ class ElevationRasterTask(QgsTask):
 
     def _prepare_ascii_work_inputs(self, input_paths):
         key_src = self.output_path + "|" + "|".join(input_paths)
-        key = hashlib.sha1(os.path.normcase(key_src).encode("utf-8", "ignore")).hexdigest()[:16]
+        key = hashlib.sha1(os.path.normcase(key_src).encode("utf-8", "ignore"), usedforsecurity=False).hexdigest()[:16]
         errors = []
         for parent in self._ascii_parent_candidates(input_paths[0]):
             work_root = os.path.join(parent, "_ortho_manager_elevation_work_ascii", key)
@@ -148,7 +150,7 @@ class ElevationRasterTask(QgsTask):
                 try:
                     shutil.rmtree(work_root, ignore_errors=True)
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 151)
         detail = "\n".join(errors[-3:])
         raise RuntimeError(
             "PDAL用の英数字一時作業フォルダを作成できませんでした。\n"
@@ -464,7 +466,7 @@ class ElevationRasterTask(QgsTask):
                 if os.path.exists(vrt_path):
                     os.remove(vrt_path)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 467)
 
     def _run_pdal_jobs_parallel(self, jobs, start_progress=5, end_progress=90):
         if not jobs:
@@ -482,8 +484,9 @@ class ElevationRasterTask(QgsTask):
             while pending or active:
                 while pending and len(active) < max_parallel:
                     job = pending.pop(0)
-                    proc = subprocess.Popen(
-                        [self.pdal_path, "pipeline", os.path.basename(job["pipeline_path"])],
+                    proc = subprocess.Popen(  # nosec B603 # validated local executable; argv list; shell=False.
+                        validated_process_args([self.pdal_path, "pipeline", os.path.basename(job["pipeline_path"])]),
+                        shell=False,
                         cwd=job["work_dir"],
                         env=env,
                         stdout=subprocess.PIPE,
@@ -510,7 +513,7 @@ class ElevationRasterTask(QgsTask):
                     try:
                         self._procs.remove(proc)
                     except ValueError:
-                        pass
+                        _om_record_ignored_exception(__name__, 513)
                     if stdout.strip():
                         QgsMessageLog.logMessage(stdout.strip()[-2000:], "OrthoManager", Qgis.MessageLevel.Info)
                     if stderr.strip():
@@ -544,8 +547,9 @@ class ElevationRasterTask(QgsTask):
         creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
         env = os.environ.copy()
         env["GDAL_PAM_ENABLED"] = "NO"
-        proc = subprocess.Popen(
-            [self.pdal_path, "pipeline", os.path.basename(pipeline_path)],
+        proc = subprocess.Popen(  # nosec B603 # validated local executable; argv list; shell=False.
+            validated_process_args([self.pdal_path, "pipeline", os.path.basename(pipeline_path)]),
+            shell=False,
             cwd=work_dir,
             env=env,
             stdout=subprocess.PIPE,
@@ -565,7 +569,7 @@ class ElevationRasterTask(QgsTask):
                     try:
                         proc.communicate(timeout=5)
                     except Exception:
-                        pass
+                        _om_record_ignored_exception(__name__, 568)
                     self.error_msg = "標高ラスタ作成をキャンセルしました。"
                     return False
                 elapsed = time.perf_counter() - started
@@ -591,13 +595,13 @@ class ElevationRasterTask(QgsTask):
             try:
                 proc.kill()
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 594)
         for proc in list(self._procs):
             if proc is not None and proc.poll() is None:
                 try:
                     proc.kill()
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 600)
 
     def _fill_nodata_nearest(self, raster_path):
         if self.output_type == "tin" or self.fill_method != "nearest":
@@ -1331,7 +1335,7 @@ class ElevationRasterToolWidget(QWidget):
             try:
                 dialog.setCrs(crs)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 1334)
         dialog.setWindowTitle(tr("tools.elevation_raster.extent_crs_title"))
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return None
@@ -1350,7 +1354,7 @@ class ElevationRasterToolWidget(QWidget):
                 canvas.refreshAllLayers()
             canvas.refresh()
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 1353)
 
     def _clear_input_extents(self):
         if not self._extent_layer_id:
@@ -1466,7 +1470,7 @@ class ElevationRasterToolWidget(QWidget):
                     canvas.refreshAllLayers()
                 canvas.refresh()
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 1469)
         message = tr("tools.elevation_raster.extent_done").format(count=len(features))
         if skipped:
             message += " " + tr("tools.elevation_raster.extent_skipped").format(count=skipped)
@@ -1517,7 +1521,7 @@ class ElevationRasterToolWidget(QWidget):
             if crs.isGeographic():
                 return ""
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 1520)
         try:
             return crs.toWkt() or ""
         except Exception:
@@ -1573,7 +1577,7 @@ class ElevationRasterToolWidget(QWidget):
                 if isinstance(layer, QgsRasterLayer):
                     return layer
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 1576)
         selected = []
         if iface is not None:
             try:
@@ -1811,7 +1815,7 @@ class ElevationRasterToolWidget(QWidget):
                         try:
                             mask &= ~np.isclose(array, float(nodata))
                         except Exception:
-                            pass
+                            _om_record_ignored_exception(__name__, 1814)
                     if not np.any(mask):
                         continue
                     values = array[mask]

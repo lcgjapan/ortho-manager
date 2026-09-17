@@ -1,3 +1,4 @@
+from .diagnostics import record_ignored_exception as _om_record_ignored_exception
 """Editing helpers for the OrthoManager inspection tab.
 
 This mixin keeps edit-mode and duplicate-vertex handling out of
@@ -59,7 +60,7 @@ class InspectionEditingMixin:
                     marker.hide()
                     marker.deleteLater()
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 62)
         self.edit_overlap_vertex_marker = None
 
     def clear_edit_overlap_anchor(self):
@@ -85,7 +86,7 @@ class InspectionEditingMixin:
                 try:
                     layer_ids.add(layer.id())
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 88)
         return len(layer_ids) > 1
 
     def map_point_to_layer_point(self, layer, point):
@@ -97,7 +98,7 @@ class InspectionEditingMixin:
                 transform = QgsCoordinateTransform(canvas_crs, layer_crs, QgsProject.instance())
                 layer_point = transform.transform(layer_point)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 100)
         return layer_point
 
     def layer_point_to_map_point(self, layer, point):
@@ -109,7 +110,7 @@ class InspectionEditingMixin:
                 transform = QgsCoordinateTransform(layer_crs, canvas_crs, QgsProject.instance())
                 map_point = transform.transform(map_point)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 112)
         return map_point
 
     def find_overlap_vertex_candidates_at(self, point, tolerance_factor=12):
@@ -134,7 +135,7 @@ class InspectionEditingMixin:
                 try:
                     vertex_point, vertex_index, _prev_index, _next_index, sqr_dist = geom.closestVertex(layer_point)
                 except Exception:
-                    continue
+                    _om_record_ignored_exception(__name__, 137); continue
                 if vertex_index < 0 or sqr_dist > tolerance * tolerance:
                     continue
                 key = (layer.id(), feature.id(), vertex_index)
@@ -184,11 +185,11 @@ class InspectionEditingMixin:
                 try:
                     marker.setIconType(QgsVertexMarker.ICON_BOX)
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 187)
             try:
                 marker.setZValue(1300)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 191)
             self.edit_overlap_vertex_marker = marker
         marker.setCenter(candidate["map_point"])
         marker.show()
@@ -276,7 +277,7 @@ class InspectionEditingMixin:
                     band.hide()
                     band.deleteLater()
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 279)
         self.edit_overlap_vertex_preview_band = None
 
     def _geometry_with_direct_overlap_vertex(self, candidate, map_point):
@@ -342,7 +343,7 @@ class InspectionEditingMixin:
         try:
             layer.beginEditCommand("重複頂点移動")
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 345)
         try:
             ok = bool(layer.moveVertex(layer_point.x(), layer_point.y(), feature_id, candidate["vertex_index"]))
             updated_idx = layer.fields().indexOf("updated_at")
@@ -356,7 +357,7 @@ class InspectionEditingMixin:
             else:
                 layer.destroyEditCommand()
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 359)
         self.clear_direct_overlap_vertex_preview()
         if not ok:
             self.set_status(tr_text("重複頂点移動: 頂点を更新できませんでした"))
@@ -369,7 +370,7 @@ class InspectionEditingMixin:
             layer.triggerRepaint()
             self.iface.mapCanvas().refresh()
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 372)
         self.set_status(
             tr_text(f"重複頂点移動: {self.display_layer_name(layer)}。右クリックで次の重複頂点へ切替")
         )
@@ -407,7 +408,7 @@ class InspectionEditingMixin:
                 try:
                     vertex_point, vertex_index, _prev_index, _next_index, sqr_dist = geom.closestVertex(layer_point)
                 except Exception:
-                    continue
+                    _om_record_ignored_exception(__name__, 410); continue
                 if vertex_index < 0 or sqr_dist > tolerance * tolerance:
                     continue
                 key = (layer.id(), feature.id(), vertex_index)
@@ -444,7 +445,7 @@ class InspectionEditingMixin:
                 if not self.layer_has_visible_tree_node(layer.id()):
                     return
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 447)
             seen_ids.add(layer.id())
             layers.append(layer)
 
@@ -501,7 +502,7 @@ class InspectionEditingMixin:
                             add_candidate(edge_candidates, layer, feature)
                             break
                     except Exception:
-                        pass
+                        _om_record_ignored_exception(__name__, 504)
 
         if edge_candidates:
             return [(layer, feature) for _area, layer, feature in edge_candidates]
@@ -613,17 +614,17 @@ class InspectionEditingMixin:
         try:
             details.append(f"provider={layer.providerType()}")
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 616)
         try:
             if layer.readOnly():
                 details.append("readOnly=True")
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 621)
         try:
             if not layer.supportsEditing():
                 details.append("supportsEditing=False")
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 626)
         try:
             provider = layer.dataProvider()
             if provider:
@@ -634,9 +635,9 @@ class InspectionEditingMixin:
                     if not caps & change_geom:
                         details.append("ChangeGeometriesなし")
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 637)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 639)
         return " / ".join(details) if details else "詳細不明"
 
     def log_edit_start_failed(self, layer, reason):
@@ -650,7 +651,7 @@ class InspectionEditingMixin:
                 Qgis.MessageLevel.Warning,
             )
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 653)
 
     def prepare_layer_edit(self, layer, activate_tool=False):
         if self.block_locked_layers([layer], "編集できません", "図形を編集"):
@@ -664,7 +665,7 @@ class InspectionEditingMixin:
             try:
                 self._layers_needing_edit_refresh.discard(layer.id())
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 667)
         self.active_layer_id = layer.id()
         self.active_geom_type = layer.customProperty(INSPECTION_PROP_PREFIX + "geom_type", self.layer_geom_type_key(layer))
         self.active_color = layer.customProperty(INSPECTION_PROP_PREFIX + "color", "ff0000")
@@ -675,7 +676,7 @@ class InspectionEditingMixin:
                     if layer.readOnly():
                         layer.setReadOnly(False)
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 678)
                 if not layer.supportsEditing():
                     detail = self.edit_layer_detail(layer)
                     self.set_status(tr_text(f"編集開始できません: {self.display_layer_name(layer)}（{detail}）"))
@@ -710,13 +711,13 @@ class InspectionEditingMixin:
         try:
             self.iface.setActiveLayer(layer)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 713)
         try:
             view = self.iface.layerTreeView()
             if view:
                 view.setCurrentLayer(layer)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 719)
         try:
             nodes = self.layer_tree_nodes_for_layer(layer.id())
             visible_nodes = [node for _parent, node in nodes if self.layer_tree_node_visible(node)]
@@ -724,7 +725,7 @@ class InspectionEditingMixin:
             if target_node is not None:
                 target_node.setItemVisibilityChecked(True)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 727)
 
     def trigger_vertex_tool(self, layer=None, force_restart=False):
         if layer is not None:
@@ -747,7 +748,7 @@ class InspectionEditingMixin:
                     action.trigger()
                 return True
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 750)
         return False
 
     def forward_qgis_vertex_tool_key(self, key, modifiers=Qt.KeyboardModifier.NoModifier):
@@ -775,11 +776,11 @@ class InspectionEditingMixin:
                     sent = True
                     break
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 778)
         try:
             QApplication.processEvents()
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 782)
         return sent
 
     def cancel_qgis_vertex_tool_interaction(self):
@@ -805,13 +806,13 @@ class InspectionEditingMixin:
                         Qgis.MessageLevel.Warning,
                     )
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 808)
         for layer in touched_layers:
             self.refresh_vector_layer_after_data_change(layer, reload_data=True, mark_edit_refresh=False)
             try:
                 self._layers_needing_edit_refresh.discard(layer.id())
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 814)
 
     def stop_qgis_vertex_tool_for_direct_overlap(self):
         self.cancel_qgis_vertex_tool_interaction()
@@ -823,14 +824,14 @@ class InspectionEditingMixin:
                     action.trigger()
                     QApplication.processEvents()
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 826)
         self.cancel_qgis_vertex_tool_interaction()
         QApplication.processEvents()
         self.ensure_map_tool()
         try:
             self.iface.mapCanvas().refresh()
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 833)
 
     def finish_edit_mode(self, defer_pan=False, switch_to_pan_after=True, return_to_selection_after=True):
         self.clear_edit_overlap_candidates()
@@ -849,13 +850,13 @@ class InspectionEditingMixin:
                         layer.rollBack()
                 layer.removeSelection()
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 852)
         for layer in touched_layers:
             self.refresh_vector_layer_after_data_change(layer, reload_data=True, mark_edit_refresh=False)
             try:
                 self._layers_needing_edit_refresh.discard(layer.id())
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 858)
         self.restore_edit_preview_width()
         self.refresh_counts()
         if switch_to_pan_after:

@@ -1,3 +1,4 @@
+from .diagnostics import record_ignored_exception as _om_record_ignored_exception
 import os
 import json
 import time
@@ -240,7 +241,7 @@ class VrtTabWidget(QWidget):
                 if canvas.viewport():
                     canvas.viewport().setFocus()
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 243)
 
     def _toggle_view_cache(self, checked):
         self.main_ui.apply_view_cache_enabled(bool(checked), save=True, show_status=True)
@@ -337,7 +338,7 @@ class VrtTabWidget(QWidget):
         try:
             self.vrt_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 340)
         self.vrt_combo.currentIndexChanged.connect(self._switch_vrt)
         self.vrt_combo.activated.connect(self._activate_vrt_combo)
         combo_row.addWidget(self.vrt_combo, 0, Qt.AlignmentFlag.AlignLeft)
@@ -766,7 +767,7 @@ class VrtTabWidget(QWidget):
             if home and os.path.isdir(home):
                 return home
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 769)
         try:
             project_path = project.fileName()
             if project_path:
@@ -774,7 +775,7 @@ class VrtTabWidget(QWidget):
                 if folder and os.path.isdir(folder):
                     return folder
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 777)
         return ""
 
     def _current_vrt_file_dir(self):
@@ -1124,7 +1125,7 @@ class VrtTabWidget(QWidget):
             try:
                 overlay_layer.removeSelection()
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 1127)
 
         # マップツールの復元 (パンなどの元の状態に戻す)
         if self.previous_map_tool:
@@ -1135,7 +1136,7 @@ class VrtTabWidget(QWidget):
             try:
                 self.main_ui.iface.actionPan().trigger()
             except:
-                pass
+                _om_record_ignored_exception(__name__, 1138)
 
         self.main_ui._reset_map_display_caches("vrt_remove_sources", schedule_prefetch=True)
         self.main_ui._set_status(tr_text(f"🗑 {len(to_remove_paths)} ファイルをVRTから削除しました"))
@@ -1171,7 +1172,7 @@ class VrtTabWidget(QWidget):
                         if child.layerId() == layer_id:
                             nodes.append(child)
                     except Exception:
-                        pass
+                        _om_record_ignored_exception(__name__, 1174)
                 elif hasattr(child, "children"):
                     collect(child)
 
@@ -1210,7 +1211,7 @@ class VrtTabWidget(QWidget):
                     try:
                         parent.removeChildNode(node)
                     except Exception:
-                        pass
+                        _om_record_ignored_exception(__name__, 1213)
             return True
         if nodes:
             source_node = nodes[0]
@@ -1225,7 +1226,7 @@ class VrtTabWidget(QWidget):
                         try:
                             parent.removeChildNode(node)
                         except Exception:
-                            pass
+                            _om_record_ignored_exception(__name__, 1228)
                 return True
             except Exception as exc:
                 QgsMessageLog.logMessage(f"VRTレイヤ整理エラー: {layer.name()}: {exc}", "OrthoManager", Qgis.MessageLevel.Warning)
@@ -1261,7 +1262,7 @@ class VrtTabWidget(QWidget):
                     try:
                         insert_index = root.children().index(group) + 1
                     except Exception:
-                        pass
+                        _om_record_ignored_exception(__name__, 1264)
                     root.insertChildNode(insert_index, clone)
                     group.removeChildNode(child)
                     removed_extra += 1
@@ -1395,12 +1396,12 @@ class VrtTabWidget(QWidget):
             saved_crs = existing_vrt_layer.crs()
             if os.path.exists(vrt_path):
                 try: existing_vrt_layer.saveNamedStyle(os.path.splitext(vrt_path)[0] + ".qml")
-                except: pass
+                except: _om_record_ignored_exception(__name__, 1398)
         if overlay_layer:
             saved_overlay_crs = overlay_layer.crs()
             if os.path.exists(vrt_path):
                 try: overlay_layer.saveNamedStyle(os.path.splitext(vrt_path)[0] + "_overlay.qml")
-                except: pass
+                except: _om_record_ignored_exception(__name__, 1403)
 
         vrt_qml = os.path.splitext(vrt_path)[0] + ".qml"
         overlay_qml = os.path.splitext(vrt_path)[0] + "_overlay.qml"
@@ -1468,7 +1469,7 @@ class VrtTabWidget(QWidget):
             for t_file in [temp_vrt, temp_gpkg]:
                  if t_file and os.path.exists(t_file):
                       try: os.remove(t_file)
-                      except: pass
+                      except: _om_record_ignored_exception(__name__, 1471)
             return
 
         import shutil

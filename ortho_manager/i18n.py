@@ -1,3 +1,4 @@
+from .diagnostics import record_ignored_exception as _om_record_ignored_exception
 import re
 from qgis.core import QgsSettings
 
@@ -1779,7 +1780,7 @@ def set_current_language(language):
     try:
         QgsSettings().setValue(LANGUAGE_SETTING_KEY, language)
     except Exception:
-        pass
+        _om_record_ignored_exception(__name__, 1782)
     return language
 
 

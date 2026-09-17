@@ -1,3 +1,4 @@
+from .diagnostics import record_ignored_exception as _om_record_ignored_exception
 import math
 import time
 
@@ -123,14 +124,14 @@ class XyzStatusTool:
             try:
                 label.deleteLater()
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 126)
         self.labels = {}
         if self.label is not None:
             self._remove_status_widget(self.label)
             try:
                 self.label.deleteLater()
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 133)
             self.label = None
 
     def set_enabled(self, enabled):
@@ -184,14 +185,14 @@ class XyzStatusTool:
                 self._hidden_locator_widgets.append(widget)
                 widget.setVisible(False)
             except Exception:
-                continue
+                _om_record_ignored_exception(__name__, 187); continue
 
     def _restore_locator_widgets(self):
         for widget in list(self._hidden_locator_widgets):
             try:
                 widget.setVisible(True)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 194)
         self._hidden_locator_widgets = []
 
     def _looks_like_locator_widget(self, widget):
@@ -204,7 +205,7 @@ class XyzStatusTool:
                 if value:
                     text_parts.append(str(value))
             except Exception:
-                continue
+                _om_record_ignored_exception(__name__, 207); continue
         text = " ".join(text_parts).lower()
         return "ctrl+k" in text or "ctrl + k" in text or "検索" in text or "locator" in text
 
@@ -244,7 +245,7 @@ class XyzStatusTool:
                 if predicate(widget):
                     return widget
             except Exception:
-                continue
+                _om_record_ignored_exception(__name__, 247); continue
         return None
 
     def _top_status_widget(self, widget, status_bar):
@@ -290,7 +291,7 @@ class XyzStatusTool:
                 if value:
                     return str(value)
             except Exception:
-                continue
+                _om_record_ignored_exception(__name__, 293); continue
         return ""
 
     def _add_status_widget(self, widget):
@@ -305,7 +306,7 @@ class XyzStatusTool:
             status_bar.addPermanentWidget(widget)
             return
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 308)
         self.iface.mainWindow().statusBar().addPermanentWidget(widget)
 
     def _remove_status_widget(self, widget):
@@ -313,11 +314,11 @@ class XyzStatusTool:
             self.iface.statusBarIface().removeWidget(widget)
             return
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 316)
         try:
             self.iface.mainWindow().statusBar().removeWidget(widget)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 320)
 
     def _map_canvases(self):
         canvases = []
@@ -326,13 +327,13 @@ class XyzStatusTool:
                 if canvas and canvas not in canvases:
                     canvases.append(canvas)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 329)
         try:
             canvas = self.iface.mapCanvas()
             if canvas and canvas not in canvases:
                 canvases.append(canvas)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 335)
         return canvases
 
     def _connect_canvases(self):
@@ -343,14 +344,14 @@ class XyzStatusTool:
                 canvas.xyCoordinates.connect(self._on_xy_coordinates)
                 self._connected_canvases.append(canvas)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 346)
 
     def _disconnect_canvases(self):
         for canvas in list(self._connected_canvases):
             try:
                 canvas.xyCoordinates.disconnect(self._on_xy_coordinates)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 353)
         self._connected_canvases = []
 
     def _on_xy_coordinates(self, point):
@@ -411,7 +412,7 @@ class XyzStatusTool:
                 if node is not None and not node.isVisible():
                     continue
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 414)
             visible.append(layer)
         return visible
 
@@ -429,7 +430,7 @@ class XyzStatusTool:
                 if ok and value is not None and math.isfinite(float(value)):
                     return {"z": float(value), "layer": layer.name()}
             except Exception:
-                continue
+                _om_record_ignored_exception(__name__, 432); continue
         return None
 
     def _is_elevation_raster_layer(self, layer):
@@ -438,18 +439,18 @@ class XyzStatusTool:
             if elevation_properties is not None and elevation_properties.hasElevation():
                 return True
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 441)
         try:
             provider_properties = layer.dataProvider().elevationProperties()
             if provider_properties is not None and provider_properties.containsElevationData():
                 return True
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 447)
         try:
             if QgsRasterLayerElevationProperties.layerLooksLikeDem(layer):
                 return True
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 452)
         return self._looks_like_single_band_elevation_raster(layer)
 
     def _looks_like_single_band_elevation_raster(self, layer):
@@ -469,7 +470,7 @@ class XyzStatusTool:
             if provider.colorInterpretation(1) in RASTER_IMAGE_COLOR_INTERPRETATIONS:
                 return False
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 472)
         try:
             data_type = provider.sourceDataType(1)
         except Exception:
@@ -481,7 +482,7 @@ class XyzStatusTool:
             if data_type in RASTER_NON_ELEVATION_DATA_TYPES:
                 return False
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 484)
         try:
             return bool(QgsRasterBlock.typeIsNumeric(data_type))
         except Exception:
@@ -501,7 +502,7 @@ class XyzStatusTool:
                 if best is None or candidate["distance"] < best["distance"]:
                     best = candidate
             except Exception:
-                continue
+                _om_record_ignored_exception(__name__, 504); continue
         return best
 
     def _sample_visible_point_clouds(self, canvas, project_point):
@@ -518,7 +519,7 @@ class XyzStatusTool:
                 if best is None or candidate["distance"] < best["distance"]:
                     best = candidate
             except Exception:
-                continue
+                _om_record_ignored_exception(__name__, 521); continue
         return best
 
     def _to_layer_point(self, layer, project_point):
@@ -617,7 +618,7 @@ class XyzStatusTool:
                 if z_value is not None:
                     return z_value
             except Exception:
-                continue
+                _om_record_ignored_exception(__name__, 620); continue
         return None
 
     def _point_cloud_identify_distance(self, item, layer_point):
@@ -647,7 +648,7 @@ class XyzStatusTool:
                 if isinstance(value, dict):
                     return value
             except Exception:
-                continue
+                _om_record_ignored_exception(__name__, 650); continue
         return {}
 
     def _mapping_value_as_float(self, mapping, target_name):
@@ -716,7 +717,7 @@ class XyzStatusTool:
                 if best is None or distance < best["distance"]:
                     best = {"z": z_value, "layer": layer.name(), "distance": distance}
             except Exception:
-                continue
+                _om_record_ignored_exception(__name__, 719); continue
         return best
 
     def _attribute_z_candidate(self, layer, feature, geometry, point_geom, tolerance):
@@ -821,7 +822,7 @@ class XyzStatusTool:
             try:
                 name = field.name()
             except Exception:
-                continue
+                _om_record_ignored_exception(__name__, 824); continue
             if self._normalize_z_field_name(name) not in VECTOR_Z_FIELD_NAMES:
                 continue
             try:

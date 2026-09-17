@@ -1,3 +1,4 @@
+from .diagnostics import record_ignored_exception as _om_record_ignored_exception
 import os
 
 from qgis.PyQt.QtCore import QSize, Qt, QTimer
@@ -135,7 +136,7 @@ class InspectionContextMenuMixin:
         try:
             QgsSettings().setValue(CONTEXT_ACTION_ORDER_KEY, ",".join(valid))
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 138)
 
     def save_context_action_rows(self, rows):
         seen = set()
@@ -156,7 +157,7 @@ class InspectionContextMenuMixin:
                 ",".join(cleaned[0]) + "|" + ",".join(cleaned[1]),
             )
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 159)
 
     def context_action_is_active(self, action_key):
         mode = self.operation_mode
@@ -1226,7 +1227,7 @@ class InspectionContextMenuMixin:
             if node.layer():
                 return ""
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 1229)
         names = []
         current = node
         while current is not None:
@@ -1322,7 +1323,7 @@ class InspectionContextMenuMixin:
                 try:
                     return f"__action_slot__:{int(row_index)}:{int(row_len)}", widget
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 1325)
             widget = widget.parentWidget()
         return "", None
 
@@ -1634,7 +1635,7 @@ class InspectionContextMenuMixin:
                 if is_group and child.name() in child_desired:
                     group_indices.append(index)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 1637)
         if parent_path == "":
             current_names = []
             for child in children:
@@ -1664,7 +1665,7 @@ class InspectionContextMenuMixin:
                 children = list(parent_node.children())
                 current_index = children.index(group)
             except Exception:
-                continue
+                _om_record_ignored_exception(__name__, 1667); continue
             if current_index != insert_index:
                 try:
                     clone = group.clone()
@@ -1708,7 +1709,7 @@ class InspectionContextMenuMixin:
                     if self.layer_inspection_type(child_layer) == INSPECTION_TYPE_FREE:
                         layer_nodes.append(child)
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 1711)
                 continue
             if first_group_index is None:
                 first_group_index = index
@@ -1720,7 +1721,7 @@ class InspectionContextMenuMixin:
                 children = list(group.children())
                 current_index = children.index(node)
             except Exception:
-                continue
+                _om_record_ignored_exception(__name__, 1723); continue
             if current_index < insert_index:
                 insert_index += 1
                 continue

@@ -1,3 +1,4 @@
+from .diagnostics import record_ignored_exception as _om_record_ignored_exception
 import os
 import time
 from qgis.PyQt.QtWidgets import QAction
@@ -70,7 +71,7 @@ class OrthoManager:
                 if truthy(node.customProperty(LOCK_PROPERTY, False)) or truthy(node.customProperty(SELECT_LOCK_PROPERTY, False)):
                     return True
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 73)
             try:
                 layer = node.layer()
             except Exception:
@@ -80,7 +81,7 @@ class OrthoManager:
                     if truthy(layer.customProperty(LOCK_PROPERTY, False)) or truthy(layer.customProperty(SELECT_LOCK_PROPERTY, False)):
                         return True
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 83)
             try:
                 children = node.children()
             except Exception:
@@ -103,7 +104,7 @@ class OrthoManager:
                 Qgis.MessageLevel.Info,
             )
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 106)
 
     def _on_project_write(self, doc):
         self.dockwidget.save_to_project()
@@ -117,26 +118,26 @@ class OrthoManager:
             QgsProject.instance().writeProject.disconnect(self._on_project_write)
             QgsProject.instance().cleared.disconnect(self._on_project_cleared)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 120)
         self.iface.removePluginRasterMenu("&OrthoManager", self.action)
         self.iface.removeToolBarIcon(self.action)
         if self.xyz_status_tool:
             try:
                 self.xyz_status_tool.cleanup()
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 127)
             self.xyz_status_tool = None
         if self.layer_visibility_hotkey:
             try:
                 self.layer_visibility_hotkey.cleanup()
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 133)
             self.layer_visibility_hotkey = None
         if self.dockwidget:
             try:
                 self.dockwidget.cleanup_before_unload()
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 139)
             self.iface.removeDockWidget(self.dockwidget)
             self.dockwidget.deleteLater()
             self.dockwidget = None

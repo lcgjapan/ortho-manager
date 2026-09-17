@@ -1,3 +1,4 @@
+from .diagnostics import record_ignored_exception as _om_record_ignored_exception
 import os
 import time
 
@@ -215,7 +216,7 @@ class PointCloudVpcManager:
         try:
             self.vpc_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 218)
         self.vpc_combo.currentIndexChanged.connect(self.switch_vpc)
         self.vpc_combo.activated.connect(self.activate_combo_target)
         combo_row.addWidget(self.vpc_combo, 0, Qt.AlignmentFlag.AlignLeft)
@@ -382,7 +383,7 @@ class PointCloudVpcManager:
         try:
             self.vrt_tab.sync_scale_highlight_from_current_target()
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 385)
 
     def update_count(self):
         text = tr("vpc.label.file_count").format(count=len(self.source_list()))
@@ -415,7 +416,7 @@ class PointCloudVpcManager:
                 if folder and os.path.isdir(folder):
                     return os.path.normpath(folder)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 418)
         return ""
 
     def _last_vpc_dialog_dir(self):
@@ -424,7 +425,7 @@ class PointCloudVpcManager:
             if folder and os.path.isdir(folder):
                 return os.path.normpath(folder)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 427)
         return ""
 
     def _remember_vpc_dialog_path(self, path):
@@ -433,7 +434,7 @@ class PointCloudVpcManager:
             if folder and os.path.isdir(folder):
                 QSettings().setValue("OrthoManager/last_vpc_dialog_dir", os.path.normpath(folder))
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 436)
 
     def current_source_dir(self):
         for path in self.source_list():
@@ -453,7 +454,7 @@ class PointCloudVpcManager:
             if folder and os.path.isdir(folder):
                 return folder
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 456)
         return ""
 
     def new_vpc_default_dir(self):
@@ -1114,7 +1115,7 @@ class PointCloudVpcManager:
             for copc_path in self.main_ui._copc_cache_paths_for_source(source_path, vpc_path):
                 keys.add(self._normalize_path(copc_path))
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 1117)
         return keys
 
     def _is_managed_copc_path(self, path, vpc_path):
@@ -1258,7 +1259,7 @@ class PointCloudVpcManager:
         try:
             self.main_ui.iface.mapCanvas().setMapTool(self.previous_map_tool)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 1261)
         self.previous_map_tool = None
 
     def _add_paths(self, paths):

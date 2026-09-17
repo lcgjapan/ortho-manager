@@ -1,11 +1,12 @@
+from .process_args import validated_process_args
+from .diagnostics import record_ignored_exception as _om_record_ignored_exception
 import os
 import datetime
-import xml.etree.ElementTree as ET
 from .safe_xml import parse_vrt_xml
 import shutil
 import time
 import json
-import subprocess
+import subprocess  # nosec B404 # local GIS helpers use validated argument lists and shell=False.
 import sys
 import tempfile
 import math
@@ -21,7 +22,7 @@ try:
     gdal.UseExceptions()
     ogr.UseExceptions()
 except ImportError:
-    pass
+    _om_record_ignored_exception(__name__, 24)
 
 class TaskSignals(QObject):
     # シグナルに一時ファイルパスを追加
@@ -103,8 +104,9 @@ def run_external_vrt_engine_sync(tif_list, vrt_path, gpkg_path, rebuild_gpkg, en
         )
 
         creationflags = 0x08000000 if os.name == "nt" else 0
-        proc = subprocess.Popen(
-            cmd,
+        proc = subprocess.Popen(  # nosec B603 # validated local executable; argv list; shell=False.
+            validated_process_args(cmd),
+            shell=False,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -143,7 +145,7 @@ def run_external_vrt_engine_sync(tif_list, vrt_path, gpkg_path, rebuild_gpkg, en
         try:
             shutil.rmtree(work_dir, ignore_errors=True)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 146)
 
 class ExternalVrtEngineTask(QgsTask):
     def __init__(self, tif_list, vrt_path, gpkg_path, rebuild_gpkg, engine_path):
@@ -192,8 +194,9 @@ class ExternalVrtEngineTask(QgsTask):
             )
 
             creationflags = 0x08000000 if os.name == "nt" else 0
-            proc = subprocess.Popen(
-                cmd,
+            proc = subprocess.Popen(  # nosec B603 # validated local executable; argv list; shell=False.
+                validated_process_args(cmd),
+                shell=False,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
@@ -245,7 +248,7 @@ class ExternalVrtEngineTask(QgsTask):
             try:
                 shutil.rmtree(work_dir, ignore_errors=True)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 248)
 
     def finished(self, result):
         self.signals.completed.emit(self.success, self.error_msg, self.temp_vrt, self.temp_gpkg, self.timing)
@@ -548,7 +551,7 @@ class BuildVrtAndGpkgTask(QgsTask):
                         band.append(src)
             try:
                 os.remove(diff_vrt_path)
-            except: pass
+            except: _om_record_ignored_exception(__name__, 551)
 
         # 更新されたXMLを保存
         tree.write(target_vrt_path, encoding="utf-8", xml_declaration=False)
@@ -710,7 +713,7 @@ class BuildVrtAndGpkgTask(QgsTask):
                 else:
                     gdal.SetConfigOption('GDAL_PAM_ENABLED', old_pam_enabled)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 713)
 
     def _parse_vrt_xml(self, vrt_path, target_tifs_norm):
         features_data = []

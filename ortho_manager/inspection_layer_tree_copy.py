@@ -1,3 +1,4 @@
+from .diagnostics import record_ignored_exception as _om_record_ignored_exception
 from .i18n import tr_text
 from qgis.PyQt.QtCore import QEvent, Qt
 from qgis.PyQt.QtGui import QKeySequence, QShortcut
@@ -63,7 +64,7 @@ class InspectionLayerTreeCopyManager:
             try:
                 self.view.contextMenuAboutToShow.disconnect(self.add_copy_actions_to_menu)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 66)
         self.connected = False
         self.view = None
 
@@ -132,7 +133,7 @@ class InspectionLayerTreeCopyManager:
             if len(nodes) == 1:
                 return nodes[0]
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 135)
         try:
             return self.view.currentNode()
         except Exception:
@@ -235,7 +236,7 @@ class InspectionLayerTreeCopyMixin:
                 shortcut.setEnabled(False)
                 shortcut.deleteLater()
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 238)
         self.inspection_feature_clipboard_shortcuts = []
 
     def install_feature_clipboard_app_event_filter(self):
@@ -260,7 +261,7 @@ class InspectionLayerTreeCopyMixin:
             try:
                 app.removeEventFilter(self)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 263)
         self.inspection_feature_clipboard_app_filter_installed = False
 
     def run_feature_clipboard_shortcut(self, action):
@@ -309,7 +310,7 @@ class InspectionLayerTreeCopyMixin:
             try:
                 event.accept()
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 312)
             self.log_feature_clipboard(f"{source}_SHORTCUT_OVERRIDE_ACCEPTED action={action}")
             return True
         if action == "copy":
@@ -319,7 +320,7 @@ class InspectionLayerTreeCopyMixin:
         try:
             event.accept()
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 322)
         return True
 
     def log_feature_clipboard(self, message, level=Qgis.MessageLevel.Info):
@@ -344,13 +345,13 @@ class InspectionLayerTreeCopyMixin:
             focus = QApplication.focusWidget()
             focus_name = focus.__class__.__name__ if focus is not None else "None"
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 347)
         active_name = "None"
         try:
             active = self.iface.activeLayer()
             active_name = self.display_layer_name(active) if active is not None else "None"
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 353)
         return (
             f"enabled={getattr(self, 'inspection_enabled', None)} "
             f"mode={getattr(self, 'operation_mode', '')} "
@@ -414,7 +415,7 @@ class InspectionLayerTreeCopyMixin:
                 if isinstance(layer, QgsVectorLayer) and layer.isEditable():
                     editing.append(layer)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 417)
         return editing
 
     def block_feature_clipboard_if_editing(self, title):
@@ -495,7 +496,7 @@ class InspectionLayerTreeCopyMixin:
         try:
             return feature.attribute(name)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 498)
         try:
             return feature[name]
         except Exception:
@@ -597,7 +598,7 @@ class InspectionLayerTreeCopyMixin:
                 try:
                     self.iface.setActiveLayer(first_layer)
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 600)
             self.refresh_selection_highlight()
             self.flash_pasted_features(added_by_layer)
             self.refresh_counts()
@@ -641,7 +642,7 @@ class InspectionLayerTreeCopyMixin:
                 try:
                     layer.rollBack()
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 644)
                 return False, [], errors or "commitChanges_failed"
             self.refresh_vector_layer_after_data_change(layer, reload_data=True)
             if len(ids) < len(new_features):
@@ -652,12 +653,12 @@ class InspectionLayerTreeCopyMixin:
                 if command_active:
                     layer.destroyEditCommand()
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 655)
             try:
                 if layer.isEditable():
                     layer.rollBack()
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 660)
             return False, [], str(exc)
 
     def is_feature_clipboard_primary_key_field(self, name):
@@ -688,7 +689,7 @@ class InspectionLayerTreeCopyMixin:
                 if str(candidate.customProperty(INSPECTION_PROP_PREFIX + "source_name", "") or "") == source_name:
                     return candidate
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 691)
         return None
 
     def is_node_under_inspection_root(self, node):
@@ -704,7 +705,7 @@ class InspectionLayerTreeCopyMixin:
                 if current.name() == INSPECTION_GROUP and parent == QgsProject.instance().layerTreeRoot():
                     return True
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 707)
             current = parent
         return False
 
@@ -789,12 +790,12 @@ class InspectionLayerTreeCopyMixin:
             if manager.is_layer_selection_locked(layer):
                 return True
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 792)
         try:
             if node is not None and manager.is_node_effectively_selection_locked(node):
                 return True
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 797)
         return False
 
     def is_group_selection_locked_for_tree_selection(self, group):
@@ -981,7 +982,7 @@ class InspectionLayerTreeCopyMixin:
                     try:
                         target_group.removeChildNode(copied_child_group)
                     except Exception:
-                        pass
+                        _om_record_ignored_exception(__name__, 984)
 
     def copy_inspection_layer_data(self, layer, name_suffix="コピー"):
         if not OGR_OK:
@@ -1055,7 +1056,7 @@ class InspectionLayerTreeCopyMixin:
             layer.setCustomProperty(INSPECTION_PROP_PREFIX + "inspection_type", INSPECTION_TYPE_FREE)
             layer.setCustomProperty(INSPECTION_PROP_PREFIX + "group_name", group_name)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 1058)
         source = layer.customProperty(INSPECTION_PROP_PREFIX + "source_name", "")
         if source in self.layers:
             self.layers[source]["inspection_type"] = INSPECTION_TYPE_FREE
@@ -1087,22 +1088,22 @@ class InspectionLayerTreeCopyMixin:
             if renderer is not None:
                 dst_layer.setRenderer(renderer.clone())
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 1090)
         try:
             labeling = src_layer.labeling()
             if labeling is not None:
                 dst_layer.setLabeling(labeling.clone())
                 dst_layer.setLabelsEnabled(src_layer.labelsEnabled())
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 1097)
         try:
             dst_layer.setOpacity(src_layer.opacity())
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 1101)
         try:
             dst_layer.triggerRepaint()
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 1105)
 
     def copied_layer_display_name(self, base_name, suffix):
         base_name = str(base_name or "検査レイヤ").strip()
@@ -1127,7 +1128,7 @@ class InspectionLayerTreeCopyMixin:
                 if isinstance(child, QgsLayerTreeGroup):
                     used.add(child.name())
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 1130)
         if candidate not in used:
             return candidate
         number = 2
@@ -1152,7 +1153,7 @@ class InspectionLayerTreeCopyMixin:
             if node is not None and manager is not None and manager.is_node_effectively_locked(node):
                 return True
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 1155)
         return False
 
     def is_group_locked_for_copy(self, group):
@@ -1161,7 +1162,7 @@ class InspectionLayerTreeCopyMixin:
             if manager is not None and manager.is_node_effectively_locked(group):
                 return True
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 1164)
         return False
 
     def free_group_path_from_node(self, node):

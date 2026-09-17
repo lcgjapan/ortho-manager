@@ -1,3 +1,4 @@
+from .diagnostics import record_ignored_exception as _om_record_ignored_exception
 import os
 import json
 from qgis.core import (
@@ -29,7 +30,7 @@ def get_plugin_version(default=""):
                 if line.startswith("version="):
                     return line.split("=", 1)[1].strip() or default
     except Exception:
-        pass
+        _om_record_ignored_exception(__name__, 32)
     return default
 
 def is_supported_raster_path(path):

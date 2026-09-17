@@ -1,10 +1,10 @@
+from .diagnostics import record_ignored_exception as _om_record_ignored_exception
 import os
 import shutil
 import time
 import concurrent.futures
 import multiprocessing
 import threading
-import xml.etree.ElementTree as ET
 from .safe_xml import parse_vrt_xml
 from qgis.PyQt.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
@@ -422,7 +422,7 @@ class ExportTabWidget(QWidget):
             try:
                 self.main_ui.iface.actionSelect().trigger()
                 self.main_ui._set_status(tr_text("🖱 マップ上で出力対象の図郭をクリックしてください（ESCで解除）"))
-            except: pass
+            except: _om_record_ignored_exception(__name__, 425)
 
     def _clear_selection(self):
         layer_id = self.zukaku_combo.currentData()
@@ -482,14 +482,14 @@ class ExportTabWidget(QWidget):
             try:
                 self._export_busy_animation.stop()
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 485)
             self._export_busy_animation = None
         if self._export_busy_label:
             try:
                 self._export_busy_label.hide()
                 self._export_busy_label.deleteLater()
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 492)
             self._export_busy_label = None
         QApplication.processEvents()
 
@@ -530,12 +530,12 @@ class ExportTabWidget(QWidget):
             try:
                 self._export_progress_dialog.canceled.disconnect(self._confirm_export_cancel)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 533)
             try:
                 self._export_progress_dialog.hide()
                 self._export_progress_dialog.deleteLater()
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 538)
             self._export_progress_dialog = None
         QApplication.processEvents()
 
@@ -582,7 +582,7 @@ class ExportTabWidget(QWidget):
             self._export_progress_dialog.show()
             self._export_progress_dialog.raise_()
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 585)
 
     def _set_export_progress_total(self, total):
         self._export_progress_total = max(1, int(total or 1))
@@ -736,7 +736,7 @@ class ExportTabWidget(QWidget):
                 try:
                     ptr.setsize(overlay_img.sizeInBytes())
                 except:
-                    pass
+                    _om_record_ignored_exception(__name__, 739)
                 arr_rgba = np.array(ptr).reshape((ys, xs, 4))
                 
                 if np.max(arr_rgba[:, :, 3]) == 0:
@@ -1059,7 +1059,7 @@ class ExportTabWidget(QWidget):
                 try:
                     os.remove(tmp_rgb_path)
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 1062)
 
     @staticmethod
     def _gdal_process_worker(args):
@@ -1394,7 +1394,7 @@ class ExportTabWidget(QWidget):
                 ds_tmp = None
                 
                 try: os.remove(target_path)
-                except: pass
+                except: _om_record_ignored_exception(__name__, 1397)
 
                 if format_val in ["TIF＋TFW", "JPG＋JGW"]:
                     if ExportTabWidget._static_cancel_requested(cancel_event):
@@ -1409,7 +1409,7 @@ class ExportTabWidget(QWidget):
                         if format_val == "GeoTIFF":
                             ds_update.SetProjection(crs_wkt)
                         ds_update.FlushCache()
-                    except: pass
+                    except: _om_record_ignored_exception(__name__, 1412)
                     ds_update = None
                     
                 if need_solid_check and format_val != "TFWのみ" and os.path.exists(out_path):
@@ -1426,7 +1426,7 @@ class ExportTabWidget(QWidget):
                         wf = os.path.splitext(out_path)[0] + ext_wf
                         if os.path.exists(wf): 
                             try: os.remove(wf)
-                            except: pass
+                            except: _om_record_ignored_exception(__name__, 1429)
                         return False, f"出力画像が全ピクセル指定色（{color_str}）になるためスキップ"
 
                 return True, "出力成功"
@@ -1445,7 +1445,7 @@ class ExportTabWidget(QWidget):
                 tmp_file = out_path + ext
                 if os.path.exists(tmp_file):
                     try: os.remove(tmp_file)
-                    except: pass
+                    except: _om_record_ignored_exception(__name__, 1448)
             if old_pam_enabled is None:
                 gdal.SetConfigOption('GDAL_PAM_ENABLED', None)
             else:
@@ -1518,7 +1518,7 @@ class ExportTabWidget(QWidget):
                     text = os.path.normpath(os.path.join(base_dir, text))
                 paths.append(text)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 1521)
         return paths
 
     def _collect_source_resolutions(self, path, visited=None):
@@ -1707,10 +1707,10 @@ class ExportTabWidget(QWidget):
                 if ds_info.RasterCount > 0:
                     src_datatype = ds_info.GetRasterBand(1).DataType
                 ds_info = None
-        except: pass
+        except: _om_record_ignored_exception(__name__, 1710)
         finally:
             try: os.remove(temp_info_vrt)
-            except: pass
+            except: _om_record_ignored_exception(__name__, 1713)
 
         if src_gt is None:
             src_gt = (0, 1, 0, 0, 0, -1)
@@ -2156,7 +2156,7 @@ class ExportTabWidget(QWidget):
                     os.remove(master_vrt_path)
                 if 'check_master_vrt_path' in locals() and 'check_master_vrt_should_remove' in locals() and check_master_vrt_should_remove and os.path.exists(check_master_vrt_path):
                     os.remove(check_master_vrt_path)
-            except: pass
+            except: _om_record_ignored_exception(__name__, 2159)
             finalize_sec = time.perf_counter() - finalize_start
              
             elapsed_time = time.time() - start_time

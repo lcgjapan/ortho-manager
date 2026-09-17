@@ -1,3 +1,4 @@
+from ..diagnostics import record_ignored_exception as _om_record_ignored_exception
 import math
 import os
 import time
@@ -47,7 +48,7 @@ class RrimTask(QgsTask):
                 if math.isfinite(float(nodata)):
                     mask |= np.isclose(array, float(nodata))
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 50)
         return mask
 
     def _local_mean_3x3(self, array):
@@ -347,7 +348,7 @@ class RrimToolWidget(QWidget):
                 if os.path.isdir(folder):
                     return folder
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 350)
         return ""
 
     def _home_dir(self):

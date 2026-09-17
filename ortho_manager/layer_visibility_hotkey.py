@@ -1,3 +1,4 @@
+from .diagnostics import record_ignored_exception as _om_record_ignored_exception
 from qgis.PyQt.QtCore import QObject, QEvent, Qt
 from qgis.PyQt.QtWidgets import (
     QApplication,
@@ -76,7 +77,7 @@ class LayerVisibilityHotkey(QObject):
             try:
                 app.removeEventFilter(self)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 79)
         self._installed = False
 
     def set_enabled(self, enabled):
@@ -120,7 +121,7 @@ class LayerVisibilityHotkey(QObject):
             if app.activeModalWidget() is not None:
                 return False
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 123)
         focus_widget = app.focusWidget()
         if focus_widget is None:
             return False
@@ -234,11 +235,11 @@ class LayerVisibilityHotkey(QObject):
             if canvas is not None:
                 canvas.refresh()
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 237)
         try:
             QgsProject.instance().layerTreeRoot().visibilityChanged.emit()
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 241)
 
     def _set_status(self, count, visible):
         dock = self.dock
@@ -250,4 +251,4 @@ class LayerVisibilityHotkey(QObject):
         try:
             dock.set_status(text)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 253)

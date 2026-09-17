@@ -1,3 +1,4 @@
+from .diagnostics import record_ignored_exception as _om_record_ignored_exception
 from .i18n import tr_text
 import os
 
@@ -243,12 +244,12 @@ class InspectionShortcutDialog(QDialog):
             if hasattr(editor, "setPlaceholderText"):
                 editor.setPlaceholderText(placeholder)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 246)
         try:
             for child in editor.findChildren(QLineEdit):
                 child.setPlaceholderText(placeholder)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 251)
 
     def restore_defaults(self):
         index = self.angle_snap_combo.findData(INSPECTION_ANGLE_SNAP_DEFAULT_DEGREES)
@@ -402,7 +403,7 @@ class QgisLayerImportDialog(QDialog):
             if self.owner and hasattr(self.owner, "qgis_layer_source_group_name"):
                 return self.owner.qgis_layer_source_group_name(layer)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 405)
         return ""
 
     def selected_layer_ids(self):

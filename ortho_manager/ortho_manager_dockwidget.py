@@ -1,11 +1,12 @@
+from .process_args import validated_process_args
+from .diagnostics import record_ignored_exception as _om_record_ignored_exception
 import os
 import json
-import xml.etree.ElementTree as ET
 from .safe_xml import parse_vrt_xml
 import time
 import shutil
 import hashlib
-import subprocess
+import subprocess  # nosec B404 # local GIS helpers use validated argument lists and shell=False.
 import re
 import struct
 import glob
@@ -221,7 +222,7 @@ class OrthoManagerDockWidget(QDockWidget):
             else:
                 gdal.SetConfigOption('GDAL_PAM_ENABLED', old_pam_enabled)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 224)
 
     def load_view_cache_setting(self):
         try:
@@ -278,12 +279,12 @@ class OrthoManagerDockWidget(QDockWidget):
             try:
                 QgsSettings().setValue("OrthoManager/view_cache_enabled", enabled)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 281)
         if hasattr(self, "vrt_tab"):
             try:
                 self.vrt_tab.update_view_cache_button(enabled)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 286)
         if show_status:
             self._set_status(tr_text("✅ ビューキャッシュ ON") if enabled else tr_text("ビューキャッシュ OFF"))
 
@@ -307,7 +308,7 @@ class OrthoManagerDockWidget(QDockWidget):
             self._custom_cache_registered_canvases.append(canvas)
             self._custom_cache_canvas_slots[canvas] = slot
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 310)
 
     def _disconnect_custom_cache_canvases(self):
         for canvas in list(self._custom_cache_registered_canvases):
@@ -316,7 +317,7 @@ class OrthoManagerDockWidget(QDockWidget):
                 if slot:
                     canvas.extentsChanged.disconnect(slot)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 319)
         self._custom_cache_registered_canvases = []
         self._custom_cache_canvas_slots = {}
 
@@ -335,7 +336,7 @@ class OrthoManagerDockWidget(QDockWidget):
                 try:
                     self.vrt_tab.update_custom_cache_button(enabled)
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 338)
             return
 
         self.custom_cache_enabled = enabled
@@ -361,7 +362,7 @@ class OrthoManagerDockWidget(QDockWidget):
                 try:
                     self._custom_cache_job.cancelWithoutBlocking()
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 364)
                 self._custom_cache_job = None
             self._disconnect_custom_cache_canvases()
             if self._custom_cache_restore_view_cache_enabled is not None:
@@ -373,12 +374,12 @@ class OrthoManagerDockWidget(QDockWidget):
             try:
                 QgsSettings().setValue("OrthoManager/custom_cache_enabled", enabled)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 376)
         if hasattr(self, "vrt_tab"):
             try:
                 self.vrt_tab.update_custom_cache_button(enabled)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 381)
         if show_status:
             self._set_status(tr_text("✅ 独自キャッシュ ON") if enabled else tr_text("独自キャッシュ OFF"))
 
@@ -400,7 +401,7 @@ class OrthoManagerDockWidget(QDockWidget):
             if self._mouse_pan_preview_timer and self._mouse_pan_preview_timer.isActive():
                 self._mouse_pan_preview_timer.stop()
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 403)
         self._mouse_pan_preview_pixmap = None
         self._mouse_pan_preview_margin = (0, 0)
         self._mouse_pan_preview_target_size = (0, 0)
@@ -420,7 +421,7 @@ class OrthoManagerDockWidget(QDockWidget):
             try:
                 self._mouse_pan_preview_job.cancelWithoutBlocking()
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 423)
             self._mouse_pan_preview_job = None
 
         self._mouse_pan_snapshot_pixmap = None
@@ -432,13 +433,13 @@ class OrthoManagerDockWidget(QDockWidget):
         try:
             self._hide_screen_shield_overlay()
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 435)
 
         try:
             if self._custom_cache_timer and self._custom_cache_timer.isActive():
                 self._custom_cache_timer.stop()
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 441)
         self._custom_cache_pending = False
         self._custom_cache_last_key = None
         self._custom_cache_canvas = None
@@ -450,7 +451,7 @@ class OrthoManagerDockWidget(QDockWidget):
             try:
                 self._custom_cache_job.cancelWithoutBlocking()
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 453)
             self._custom_cache_job = None
 
         if refresh:
@@ -459,11 +460,11 @@ class OrthoManagerDockWidget(QDockWidget):
                     if hasattr(canvas, "clearCache"):
                         canvas.clearCache()
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 462)
                 try:
                     canvas.refresh()
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 466)
             QApplication.processEvents()
         if schedule_prefetch and self.custom_cache_enabled:
             QTimer.singleShot(250, self._schedule_custom_cache_prefetch)
@@ -480,28 +481,28 @@ class OrthoManagerDockWidget(QDockWidget):
                         if provider and hasattr(provider, "reloadData"):
                             provider.reloadData()
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 483)
                 try:
                     if hasattr(layer, "triggerRepaint"):
                         layer.triggerRepaint()
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 488)
         for canvas in self._map_canvases():
             try:
                 if hasattr(canvas, "cancelJobs"):
                     canvas.cancelJobs()
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 494)
             try:
                 if hasattr(canvas, "clearCache"):
                     canvas.clearCache()
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 499)
             try:
                 if hasattr(canvas, "redrawAllLayers"):
                     canvas.redrawAllLayers()
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 504)
             try:
                 if hasattr(canvas, "refreshAllLayers"):
                     canvas.refreshAllLayers()
@@ -511,7 +512,7 @@ class OrthoManagerDockWidget(QDockWidget):
                 try:
                     canvas.refresh()
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 514)
         QApplication.processEvents()
         if schedule_prefetch and self.custom_cache_enabled:
             QTimer.singleShot(250, self._schedule_custom_cache_prefetch)
@@ -521,12 +522,12 @@ class OrthoManagerDockWidget(QDockWidget):
             if hasattr(self, "inspection_tab"):
                 self.inspection_tab.cleanup_before_unload()
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 524)
         try:
             if self.layer_lock_manager is not None:
                 self.layer_lock_manager.cleanup()
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 529)
         try:
             self.custom_cache_enabled = False
             self._disconnect_custom_cache_canvases()
@@ -535,20 +536,20 @@ class OrthoManagerDockWidget(QDockWidget):
                 try:
                     self._custom_cache_timer.stop()
                 except RuntimeError:
-                    pass
+                    _om_record_ignored_exception(__name__, 538)
                 self._custom_cache_timer = None
             if self._custom_cache_job:
                 try:
                     self._custom_cache_job.cancelWithoutBlocking()
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 544)
             self._custom_cache_job = None
             self._custom_cache_job_canvas = None
             self._custom_cache_job_layer = None
             self._custom_cache_job_extent = None
             self._custom_cache_job_map_to_pixel = None
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 551)
 
     def _is_vrt_raster_visible_now(self, vrt_layer, canvas=None):
         if not vrt_layer:
@@ -558,7 +559,7 @@ class OrthoManagerDockWidget(QDockWidget):
             if node and not node.isVisible():
                 return False
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 561)
         try:
             active_canvas = canvas or self.iface.mapCanvas()
             scale = active_canvas.scale()
@@ -573,7 +574,7 @@ class OrthoManagerDockWidget(QDockWidget):
                 if max_scale and scale < max_scale:
                     return False
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 576)
         try:
             active_canvas = canvas or self.iface.mapCanvas()
             return vrt_layer.extent().intersects(active_canvas.extent())
@@ -602,7 +603,7 @@ class OrthoManagerDockWidget(QDockWidget):
             if self._is_canvas_alive(canvas):
                 return canvas
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 605)
         return None
 
     def _expanded_extent_for_custom_cache(self, overlay_layer, canvas_extent):
@@ -650,7 +651,7 @@ class OrthoManagerDockWidget(QDockWidget):
             if layer_extent and not layer_extent.isEmpty():
                 expanded = expanded.intersect(layer_extent)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 653)
         return expanded
 
     def _run_custom_cache_prefetch(self):
@@ -764,12 +765,12 @@ class OrthoManagerDockWidget(QDockWidget):
             try:
                 QgsSettings().setValue("OrthoManager/screen_shield_enabled", enabled)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 767)
         if hasattr(self, "vrt_tab"):
             try:
                 self.vrt_tab.update_screen_shield_button(enabled)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 772)
         if show_status:
             self._set_status(tr_text("✅ 画面シールド ON") if enabled else tr_text("画面シールド OFF"))
 
@@ -840,12 +841,12 @@ class OrthoManagerDockWidget(QDockWidget):
                 QgsSettings().setValue("OrthoManager/mouse_shield_enabled", enabled)
                 QgsSettings().setValue("OrthoManager/mouse_shield_scale", self.mouse_shield_scale)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 843)
         if hasattr(self, "vrt_tab"):
             try:
                 self.vrt_tab.update_mouse_shield_controls(self.mouse_shield_enabled, self.mouse_shield_scale)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 848)
         if show_status:
             self._set_status(
                 tr_text(f"✅ マウスシールド {self.mouse_shield_scale}x ON")
@@ -860,13 +861,13 @@ class OrthoManagerDockWidget(QDockWidget):
                 if canvas and canvas not in canvases:
                     canvases.append(canvas)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 863)
         try:
             canvas = self.iface.mapCanvas()
             if canvas and canvas not in canvases:
                 canvases.append(canvas)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 869)
         return canvases
 
     def _canvas_from_event_object(self, obj):
@@ -875,7 +876,7 @@ class OrthoManagerDockWidget(QDockWidget):
                 if obj is canvas or obj is canvas.viewport():
                     return canvas
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 878)
         return None
 
     def _mouse_diag_log(self, message, level=Qgis.MessageLevel.Info):
@@ -905,7 +906,7 @@ class OrthoManagerDockWidget(QDockWidget):
                 method = getattr(canvas, method_name)
                 parts.append(f"{label}={method()}")
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 908)
         try:
             layer = self._get_vrt_layer(self.current_vrt_name)
             if layer:
@@ -914,7 +915,7 @@ class OrthoManagerDockWidget(QDockWidget):
                 if cache and hasattr(cache, "hasCacheImage"):
                     parts.append(f"layer_cache={cache.hasCacheImage(layer.id())}")
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 917)
         parts.append(self._mouse_diag_extent_text(canvas))
         return " ".join(parts)
 
@@ -934,7 +935,7 @@ class OrthoManagerDockWidget(QDockWidget):
                 signal.connect(slot)
                 slots.append((signal, slot))
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 937)
         if slots:
             self._mouse_diag_canvas_slots[canvas] = slots
 
@@ -944,7 +945,7 @@ class OrthoManagerDockWidget(QDockWidget):
                 try:
                     signal.disconnect(slot)
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 947)
         self._mouse_diag_canvas_slots = {}
         self._mouse_diag_render_start_sec = {}
 
@@ -964,12 +965,12 @@ class OrthoManagerDockWidget(QDockWidget):
             if self._mouse_pan_preview_timer:
                 self._mouse_pan_preview_timer.stop()
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 967)
         try:
             if self._mouse_pan_preview_job and self._mouse_pan_preview_job.isActive():
                 self._mouse_pan_preview_job.cancelWithoutBlocking()
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 972)
         self._mouse_pan_preview_job = None
         self._mouse_pan_preview_job_canvas = None
         self._mouse_pan_preview_job_target = None
@@ -1006,7 +1007,7 @@ class OrthoManagerDockWidget(QDockWidget):
                     if self._mouse_pan_preview_job and self._mouse_pan_preview_job.isActive():
                         self._mouse_pan_preview_job.cancelWithoutBlocking()
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 1009)
                 self._queue_mouse_pan_wide_preview(canvas, delay_ms=120)
         now = time.perf_counter()
         if not self._mouse_pan_light_active and now - self._mouse_diag_last_extent_log_sec < 0.4:
@@ -1064,7 +1065,7 @@ class OrthoManagerDockWidget(QDockWidget):
             if self.mouse_shield_enabled:
                 self._connect_mouse_diag_canvas(canvas)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 1067)
 
     def _update_canvas_refresh_timer(self):
         should_run = self.screen_shield_enabled or self.mouse_shield_enabled or self.view_cache_enabled or self.custom_cache_enabled
@@ -1103,18 +1104,18 @@ class OrthoManagerDockWidget(QDockWidget):
             try:
                 self._screen_shield_canvas_timer.stop()
             except RuntimeError:
-                pass
+                _om_record_ignored_exception(__name__, 1106)
             for map_canvas in list(self._screen_shield_registered_canvases):
                 try:
                     map_canvas.removeEventFilter(self)
                     if map_canvas.viewport():
                         map_canvas.viewport().removeEventFilter(self)
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 1113)
             self._screen_shield_registered_canvases = []
             self._disconnect_mouse_diag_canvases()
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 1117)
         self._screen_shield_event_filter_installed = False
 
     def _should_screen_shield_for_key(self, event, canvas):
@@ -1151,7 +1152,7 @@ class OrthoManagerDockWidget(QDockWidget):
             if hasattr(canvas, "setMapUpdateInterval"):
                 canvas.setMapUpdateInterval(20)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 1154)
 
     def _restore_mouse_pan_light_mode(self, canvas=None):
         targets = [canvas] if canvas else list(self._mouse_pan_light_canvas_settings.keys())
@@ -1170,7 +1171,7 @@ class OrthoManagerDockWidget(QDockWidget):
                     target.setMapUpdateInterval(int(settings.get("update_interval")))
                 QTimer.singleShot(60, target.refresh)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 1173)
 
     def _mouse_event_xy(self, event):
         try:
@@ -1205,12 +1206,12 @@ class OrthoManagerDockWidget(QDockWidget):
             try:
                 QgsSettings().setValue("OrthoManager/mouse_shield_scale", self.mouse_shield_scale)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 1208)
         if hasattr(self, "vrt_tab"):
             try:
                 self.vrt_tab.update_mouse_shield_controls(self.mouse_shield_enabled, self.mouse_shield_scale)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 1213)
         if show_status:
             self._set_status(tr_text(f"マウスシールド倍率 {self.mouse_shield_scale}x"))
 
@@ -1683,7 +1684,7 @@ class OrthoManagerDockWidget(QDockWidget):
                 label.hide()
                 label.clear()
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 1686)
 
     def _clean_tif_list_unique_names(self, tif_list):
         cleaned = []
@@ -1930,7 +1931,7 @@ class OrthoManagerDockWidget(QDockWidget):
                 try:
                     self._save_qml(vrt_layer, old_vrt_path, overlay_layer)
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 1933)
             if should_reload:
                 self._disconnect_scale_signal(old_display)
                 self._remove_vrt_group(old_display)
@@ -1951,7 +1952,7 @@ class OrthoManagerDockWidget(QDockWidget):
                         if os.path.exists(dst) and not os.path.exists(src):
                             os.rename(dst, src)
                     except Exception:
-                        pass
+                        _om_record_ignored_exception(__name__, 1954)
                 if should_reload and os.path.exists(old_vrt_path):
                     self._load_vrt_with_overlay(
                         old_vrt_path, old_display,
@@ -2043,7 +2044,7 @@ class OrthoManagerDockWidget(QDockWidget):
                         if os.path.exists(dst) and not os.path.exists(src):
                             os.rename(dst, src)
                     except Exception:
-                        pass
+                        _om_record_ignored_exception(__name__, 2046)
                 if should_reload and os.path.exists(old_vpc_path):
                     self._load_vpc_layer(old_vpc_path, old_display, insert_index=group_index)
                 return False, "rename_failed", str(e)
@@ -2261,7 +2262,7 @@ class OrthoManagerDockWidget(QDockWidget):
         try:
             progress_callback(percent, message)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 2264)
 
     def _log_vpc_verbose(self, message):
         if not getattr(self, "_vpc_verbose_logs_enabled", False):
@@ -2684,7 +2685,7 @@ class OrthoManagerDockWidget(QDockWidget):
             startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
             kwargs["startupinfo"] = startupinfo
             kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        return subprocess.run(args, **kwargs)
+        return subprocess.run(validated_process_args(args), **kwargs)  # nosec B603 # validated argv; shell=False in kwargs.
 
     def _query_subst_mappings(self):
         return {}
@@ -2700,7 +2701,7 @@ class OrthoManagerDockWidget(QDockWidget):
     def _vpc_cache_dir(self, output_path):
         output_path = os.path.normpath(os.path.abspath(str(output_path or "")))
         base_dir = os.path.dirname(output_path) or os.getcwd()
-        key = hashlib.sha1(os.path.normcase(output_path).encode("utf-8", "ignore")).hexdigest()[:16]
+        key = hashlib.sha1(os.path.normcase(output_path).encode("utf-8", "ignore"), usedforsecurity=False).hexdigest()[:16]
         cache_dir = os.path.join(base_dir, "_ortho_manager_vpc_work", key)
         os.makedirs(cache_dir, exist_ok=True)
         return cache_dir
@@ -2830,7 +2831,7 @@ class OrthoManagerDockWidget(QDockWidget):
                 common = os.path.dirname(common)
             candidates.append(common)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 2833)
         candidates.append(None)
 
         path_pairs = [(input_path, output_path)]
@@ -2862,7 +2863,7 @@ class OrthoManagerDockWidget(QDockWidget):
         output_path = os.path.normpath(os.path.abspath(str(output_path)))
         cache_root = self._copc_cache_root_for_vpc(output_path)
         os.makedirs(cache_root, exist_ok=True)
-        key = hashlib.sha1(os.path.normcase(source_path).encode("utf-8", "ignore")).hexdigest()[:12]
+        key = hashlib.sha1(os.path.normcase(source_path).encode("utf-8", "ignore"), usedforsecurity=False).hexdigest()[:12]
         stem = self._safe_ascii_file_stem(os.path.splitext(os.path.basename(source_path))[0])
         return cache_root, stem, key
 
@@ -2892,7 +2893,7 @@ class OrthoManagerDockWidget(QDockWidget):
             try:
                 paths.extend(glob.glob(pattern))
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 2895)
         paths.append(self._copc_cache_path_for_source(source_path, output_path))
         unique = []
         seen = set()
@@ -3005,7 +3006,7 @@ class OrthoManagerDockWidget(QDockWidget):
             record["mtime"] = float(stat.st_mtime)
             record["mtime_ns"] = int(getattr(stat, "st_mtime_ns", int(stat.st_mtime * 1000000000)))
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 3008)
         point_count = self._las_point_count(source_path)
         if point_count is not None:
             record["point_count"] = int(point_count)
@@ -3107,7 +3108,7 @@ class OrthoManagerDockWidget(QDockWidget):
 
     def _ascii_qgis_index_work_dir(self, copc_path):
         copc_path = os.path.normpath(os.path.abspath(str(copc_path or "")))
-        key = hashlib.sha1(os.path.normcase(copc_path).encode("utf-8", "ignore")).hexdigest()[:16]
+        key = hashlib.sha1(os.path.normcase(copc_path).encode("utf-8", "ignore"), usedforsecurity=False).hexdigest()[:16]
         folder = os.path.dirname(copc_path)
         candidates = []
         while folder:
@@ -3125,7 +3126,7 @@ class OrthoManagerDockWidget(QDockWidget):
                 os.makedirs(work_dir, exist_ok=True)
                 return work_dir
             except Exception:
-                continue
+                _om_record_ignored_exception(__name__, 3128); continue
         return ""
 
     def _point_cloud_index_layer_options(self):
@@ -3146,12 +3147,12 @@ class OrthoManagerDockWidget(QDockWidget):
             if hasattr(options, "skipIndexGeneration"):
                 options.skipIndexGeneration = False
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 3149)
         try:
             if hasattr(options, "skipStatisticsCalculation"):
                 options.skipStatisticsCalculation = True
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 3154)
         return options
 
     def _point_cloud_layer_error_text(self, layer):
@@ -3250,7 +3251,7 @@ class OrthoManagerDockWidget(QDockWidget):
                     try:
                         layer.setName(layer_name)
                     except Exception:
-                        pass
+                        _om_record_ignored_exception(__name__, 3253)
                     errors.append(f"sublayer ok provider={provider_key} type={layer_type} uri={uri}")
                     return layer
                 detail_text = self._point_cloud_layer_error_text(layer) if layer else ""
@@ -3331,7 +3332,7 @@ class OrthoManagerDockWidget(QDockWidget):
                 if made_link and os.path.exists(temp_source):
                     os.remove(temp_source)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 3334)
             return False, f"hardlink failed: {e}"
 
         try:
@@ -3403,7 +3404,7 @@ class OrthoManagerDockWidget(QDockWidget):
                     QgsProject.instance().removeMapLayer(added_project_layer_id)
                     added_project_layer_id = ""
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 3406)
             provider = None
             layer = None
             for _ in range(5):
@@ -3470,7 +3471,7 @@ class OrthoManagerDockWidget(QDockWidget):
                     QgsProject.instance().removeMapLayer(added_project_layer_id)
                     QApplication.processEvents()
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 3473)
             provider = None
             layer = None
             try:
@@ -3488,7 +3489,7 @@ class OrthoManagerDockWidget(QDockWidget):
                 self._cleanup_vpc_work_dir(work_parent, label="VPC_QGIS_INDEX_ASCII_WORK")
                 self._cleanup_empty_vpc_work_parent(ascii_parent, "_ortho_manager_vpc_work_ascii")
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 3491)
 
     def _prepare_qgis_copc_index_job(self, source_path, copc_path):
         point_cloud_cls = self._point_cloud_layer_class()
@@ -3598,7 +3599,7 @@ class OrthoManagerDockWidget(QDockWidget):
                 if made_link and os.path.exists(temp_source):
                     os.remove(temp_source)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 3601)
             self._cleanup_qgis_copc_index_job(job)
             return None, str(e)
 
@@ -3632,7 +3633,7 @@ class OrthoManagerDockWidget(QDockWidget):
                 QgsProject.instance().removeMapLayer(job["added_project_layer_id"])
                 job["added_project_layer_id"] = ""
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 3635)
         job["provider"] = None
         job["layer"] = None
         for _ in range(5):
@@ -3652,7 +3653,7 @@ class OrthoManagerDockWidget(QDockWidget):
                 QgsProject.instance().removeMapLayer(added_project_layer_id)
                 QApplication.processEvents()
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 3655)
             job["added_project_layer_id"] = ""
         job["provider"] = None
         job["layer"] = None
@@ -3673,7 +3674,7 @@ class OrthoManagerDockWidget(QDockWidget):
             self._cleanup_vpc_work_dir(work_parent, label="VPC_QGIS_INDEX_ASCII_WORK")
             self._cleanup_empty_vpc_work_parent(ascii_parent, "_ortho_manager_vpc_work_ascii")
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 3676)
 
     def _finish_qgis_copc_index_job(self, job, route_prefix="parallel"):
         source_path = job["source_path"]
@@ -4038,7 +4039,7 @@ if __name__ == "__main__":
                 if os.path.exists(path):
                     os.remove(path)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 4041)
 
         return {
             "entry": entry,
@@ -4061,7 +4062,7 @@ if __name__ == "__main__":
                 if os.path.exists(path):
                     os.remove(path)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 4064)
         manifest = {
             "results_path": results_path,
             "jobs": [
@@ -4096,7 +4097,7 @@ if __name__ == "__main__":
             kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         try:
             started = time.perf_counter()
-            proc = subprocess.Popen(args, **kwargs)
+            proc = subprocess.Popen(validated_process_args(args), **kwargs)  # nosec B603 # validated argv; shell=False in kwargs.
             return {
                 "process": proc,
                 "jobs": jobs,
@@ -4118,7 +4119,7 @@ if __name__ == "__main__":
                 if path and os.path.exists(path):
                     os.remove(path)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 4121)
         try:
             qgis_work_dir = job.get("qgis_work_dir", "") if job else ""
             work_parent = os.path.dirname(qgis_work_dir)
@@ -4126,7 +4127,7 @@ if __name__ == "__main__":
             self._cleanup_vpc_work_dir(work_parent, label="VPC_QGIS_EXTERNAL_WORK")
             self._cleanup_empty_vpc_work_parent(ascii_parent, "_ortho_manager_vpc_work_ascii")
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 4129)
 
     def _read_qgis_external_copc_worker_results(self, results_path):
         worker_results = {}
@@ -4186,7 +4187,7 @@ if __name__ == "__main__":
                         if os.path.exists(copc_path):
                             os.remove(copc_path)
                     except Exception:
-                        pass
+                        _om_record_ignored_exception(__name__, 4189)
                     results[copc_path] = (False, "worker scale/offset mismatch")
                     continue
                 if not self._copc_matches_source_point_count(source_path, copc_path):
@@ -4194,7 +4195,7 @@ if __name__ == "__main__":
                         if os.path.exists(copc_path):
                             os.remove(copc_path)
                     except Exception:
-                        pass
+                        _om_record_ignored_exception(__name__, 4197)
                     results[copc_path] = (False, "worker point count mismatch")
                     continue
                 size = os.path.getsize(copc_path)
@@ -4356,7 +4357,7 @@ if __name__ == "__main__":
                             try:
                                 proc.kill()
                             except Exception:
-                                pass
+                                _om_record_ignored_exception(__name__, 4359)
                             results.update(self._finish_qgis_external_copc_worker_group(group))
                         else:
                             next_active.append(group)
@@ -4373,7 +4374,7 @@ if __name__ == "__main__":
                     if group["process"].poll() is None:
                         group["process"].kill()
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 4376)
                 for job in group.get("jobs", []):
                     self._cleanup_qgis_external_copc_worker_job(job)
             for job in waiting_jobs:
@@ -4458,11 +4459,11 @@ if __name__ == "__main__":
             if source_drive and work_drive and source_drive != work_drive:
                 return ""
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 4461)
         ext = os.path.splitext(source_path)[1].lower()
         if ext not in (".las", ".laz"):
             ext = ".las"
-        key = hashlib.sha1(os.path.normcase(source_path).encode("utf-8", "ignore")).hexdigest()[:12]
+        key = hashlib.sha1(os.path.normcase(source_path).encode("utf-8", "ignore"), usedforsecurity=False).hexdigest()[:12]
         link_dir = os.path.join(work_dir, "pdal_ascii")
         link_path = os.path.join(link_dir, f"src_{key}{ext}")
         try:
@@ -4472,7 +4473,7 @@ if __name__ == "__main__":
                     if os.path.getsize(link_path) == os.path.getsize(source_path):
                         return link_path
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 4475)
                 os.remove(link_path)
             os.link(source_path, link_path)
             return link_path
@@ -4508,7 +4509,7 @@ if __name__ == "__main__":
             if os.path.isdir(folder) and not os.listdir(folder):
                 os.rmdir(folder)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 4511)
 
     def _ensure_copc_sources_for_vpc(
         self,
@@ -4702,7 +4703,7 @@ if __name__ == "__main__":
                         if os.path.exists(copc_path):
                             os.remove(copc_path)
                     except Exception:
-                        pass
+                        _om_record_ignored_exception(__name__, 4705)
                 elif not self._copc_matches_source_scale_offset(original_path, copc_path):
                     errors.append("qgis_index scale/offset mismatch")
                     QgsMessageLog.logMessage(
@@ -4714,7 +4715,7 @@ if __name__ == "__main__":
                         if os.path.exists(copc_path):
                             os.remove(copc_path)
                     except Exception:
-                        pass
+                        _om_record_ignored_exception(__name__, 4717)
                 elif not self._copc_matches_source_point_count(original_path, copc_path):
                     errors.append("qgis_index point count mismatch")
                     QgsMessageLog.logMessage(
@@ -4726,7 +4727,7 @@ if __name__ == "__main__":
                         if os.path.exists(copc_path):
                             os.remove(copc_path)
                     except Exception:
-                        pass
+                        _om_record_ignored_exception(__name__, 4729)
                 if qgis_ok and os.path.exists(copc_path):
                     creation_route = qgis_route_name
                 ascii_link = ""
@@ -4738,7 +4739,7 @@ if __name__ == "__main__":
                         if os.path.exists(temp_copc_path):
                             os.remove(temp_copc_path)
                     except Exception:
-                        pass
+                        _om_record_ignored_exception(__name__, 4741)
                     if not os.path.exists(copc_path):
                         result = self._run_hidden_process(
                             [pdal_path, "translate", os.path.basename(ascii_link), os.path.basename(temp_copc_path), *scale_offset_options],
@@ -4756,7 +4757,7 @@ if __name__ == "__main__":
                                 try:
                                     os.remove(temp_copc_path)
                                 except Exception:
-                                    pass
+                                    _om_record_ignored_exception(__name__, 4759)
                         else:
                             detail = (result.stderr or result.stdout or "").strip()
                             errors.append(f"ascii_work cwd={os.path.dirname(ascii_link)} error={detail}")
@@ -4772,7 +4773,7 @@ if __name__ == "__main__":
                         if os.path.exists(copc_path):
                             os.remove(copc_path)
                     except Exception:
-                        pass
+                        _om_record_ignored_exception(__name__, 4775)
                     result = self._run_hidden_process([pdal_path, "translate", input_arg, output_arg, *scale_offset_options], cwd=cwd)
                     if result.returncode == 0 and os.path.exists(copc_path):
                         creation_route = f"pdal_attempt_{index}"
@@ -4854,7 +4855,7 @@ if __name__ == "__main__":
                         if os.path.getsize(link_path) == os.path.getsize(source_path):
                             continue
                     except Exception:
-                        pass
+                        _om_record_ignored_exception(__name__, 4857)
                     os.remove(link_path)
                 os.link(source_path, link_path)
             except Exception as e:
@@ -4871,7 +4872,7 @@ if __name__ == "__main__":
 
     def _ascii_vpc_build_dir(self, runtime_output_path):
         runtime_output_path = os.path.normpath(os.path.abspath(str(runtime_output_path or "")))
-        key = hashlib.sha1(os.path.normcase(runtime_output_path).encode("utf-8", "ignore")).hexdigest()[:16]
+        key = hashlib.sha1(os.path.normcase(runtime_output_path).encode("utf-8", "ignore"), usedforsecurity=False).hexdigest()[:16]
         folder = os.path.dirname(runtime_output_path)
         candidates = []
         while folder:
@@ -4889,7 +4890,7 @@ if __name__ == "__main__":
                 os.makedirs(build_dir, exist_ok=True)
                 return build_dir
             except Exception:
-                continue
+                _om_record_ignored_exception(__name__, 4892); continue
         return ""
 
     def _normalize_vpc_asset_hrefs(self, vpc_path):
@@ -4930,7 +4931,7 @@ if __name__ == "__main__":
                 if os.path.exists(temp_path):
                     os.remove(temp_path)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 4933)
             raise
 
     def _build_vpc_with_pdal_wrench(self, processing_sources, runtime_output_path, work_dir=None, reference_output_path=None):
@@ -5010,7 +5011,7 @@ if __name__ == "__main__":
                         if getattr(lyr, "type", lambda: None)() != getattr(Qgis.LayerType, "PointCloud", object()):
                             continue
                     except Exception:
-                        continue
+                        _om_record_ignored_exception(__name__, 5013); continue
                 elif not isinstance(lyr, point_cloud_cls):
                     continue
                 try:
@@ -5029,7 +5030,7 @@ if __name__ == "__main__":
                         if getattr(lyr, "type", lambda: None)() == getattr(Qgis.LayerType, "PointCloud", object()):
                             return lyr
                     except Exception:
-                        pass
+                        _om_record_ignored_exception(__name__, 5032)
                 elif isinstance(lyr, point_cloud_cls):
                     return lyr
         return None
@@ -5184,7 +5185,7 @@ if __name__ == "__main__":
         output_dir = os.path.dirname(output_path)
         output_base = os.path.splitext(os.path.basename(output_path))[0] or "layer"
         runtime_base = self._safe_ascii_file_stem(output_base, fallback="vpc")
-        runtime_key = hashlib.sha1(os.path.normcase(output_path).encode("utf-8", "ignore")).hexdigest()[:8]
+        runtime_key = hashlib.sha1(os.path.normcase(output_path).encode("utf-8", "ignore"), usedforsecurity=False).hexdigest()[:8]
         runtime_output_path = os.path.join(output_dir, f".{runtime_base}_{runtime_key}_build.vpc")
         work_dir = self._vpc_cache_dir(output_path)
 
@@ -5218,7 +5219,7 @@ if __name__ == "__main__":
                 if os.path.exists(runtime_output_path):
                     os.remove(runtime_output_path)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 5221)
             self._log_vpc_verbose(
                 f"VPC_BUILD_DONE mode={build_mode} output={output_path} count={len(source_list)} subst_count={len(subst_mappings)} copc_saved={len(saved_copc_source_list)} work_dir={work_dir}"
             )
@@ -5356,7 +5357,7 @@ if __name__ == "__main__":
                     try:
                         QgsProject.instance().removeMapLayers(registered_ids)
                     except Exception:
-                        pass
+                        _om_record_ignored_exception(__name__, 5359)
         detail = "\n".join(errors[-4:]) if errors else "原因不明"
         raise RuntimeError(f"QGISのVPC作成処理が失敗しました。\n\n{detail}")
 
@@ -5483,7 +5484,7 @@ if __name__ == "__main__":
             try:
                 group.setCustomProperty(self.GROUP_CRS_PROPERTY, crs.authid())
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 5486)
         if crs.isValid():
             vrt_layer = self._get_vrt_layer(name)
             overlay_layer = self._get_overlay_layer(name)
@@ -5493,7 +5494,7 @@ if __name__ == "__main__":
                 if overlay_layer:
                     overlay_layer.setCrs(crs)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 5496)
 
     def _restore_vpc_group_crs_property(self, name):
         group = self._find_vpc_group(name)
@@ -5502,7 +5503,7 @@ if __name__ == "__main__":
             try:
                 group.setCustomProperty(self.GROUP_CRS_PROPERTY, crs.authid())
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 5505)
         if crs.isValid():
             vpc_layer = self._get_vpc_layer(name)
             overlay_layer = self._get_vpc_overlay_layer(name)
@@ -5512,7 +5513,7 @@ if __name__ == "__main__":
                 if overlay_layer and not self._layer_has_valid_crs(overlay_layer):
                     overlay_layer.setCrs(crs)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 5515)
 
     def _maybe_set_project_crs_from_vrt(self, crs):
         if not crs or not crs.isValid():
@@ -5556,7 +5557,7 @@ if __name__ == "__main__":
             try:
                 group.setCustomProperty(self.GROUP_CRS_PROPERTY, crs.authid())
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 5559)
 
         vrt_layer = self._get_vrt_layer(name)
         overlay_layer = self._get_overlay_layer(name)
@@ -5594,7 +5595,7 @@ if __name__ == "__main__":
             try:
                 group.setCustomProperty(self.GROUP_CRS_PROPERTY, crs.authid())
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 5597)
 
         vpc_layer = self._get_vpc_layer(name)
         overlay_layer = self._get_vpc_overlay_layer(name)
@@ -5619,7 +5620,7 @@ if __name__ == "__main__":
                 try:
                     dialog.setCrs(initial_crs)
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 5622)
             if dialog.exec() != QDialog.DialogCode.Accepted:
                 return None
             crs = dialog.crs()
@@ -5638,7 +5639,7 @@ if __name__ == "__main__":
                 try:
                     dialog.setCrs(initial_crs)
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 5641)
             if dialog.exec() != QDialog.DialogCode.Accepted:
                 return None
             crs = dialog.crs()
@@ -5734,7 +5735,7 @@ if __name__ == "__main__":
                     cleaned, dup_paths, dup_names = self._clean_tif_list_unique_names(tif_list)
                     self._warn_if_tif_duplicates_removed(os.path.basename(vrt_path), dup_paths, dup_names)
                     return cleaned
-        except: pass
+        except: _om_record_ignored_exception(__name__, 5737)
         return []
 
     def _path_key(self, path):
@@ -5805,7 +5806,7 @@ if __name__ == "__main__":
         overlay_layer.updateExtents()
         if hasattr(overlay_layer, "dataProvider") and overlay_layer.dataProvider():
             try: overlay_layer.dataProvider().reloadData()
-            except: pass
+            except: _om_record_ignored_exception(__name__, 5808)
         overlay_layer.triggerRepaint()
         return len(fids)
 
@@ -5843,18 +5844,18 @@ if __name__ == "__main__":
             state["min_scale"] = vrt_layer.minimumScale()
             state["max_scale"] = vrt_layer.maximumScale()
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 5846)
 
         try:
             if old_node and hasattr(old_node, "itemVisibilityChecked"):
                 state["visible"] = old_node.itemVisibilityChecked()
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 5852)
 
         try:
             vrt_layer.saveNamedStyle(os.path.splitext(vrt_path)[0] + ".qml")
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 5857)
 
         self._disconnect_scale_signal(display_name)
         QgsProject.instance().removeMapLayer(vrt_layer.id())
@@ -5876,7 +5877,7 @@ if __name__ == "__main__":
             if os.path.exists(qml_path):
                 new_layer.loadNamedStyle(qml_path)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 5879)
 
         try:
             saved_crs = state.get("crs")
@@ -5886,7 +5887,7 @@ if __name__ == "__main__":
             new_layer.setMinimumScale(state.get("min_scale", 0))
             new_layer.setMaximumScale(state.get("max_scale", 0))
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 5889)
 
         try:
             from qgis.core import QgsRasterDataProvider
@@ -5895,7 +5896,7 @@ if __name__ == "__main__":
                 provider.setZoomedInResamplingMethod(QgsRasterDataProvider.ResamplingMethod.Nearest)
                 provider.setZoomedOutResamplingMethod(QgsRasterDataProvider.ResamplingMethod.Nearest)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 5898)
 
         root = QgsProject.instance().layerTreeRoot()
         parent = None
@@ -5914,14 +5915,14 @@ if __name__ == "__main__":
             if state.get("visible") is not None and hasattr(new_node, "setItemVisibilityChecked"):
                 new_node.setItemVisibilityChecked(state["visible"])
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 5917)
 
         self._connect_scale_signal(new_layer, overlay_layer)
         self._connect_property_changed(new_layer, vrt_path, overlay_layer)
         try:
             new_layer.triggerRepaint()
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 5924)
         self._restore_gdal_pam(gdal, old_pam_enabled)
         return new_layer
 
@@ -5980,13 +5981,13 @@ if __name__ == "__main__":
                     saved_crs = vrt_layer.crs()
                     vrt_layer.saveNamedStyle(os.path.splitext(vrt_path)[0] + ".qml")
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 5983)
             if overlay_layer:
                 try:
                     saved_overlay_crs = overlay_layer.crs()
                     overlay_layer.saveNamedStyle(os.path.splitext(vrt_path)[0] + "_overlay.qml")
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 5989)
             if not (saved_crs and saved_crs.isValid()):
                 saved_crs, saved_overlay_crs_from_json = self._load_crs_json(vrt_path)
                 if not (saved_overlay_crs and saved_overlay_crs.isValid()):
@@ -6050,13 +6051,13 @@ if __name__ == "__main__":
                 entry["tif_list"] = original_tif_list
                 self.vrt_registry[display_name] = entry
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 6053)
             for tmp_path in (temp_vrt, temp_gpkg):
                 try:
                     if tmp_path and os.path.exists(tmp_path):
                         os.remove(tmp_path)
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 6059)
             try:
                 if not self._get_vrt_layer(display_name) and os.path.exists(vrt_path):
                     self._load_vrt_with_overlay(
@@ -6069,7 +6070,7 @@ if __name__ == "__main__":
                         insert_index=insert_index,
                     )
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 6072)
             self._invalidate_vrt_display_caches(refresh=True, schedule_prefetch=True)
             QgsMessageLog.logMessage(f"外部VRT削除更新エラー: {e}", "OrthoManager", Qgis.MessageLevel.Warning)
             return False, str(e)
@@ -6121,16 +6122,16 @@ if __name__ == "__main__":
                     with open(vrt_path, "w", encoding="utf-8") as f:
                         f.write(original_xml)
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 6124)
             if vrt_layer:
                 try: vrt_layer.triggerRepaint()
-                except Exception: pass
+                except Exception: _om_record_ignored_exception(__name__, 6127)
             elif vrt_layer_state:
                 try: self._restore_vrt_raster_layer_after_xml_update(display_name, vrt_path, overlay_layer, vrt_layer_state)
-                except Exception: pass
+                except Exception: _om_record_ignored_exception(__name__, 6130)
             if overlay_layer:
                 try: overlay_layer.triggerRepaint()
-                except Exception: pass
+                except Exception: _om_record_ignored_exception(__name__, 6133)
             self._invalidate_vrt_display_caches(refresh=True, schedule_prefetch=True)
             QgsMessageLog.logMessage(f"VRT中身更新エラー: {e}", "OrthoManager", Qgis.MessageLevel.Warning)
             return False, str(e)
@@ -6159,7 +6160,7 @@ if __name__ == "__main__":
                 if lyr:
                     if hasattr(lyr, 'dataProvider') and lyr.dataProvider():
                         try: lyr.dataProvider().reloadData()
-                        except: pass
+                        except: _om_record_ignored_exception(__name__, 6162)
                     QgsProject.instance().removeMapLayer(lid)
             root.removeChildNode(group)
         else:
@@ -6168,7 +6169,7 @@ if __name__ == "__main__":
             for lyr in QgsProject.instance().mapLayersByName(self.overlay_layer_name(name)) + QgsProject.instance().mapLayersByName(f"{base_name}_overlay"):
                 if hasattr(lyr, 'dataProvider') and lyr.dataProvider():
                     try: lyr.dataProvider().reloadData()
-                    except: pass
+                    except: _om_record_ignored_exception(__name__, 6171)
                 QgsProject.instance().removeMapLayer(lyr.id())
         self.iface.mapCanvas().refresh()
         QApplication.processEvents()
@@ -6186,7 +6187,7 @@ if __name__ == "__main__":
                     try:
                         lyr.dataProvider().reloadData()
                     except Exception:
-                        pass
+                        _om_record_ignored_exception(__name__, 6189)
                 QgsProject.instance().removeMapLayer(lid)
             root.removeChildNode(group)
         else:
@@ -6200,7 +6201,7 @@ if __name__ == "__main__":
                     try:
                         lyr.dataProvider().reloadData()
                     except Exception:
-                        pass
+                        _om_record_ignored_exception(__name__, 6203)
                 QgsProject.instance().removeMapLayer(lyr.id())
         self.iface.mapCanvas().refresh()
         QApplication.processEvents()
@@ -6239,7 +6240,7 @@ if __name__ == "__main__":
             for key in self._vpc_path_match_keys(source_path):
                 lookup.setdefault(key, source_path)
             try:
-                source_key = hashlib.sha1(os.path.normcase(source_path).encode("utf-8", "ignore")).hexdigest()[:12]
+                source_key = hashlib.sha1(os.path.normcase(source_path).encode("utf-8", "ignore"), usedforsecurity=False).hexdigest()[:12]
                 copc_name = f"pc_{source_key}.copc.laz"
                 for key in self._vpc_path_match_keys(copc_name):
                     lookup.setdefault(key, source_path)
@@ -6250,7 +6251,7 @@ if __name__ == "__main__":
                     for key in self._vpc_path_match_keys(managed_copc_path):
                         lookup.setdefault(key, source_path)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 6253)
         return lookup
 
     def _vpc_feature_string_candidates(self, value):
@@ -6296,13 +6297,13 @@ if __name__ == "__main__":
                 if crs.isValid():
                     return crs
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 6299)
             try:
                 crs = QgsCoordinateReferenceSystem(wkt_text)
                 if crs.isValid():
                     return crs
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 6305)
             return QgsCoordinateReferenceSystem()
 
         def valid_polygon_geometry(geom):
@@ -6415,7 +6416,7 @@ if __name__ == "__main__":
                 if "temp_overlay_path" in locals() and os.path.exists(temp_overlay_path):
                     os.remove(temp_overlay_path)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 6418)
             QgsMessageLog.logMessage(
                 f"VPC_OVERLAY_CREATE_FAILED path={overlay_path} error={e}",
                 "OrthoManager",
@@ -6479,11 +6480,11 @@ if __name__ == "__main__":
         try:
             overlay_layer.rendererChanged.connect(save_vpc_overlay_style)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 6482)
         try:
             overlay_layer.styleChanged.connect(save_vpc_overlay_style)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 6486)
 
     def _apply_or_load_vpc_overlay_style(self, overlay_layer, vpc_path, preserve_current_style=False):
         qml_path = self._vpc_overlay_qml_path(vpc_path)
@@ -6522,7 +6523,7 @@ if __name__ == "__main__":
             try:
                 QgsProject.instance().addMapLayer(layer, False)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 6525)
         return layer
 
     def _point_cloud_layer_options(self):
@@ -6541,12 +6542,12 @@ if __name__ == "__main__":
             if hasattr(options, "skipIndexGeneration"):
                 options.skipIndexGeneration = True
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 6544)
         try:
             if hasattr(options, "skipStatisticsCalculation"):
                 options.skipStatisticsCalculation = True
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 6549)
         return options
 
     def _provider_sublayer_options(self):
@@ -6570,7 +6571,7 @@ if __name__ == "__main__":
                 if isinstance(layer, point_cloud_cls):
                     return True
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 6573)
         try:
             return getattr(layer, "type", lambda: None)() == getattr(Qgis.LayerType, "PointCloud", object())
         except Exception:
@@ -6585,25 +6586,25 @@ if __name__ == "__main__":
                 renderer.setMaximumScreenErrorUnit(Qgis.RenderUnit.Pixels)
                 changed = True
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 6588)
         try:
             if hasattr(renderer, "setMaximumScreenError"):
                 renderer.setMaximumScreenError(0.25)
                 changed = True
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 6594)
         try:
             if hasattr(renderer, "setOverviewSwitchingScale"):
                 renderer.setOverviewSwitchingScale(1000000.0)
                 changed = True
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 6600)
         try:
             if hasattr(renderer, "setShowLabels"):
                 renderer.setShowLabels(False)
                 changed = True
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 6606)
         return changed
 
     def _point_cloud_z_range(self, layer):
@@ -6620,7 +6621,7 @@ if __name__ == "__main__":
                 minimum = float(statistics.minimum(attr))
                 maximum = float(statistics.maximum(attr))
             except Exception:
-                continue
+                _om_record_ignored_exception(__name__, 6623); continue
             if minimum != minimum or maximum != maximum:
                 continue
             if minimum < maximum:
@@ -6687,11 +6688,11 @@ if __name__ == "__main__":
             try:
                 layer.setRenderer(renderer)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 6690)
             try:
                 layer.triggerRepaint()
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 6694)
 
     def _create_vpc_point_cloud_layer(self, vpc_path, layer_name):
         path_candidates = []
@@ -6869,7 +6870,7 @@ if __name__ == "__main__":
             if QgsProject.instance().mapLayer(layer_id) is None:
                 QgsProject.instance().addMapLayer(layer, False)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 6872)
         nodes = [node for node in list(root.findLayers()) if node.layerId() == layer_id]
         group_nodes = [node for node in nodes if node.parent() == group]
         if group_nodes:
@@ -6882,7 +6883,7 @@ if __name__ == "__main__":
                     try:
                         parent.removeChildNode(node)
                     except Exception:
-                        pass
+                        _om_record_ignored_exception(__name__, 6885)
             return True
         if nodes:
             try:
@@ -6898,10 +6899,10 @@ if __name__ == "__main__":
                         try:
                             parent.removeChildNode(node)
                         except Exception:
-                            pass
+                            _om_record_ignored_exception(__name__, 6901)
                 return True
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 6904)
         try:
             if index is None:
                 group.addLayer(layer)
@@ -6928,7 +6929,7 @@ if __name__ == "__main__":
             try:
                 group.setName(layer_name)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 6931)
         group.setExpanded(False)
 
         point_layer = self._get_vpc_layer(layer_name, vpc_path)
@@ -6961,7 +6962,7 @@ if __name__ == "__main__":
                     try:
                         insert_index = root.children().index(group) + 1
                     except Exception:
-                        pass
+                        _om_record_ignored_exception(__name__, 6964)
                     root.insertChildNode(insert_index, clone)
                     group.removeChildNode(child)
                     removed_extra += 1
@@ -7029,7 +7030,7 @@ if __name__ == "__main__":
                 overlay_qml = os.path.splitext(vrt_path)[0] + "_overlay.qml"
                 overlay_layer.saveNamedStyle(overlay_qml)
             self._save_crs_json(vrt_path, vrt_layer, overlay_layer)
-        except: pass
+        except: _om_record_ignored_exception(__name__, 7032)
 
     def _save_crs_json(self, vrt_path, vrt_layer, overlay_layer):
         try:
@@ -7043,7 +7044,7 @@ if __name__ == "__main__":
             }
             with open(crs_path, 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
-        except: pass
+        except: _om_record_ignored_exception(__name__, 7046)
 
     def _load_crs_json(self, vrt_path):
         vrt_crs = QgsCoordinateReferenceSystem()
@@ -7059,7 +7060,7 @@ if __name__ == "__main__":
             if data.get("overlay_crs"):
                 crs = QgsCoordinateReferenceSystem(data["overlay_crs"])
                 if crs.isValid(): overlay_crs = crs
-        except: pass
+        except: _om_record_ignored_exception(__name__, 7062)
         return vrt_crs, overlay_crs
 
     def _load_group_crs_authid_from_json(self, vrt_path):
@@ -7075,7 +7076,7 @@ if __name__ == "__main__":
                 if crs.isValid():
                     return crs.authid()
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 7078)
         return ""
 
     def _layer_has_valid_crs(self, layer):
@@ -7105,14 +7106,14 @@ if __name__ == "__main__":
             try:
                 self._crs_alert_label.deleteLater()
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 7108)
             self._crs_alert_label = None
         if self._crs_alert_timer:
             try:
                 self._crs_alert_timer.stop()
                 self._crs_alert_timer.deleteLater()
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 7115)
             self._crs_alert_timer = None
 
         label = QLabel(message, canvas)
@@ -7202,7 +7203,7 @@ if __name__ == "__main__":
             self.iface.mapCanvas().scaleChanged.connect(self._on_vpc_canvas_scale_changed)
             self._vpc_scale_canvas_connected = True
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 7205)
 
     def _on_vpc_canvas_scale_changed(self, *args):
         self._apply_all_vpc_tree_visibility(refresh=True)
@@ -7215,7 +7216,7 @@ if __name__ == "__main__":
             try:
                 self.iface.mapCanvas().refresh()
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 7218)
 
     def _apply_vpc_tree_visibility_for_scale(self, name, refresh=True):
         display_name = self.format_vpc_display_name(name)
@@ -7229,13 +7230,13 @@ if __name__ == "__main__":
                     overlay_layer.setScaleBasedVisibility(False)
                     overlay_layer.triggerRepaint()
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 7232)
                 changed = self._set_layer_tree_layer_visible(overlay_layer, True)
                 if refresh:
                     try:
                         self.iface.mapCanvas().refresh()
                     except Exception:
-                        pass
+                        _om_record_ignored_exception(__name__, 7238)
                 return changed
             return False
         entry = self.vpc_registry.get(display_name, {})
@@ -7267,12 +7268,12 @@ if __name__ == "__main__":
                 if overlay_layer:
                     overlay_layer.triggerRepaint()
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 7270)
             if refresh:
                 try:
                     self.iface.mapCanvas().refresh()
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 7275)
         return changed
 
     def _set_vpc_scale_to_layers(self, vpc_layer, overlay_layer, min_scale):
@@ -7336,7 +7337,7 @@ if __name__ == "__main__":
                     overlay_layer.setScaleBasedVisibility(False)
                     overlay_layer.triggerRepaint()
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 7339)
                 self._set_layer_tree_layer_visible(overlay_layer, True)
                 entry["scale"] = 0
                 entry["scale_mode"] = "overlay_only"
@@ -7390,17 +7391,17 @@ if __name__ == "__main__":
                     overlay_layer.setScaleBasedVisibility(False)
                 overlay_layer.triggerRepaint()
                 self.iface.mapCanvas().refresh()
-            except: pass
+            except: _om_record_ignored_exception(__name__, 7393)
         try:
             vrt_layer.scaleBasedVisibilityChanged.connect(on_scale_changed)
             self._scale_timer[vrt_layer.id()] = on_scale_changed
-        except: pass
+        except: _om_record_ignored_exception(__name__, 7397)
 
     def _disconnect_scale_signal(self, name):
         vrt_layer = self._get_vrt_layer(name)
         if vrt_layer and vrt_layer.id() in self._scale_timer:
             try: vrt_layer.scaleBasedVisibilityChanged.disconnect(self._scale_timer[vrt_layer.id()])
-            except: pass
+            except: _om_record_ignored_exception(__name__, 7403)
             del self._scale_timer[vrt_layer.id()]
 
     def _disconnect_all_scale_signals(self):
@@ -7447,7 +7448,7 @@ if __name__ == "__main__":
             if provider and hasattr(provider, 'setZoomedInResamplingMethod'):
                 provider.setZoomedInResamplingMethod(QgsRasterDataProvider.ResamplingMethod.Nearest)
                 provider.setZoomedOutResamplingMethod(QgsRasterDataProvider.ResamplingMethod.Nearest)
-        except: pass
+        except: _om_record_ignored_exception(__name__, 7450)
         
         if saved_crs and saved_crs.isValid():
             vrt_layer.setCrs(saved_crs)
@@ -7479,7 +7480,7 @@ if __name__ == "__main__":
             try:
                 group.setCustomProperty(self.GROUP_CRS_PROPERTY, group_crs.authid())
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 7482)
             vrt_layer.setCrs(group_crs)
         
         if overlay_layer:
@@ -7540,24 +7541,24 @@ if __name__ == "__main__":
         overlay_layer_ref = overlay_layer
         def on_vrt_style_changed():
             try: self._save_qml(vrt_layer, vrt_path, overlay_layer_ref)
-            except: pass
+            except: _om_record_ignored_exception(__name__, 7543)
         def on_vrt_crs_changed():
             try: self._save_qml(vrt_layer, vrt_path, overlay_layer_ref)
-            except: pass
+            except: _om_record_ignored_exception(__name__, 7546)
         try: vrt_layer.styleChanged.connect(on_vrt_style_changed)
-        except: pass
+        except: _om_record_ignored_exception(__name__, 7548)
         try: vrt_layer.crsChanged.connect(on_vrt_crs_changed)
-        except: pass
+        except: _om_record_ignored_exception(__name__, 7550)
         if overlay_layer_ref:
             def on_overlay_crs_changed():
                 try: self._save_qml(vrt_layer, vrt_path, overlay_layer_ref)
-                except: pass
+                except: _om_record_ignored_exception(__name__, 7554)
             try: overlay_layer_ref.crsChanged.connect(on_overlay_crs_changed)
-            except: pass
+            except: _om_record_ignored_exception(__name__, 7556)
 
     def _on_overlay_renderer_changed(self, overlay_layer, qml_path):
         try: overlay_layer.saveNamedStyle(qml_path)
-        except: pass
+        except: _om_record_ignored_exception(__name__, 7560)
 
 
 

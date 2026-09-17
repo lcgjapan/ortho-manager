@@ -1,3 +1,4 @@
+from .diagnostics import record_ignored_exception as _om_record_ignored_exception
 import math
 import os
 import re
@@ -495,7 +496,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                 for name in ordered:
                     self.guide_id_field_combo.addItem(name, name)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 498)
         index = self.guide_id_field_combo.findData(current)
         if index >= 0:
             self.guide_id_field_combo.setCurrentIndex(index)
@@ -516,22 +517,22 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
         try:
             project.layersAdded.connect(self.schedule_guide_layer_combo_refresh)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 519)
         try:
             project.layersRemoved.connect(self.schedule_guide_layer_combo_refresh)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 523)
 
     def disconnect_guide_layer_refresh_signals(self):
         project = QgsProject.instance()
         try:
             project.layersAdded.disconnect(self.schedule_guide_layer_combo_refresh)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 530)
         try:
             project.layersRemoved.disconnect(self.schedule_guide_layer_combo_refresh)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 534)
 
     def selected_guide_source_layer(self):
         layer_id = self.guide_layer_combo.currentData() if hasattr(self, "guide_layer_combo") else ""
@@ -651,13 +652,13 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                     if hasattr(message_item, "close"):
                         message_item.close()
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 654)
         try:
             if hasattr(bar, "clearWidgets"):
                 bar.clearWidgets()
                 return
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 660)
         if not title_text:
             return
         try:
@@ -666,9 +667,9 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                     if title_text in child.text():
                         child.close()
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 669)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 671)
 
     def project_home(self):
         project = QgsProject.instance()
@@ -756,7 +757,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
         try:
             QgsSettings().setValue(INSPECTION_LAST_GPKG_DIR_KEY, folder)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 759)
 
     def unique_gpkg_path_in_folder(self, folder, preferred_name):
         preferred_name = preferred_name or "ortho_project_inspection.gpkg"
@@ -922,7 +923,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
         try:
             self.sync_free_layer_groups_from_layer_tree()
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 925)
         seen_ids = set()
         layers = []
         for root_group in self.inspection_root_groups():
@@ -1049,7 +1050,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
         try:
             os.makedirs(os.path.dirname(path), exist_ok=True)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 1052)
         ds = self.open_or_create_inspection_gpkg(path, driver)
         if ds is None:
             QMessageBox.critical(self, tr_text("検査GPKG"), tr_text("検査GPKGを開けません。"))
@@ -1125,7 +1126,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                 parent = group.parent() or root
                 parent.removeChildNode(group)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 1128)
 
     def project_crs_metric_problem(self):
         try:
@@ -1138,7 +1139,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
             if crs.isGeographic():
                 return "プロジェクト座標系が緯度経度座標系です。"
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 1141)
         return ""
 
     def ensure_project_metric_crs_for_inspection(self):
@@ -1456,7 +1457,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
             if name in overlay_names:
                 return True
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 1459)
         try:
             source = layer.source().lower()
         except Exception:
@@ -1826,7 +1827,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
             if hasattr(value, "toLocalFile"):
                 value = value.toLocalFile()
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 1829)
         try:
             return os.fspath(value)
         except Exception:
@@ -1933,7 +1934,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
             if crs and crs.isValid():
                 return
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 1936)
         if QgsProjectionSelectionDialog is None:
             return
         try:
@@ -1944,7 +1945,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                 try:
                     dialog.setCrs(project_crs)
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 1947)
             if dialog.exec() != QDialog.DialogCode.Accepted:
                 raise RuntimeError(f"座標系が未設定です: {os.path.basename(path)}")
             selected_crs = dialog.crs()
@@ -2061,7 +2062,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
             if ogr_geom is not None:
                 return ogr_geom
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 2064)
         try:
             return ogr.CreateGeometryFromWkt(geom.asWkt())
         except Exception:
@@ -2138,7 +2139,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                 if precision:
                     fd.SetPrecision(precision)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 2141)
             result.append({"src_index": idx, "src_name": src_name, "dst_name": dst_name, "field_defn": fd})
         return result
 
@@ -2234,7 +2235,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                 nums = [max(0, min(255, int(float(match.group(i))))) for i in (1, 2, 3)]
                 return "".join(f"{num:02x}" for num in nums)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 2237)
         match = re.search(r"#?([0-9A-Fa-f]{6})", text)
         if match:
             return match.group(1).lower()
@@ -2245,7 +2246,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                     nums = [max(0, min(255, int(float(part)))) for part in parts[:3]]
                     return "".join(f"{num:02x}" for num in nums)
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 2248)
         return self._cad_index_to_hex(text)
 
     def _cad_index_to_hex(self, value):
@@ -2297,7 +2298,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                     if color:
                         return color
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 2300)
         try:
             renderer = layer.renderer()
             symbol = renderer.symbol() if renderer and hasattr(renderer, "symbol") else None
@@ -2306,7 +2307,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                 if color and color.isValid():
                     return color.name().replace("#", "")
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 2309)
         try:
             feature = next(layer.getFeatures())
             for name in ("LINE_COLOR", "BORDER_COL", "FILL_COLOR", "FONT_COLOR", "COLOR", "Color", "color"):
@@ -2314,7 +2315,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                 if color:
                     return color
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 2317)
         return "ff0000"
 
     def qgis_layer_size_values(self, layer, geom_type):
@@ -2333,7 +2334,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                     if hasattr(symbol_layer, "strokeWidth"):
                         stroke_width = float(symbol_layer.strokeWidth())
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 2336)
         return self.format_size_text(stroke_width), self.format_size_text(point_size)
 
     def qgis_layer_coordinate_transform(self, layer):
@@ -2343,7 +2344,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
             if src_crs and dst_crs and src_crs.isValid() and dst_crs.isValid() and src_crs != dst_crs:
                 return QgsCoordinateTransform(src_crs, dst_crs, QgsProject.instance())
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 2346)
         return None
 
     def copy_qgis_layer_style(self, src_layer, target_layer):
@@ -2359,18 +2360,18 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                 target_layer.setLabeling(labeling.clone())
                 target_layer.setLabelsEnabled(src_layer.labelsEnabled())
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 2362)
         target_layer.triggerRepaint()
 
     def _ogr_flatten_type(self, geom_type):
         try:
             return ogr.wkbFlatten(geom_type)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 2369)
         try:
             return ogr.GT_Flatten(geom_type)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 2373)
         try:
             value = int(geom_type)
             value = value & 0x7FFFFFFF
@@ -2434,7 +2435,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
             if src_srs is not None and dst_srs is not None and not bool(src_srs.IsSame(dst_srs)):
                 return osr.CoordinateTransformation(src_srs, dst_srs)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 2437)
         return None
 
     def _prompt_import_source_srs(self, path, layer_name, crs_cache):
@@ -2452,7 +2453,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                 try:
                     dialog.setCrs(project_crs)
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 2455)
             if dialog.exec() != QDialog.DialogCode.Accepted:
                 raise RuntimeError(f"座標系が未設定です: {os.path.basename(path)}")
             crs = dialog.crs()
@@ -2853,7 +2854,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
             try:
                 group.setName(new_name)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 2856)
         self.write_gpkg_management_state()
         self.refresh_ui()
         self.set_status(tr_text(f"✅ グループ名変更: {old_title} → {self.free_group_title(new_path)}"))
@@ -3339,7 +3340,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                 if layer:
                     layer.triggerRepaint()
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 3342)
             try:
                 canvas = self.iface.mapCanvas()
                 cache = canvas.cache()
@@ -3350,12 +3351,12 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                 else:
                     canvas.refresh()
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 3353)
             try:
                 if hasattr(self.main_ui, "invalidate_interaction_image_caches"):
                     self.main_ui.invalidate_interaction_image_caches()
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 3358)
         refresh_once()
         QTimer.singleShot(80, refresh_once)
 
@@ -3458,7 +3459,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
             try:
                 root_group.removeChildNode(group)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 3461)
         self.refresh_ui()
         if failed:
             QMessageBox.warning(self, tr_text("検査回削除"), tr_text("一部のGPKGレイヤ削除に失敗しました。\nQGIS再起動後に再実行してください。\n" + "\n".join(failed)))
@@ -3513,7 +3514,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                 if parent is not None:
                     parent.removeChildNode(group)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 3516)
         self.write_gpkg_management_state()
         self.refresh_ui()
         if failed:
@@ -3707,7 +3708,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
             try:
                 existing_indices.append(children.index(node))
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 3710)
         if not existing_indices:
             return 0
         insert_index = min(existing_indices)
@@ -3721,7 +3722,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                 children = list(parent_group.children())
                 current_index = children.index(group)
             except Exception:
-                continue
+                _om_record_ignored_exception(__name__, 3724); continue
             if current_index != insert_index:
                 try:
                     clone = group.clone()
@@ -3957,7 +3958,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                 target_node.setItemVisibilityChecked(node.itemVisibilityChecked())
                 return
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 3960)
 
     def take_layer_tree_node_for_reinsert(self, parent, node, target_group, index):
         if parent is None or node is None:
@@ -3970,7 +3971,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                 if current_index < adjusted_index:
                     adjusted_index -= 1
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 3973)
         try:
             if not parent.takeChild(node):
                 return None
@@ -3987,7 +3988,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
             try:
                 parent.addChildNode(node)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 3990)
             return None
 
     def clone_layer_tree_node_for_insert(self, node, target_group, index):
@@ -4241,7 +4242,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                 if child == keep_node:
                     return True
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 4244)
             if keep_marker_value:
                 try:
                     return child.customProperty(keep_marker_key, "") == keep_marker_value
@@ -4273,7 +4274,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
         try:
             keep_node.setCustomProperty(keep_marker_key, "")
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 4276)
         return removed
 
     def layer_tree_node_in_group(self, group, layer_id):
@@ -4373,14 +4374,14 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
         try:
             return bool(node.isVisible())
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 4376)
         current = node
         while current is not None:
             try:
                 if hasattr(current, "itemVisibilityChecked") and not current.itemVisibilityChecked():
                     return False
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 4383)
             try:
                 current = current.parent()
             except Exception:
@@ -4455,7 +4456,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                     srs.ImportFromEPSG(crs.postgisSrid())
                     return srs
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 4458)
             try:
                 wkt = crs.toWkt()
                 if wkt:
@@ -4651,7 +4652,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
             layer.featureDeleted.connect(lambda _fid, l=layer: self.refresh_counts())
             layer.geometryChanged.connect(lambda *_args: self.refresh_counts())
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 4654)
         return layer
 
     def load_trash_layer(self, source_name, visible=False):
@@ -4681,7 +4682,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                 try:
                     QgsProject.instance().layerTreeRoot().addLayer(layer)
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 4684)
         self.apply_trash_layer_metadata(layer, source_name)
         self.ensure_trash_qgs_fields(layer)
         self.trash_layer_ids[source_name] = layer.id()
@@ -4731,7 +4732,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                     if not active_path or self.same_file_path(self.layer_source_path(layer), active_path):
                         layers.append(layer)
             except Exception:
-                continue
+                _om_record_ignored_exception(__name__, 4734); continue
         return layers
 
     def is_project_trash_layer_for_close(self, layer):
@@ -4743,7 +4744,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
             if str(layer.name()).startswith("ゴミ箱_"):
                 return True
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 4746)
         try:
             uri = layer.dataProvider().dataSourceUri()
         except Exception:
@@ -4961,7 +4962,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                     value = self.coerce_feature_attribute_value(fields[idx], value)
                 feature.setAttribute(idx, value)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 4964)
 
     def variant_type_values(self, *names):
         values = set()
@@ -4969,7 +4970,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
             try:
                 values.add(getattr(QVariant, name))
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 4972)
         return values
 
     def coerce_feature_attribute_value(self, field, value):
@@ -5007,7 +5008,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
             if hasattr(provider, "pkAttributeIndexes"):
                 indexes.update(int(idx) for idx in provider.pkAttributeIndexes())
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 5010)
         try:
             fields = layer.fields()
             for idx, field in enumerate(fields):
@@ -5015,7 +5016,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                 if name in names:
                     indexes.add(idx)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 5018)
         return indexes
 
     def set_restore_feature_attrs_from_json(self, feature, attrs_text, target_layer):
@@ -5047,7 +5048,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
             if hasattr(layer, "commitErrors"):
                 texts.extend(str(item) for item in layer.commitErrors() if item)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 5050)
         return "; ".join(dict.fromkeys(texts))
 
     def set_layer_tree_visibility(self, layer, visible):
@@ -5055,7 +5056,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
             for _parent, node in self.layer_tree_nodes_for_layer(layer.id()):
                 node.setItemVisibilityChecked(bool(visible))
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 5058)
 
     def find_loaded_layer_by_source(self, source_name, gpkg_path=None):
         for layer in self.inspection_layers():
@@ -5167,7 +5168,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                 if is_group and child.name() == name:
                     groups.append(child)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 5170)
         return groups
 
     def ensure_direct_group(self, parent, name):
@@ -5326,7 +5327,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
             settings.setValue("digitizing/line-width", self.preview_rubber_band_width(layer))
             settings.sync()
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 5329)
 
     def restore_edit_preview_width(self):
         if not self._edit_preview_width_overridden:
@@ -5339,7 +5340,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                 settings.remove("digitizing/line-width")
             settings.sync()
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 5342)
         self._edit_preview_width_overridden = False
         self._original_digitizing_line_width = None
         self._original_digitizing_line_width_had_key = False
@@ -5354,7 +5355,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
             try:
                 text_format.setColor(color)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 5357)
             settings.setFormat(text_format)
             if layer.geometryType() == Qgis.GeometryType.Line:
                 settings.placement = Qgis.LabelPlacement.Line
@@ -5367,11 +5368,11 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                     )
                     settings.setLineSettings(line_settings)
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 5370)
             layer.setLabeling(QgsVectorLayerSimpleLabeling(settings))
             layer.setLabelsEnabled(True)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 5374)
 
     def layer_descriptor(self, layer):
         inspection_type = self.layer_inspection_type(layer)
@@ -5455,7 +5456,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
             try:
                 self._layers_needing_edit_refresh.add(layer.id())
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 5458)
         provider = None
         try:
             provider = layer.dataProvider()
@@ -5465,29 +5466,29 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
             try:
                 provider.reloadData()
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 5468)
         try:
             layer.updateExtents(True)
         except Exception:
             try:
                 layer.updateExtents()
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 5475)
         try:
             layer.invalidateWgs84Extent()
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 5479)
         try:
             if self.is_trash_layer(layer):
                 source_name = layer.customProperty(INSPECTION_PROP_PREFIX + "source_name", "")
                 if source_name:
                     self.apply_trash_layer_metadata(layer, source_name)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 5486)
         try:
             layer.triggerRepaint()
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 5490)
         try:
             canvas = self.iface.mapCanvas()
             cache = canvas.cache()
@@ -5495,12 +5496,12 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                 cache.invalidateCacheForLayer(layer)
             canvas.refresh()
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 5498)
         try:
             if hasattr(self.main_ui, "invalidate_interaction_image_caches"):
                 self.main_ui.invalidate_interaction_image_caches()
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 5503)
         QTimer.singleShot(0, lambda l=layer: self.refresh_vector_layer_later(l))
 
     def close_edit_buffer_before_provider_change(self, layer):
@@ -5518,13 +5519,13 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
             try:
                 layer.rollBack()
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 5521)
             return False, errors or "編集バッファを保存できませんでした"
         except Exception as exc:
             try:
                 layer.rollBack()
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 5527)
             return False, str(exc)
 
     def refresh_pending_data_change_layers(self):
@@ -5541,12 +5542,12 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                 if layer.isEditable():
                     continue
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 5544)
             self.refresh_vector_layer_after_data_change(layer, reload_data=True, mark_edit_refresh=False)
             try:
                 self._layers_needing_edit_refresh.discard(layer_id)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 5549)
 
     def refresh_vector_layer_later(self, layer):
         if not layer:
@@ -5557,15 +5558,15 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
             try:
                 layer.updateExtents()
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 5560)
         try:
             layer.triggerRepaint()
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 5564)
         try:
             self.iface.mapCanvas().refresh()
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 5568)
 
     def refresh_ui(self):
         self.sync_active_gpkg_path()
@@ -5778,12 +5779,12 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                 if not self.layer_has_visible_tree_node(layer.id()):
                     continue
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 5781)
             if self.is_layer_selection_locked(layer):
                 try:
                     layer.removeSelection()
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 5786)
                 continue
             layers.append(layer)
         return layers
@@ -5858,7 +5859,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                 if self.map_tool and self.iface.mapCanvas().mapTool() == self.map_tool:
                     self.iface.mapCanvas().unsetMapTool(self.map_tool)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 5861)
             self.map_tool = None
         self.refresh_ui()
         self.set_status(tr_text("検査OFF: 地図移動へ戻しました"))
@@ -5908,26 +5909,26 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
             try:
                 self.map_tool.setCursor(cursor)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 5911)
         try:
             viewport = self.iface.mapCanvas().viewport()
             if viewport:
                 viewport.setCursor(cursor)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 5917)
 
     def inspection_canvases(self):
         canvases = []
         try:
             canvases.extend(list(self.iface.mapCanvases()))
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 5924)
         try:
             main_canvas = self.iface.mapCanvas()
             if main_canvas and all(id(canvas) != id(main_canvas) for canvas in canvases):
                 canvases.append(main_canvas)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 5930)
         return canvases
 
     def apply_inspection_selection_color(self):
@@ -5940,14 +5941,14 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                     self._original_selection_colors[key] = (canvas, QColor(canvas.selectionColor()))
                 canvas.setSelectionColor(color)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 5943)
 
     def restore_selection_color(self):
         for canvas, color in list(self._original_selection_colors.values()):
             try:
                 canvas.setSelectionColor(color)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 5950)
         self._original_selection_colors.clear()
         self.clear_selection_highlight()
         self.clear_paste_flash_highlight()
@@ -5962,7 +5963,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                 if scene is not None:
                     scene.removeItem(item)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 5965)
         self.selection_highlight_items = []
 
     def clear_paste_flash_highlight(self):
@@ -5975,7 +5976,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                 if scene is not None:
                     scene.removeItem(item)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 5978)
         self.paste_flash_highlight_items = []
 
     def flash_pasted_features(self, added_by_layer, duration_ms=2200):
@@ -6007,11 +6008,11 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                     try:
                         band.setToGeometry(geom, layer)
                     except Exception:
-                        continue
+                        _om_record_ignored_exception(__name__, 6010); continue
                     try:
                         band.setZValue(1200)
                     except Exception:
-                        pass
+                        _om_record_ignored_exception(__name__, 6014)
                     band.show()
                     self.paste_flash_highlight_items.append(band)
                 elif layer.geometryType() == Qgis.GeometryType.Point:
@@ -6028,11 +6029,11 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                             try:
                                 marker.setIconType(QgsVertexMarker.ICON_CIRCLE)
                             except Exception:
-                                pass
+                                _om_record_ignored_exception(__name__, 6031)
                         try:
                             marker.setZValue(1200)
                         except Exception:
-                            pass
+                            _om_record_ignored_exception(__name__, 6035)
                         self.paste_flash_highlight_items.append(marker)
         if self.paste_flash_highlight_items:
             QTimer.singleShot(duration_ms, self.clear_paste_flash_highlight)
@@ -6062,7 +6063,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                     try:
                         band.setToGeometry(geom, layer)
                     except Exception:
-                        continue
+                        _om_record_ignored_exception(__name__, 6065); continue
                     band.show()
                     self.selection_highlight_items.append(band)
                 else:
@@ -6079,11 +6080,11 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                             try:
                                 marker.setIconType(QgsVertexMarker.ICON_CIRCLE)
                             except Exception:
-                                pass
+                                _om_record_ignored_exception(__name__, 6082)
                         try:
                             marker.setZValue(1100)
                         except Exception:
-                            pass
+                            _om_record_ignored_exception(__name__, 6086)
                         self.selection_highlight_items.append(marker)
 
     def yellow_select_cursor(self):
@@ -6161,7 +6162,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
             if viewport:
                 viewport.unsetCursor()
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 6164)
         try:
             self.iface.actionPan().trigger()
         except Exception:
@@ -6170,7 +6171,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                 if self.map_tool and canvas.mapTool() == self.map_tool:
                     canvas.unsetMapTool(self.map_tool)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 6173)
         self.refresh_ui()
         self.set_status(tr_text("パンモード"))
 
@@ -6224,7 +6225,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
             try:
                 self.context_filter_canvas.removeEventFilter(self)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 6227)
             self.context_filter_canvas = None
 
     def eventFilter(self, obj, event):
@@ -6237,7 +6238,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                 try:
                     event.accept()
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 6240)
                 return True
             if self.operation_mode == "move" and event.type() in (
                 QEvent.Type.MouseButtonPress,
@@ -6250,14 +6251,14 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                     else:
                         self.update_map_cursor()
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 6253)
             if event.type() == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.RightButton:
                 self.right_button_guard_active = True
                 if self.operation_mode == "move":
                     try:
                         event.accept()
                     except Exception:
-                        pass
+                        _om_record_ignored_exception(__name__, 6260)
                     if self.map_tool:
                         self.map_tool._clear_move_state()
                     self.return_to_last_selection_mode("移動終了")
@@ -6266,7 +6267,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                     try:
                         event.accept()
                     except Exception:
-                        pass
+                        _om_record_ignored_exception(__name__, 6269)
                     self.suppress_next_context_menu = True
                     self.map_tool._finish_select_polygon()
                     return True
@@ -6274,14 +6275,14 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                     try:
                         event.accept()
                     except Exception:
-                        pass
+                        _om_record_ignored_exception(__name__, 6277)
                     self.map_tool._finish_capture()
                     return True
                 if self.operation_mode == "edit":
                     try:
                         event.accept()
                     except Exception:
-                        pass
+                        _om_record_ignored_exception(__name__, 6284)
                     point = self.map_point_from_mouse_event(event)
                     if point and self.switch_direct_overlap_vertex_candidate_at(point):
                         return True
@@ -6304,13 +6305,13 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                             event.accept()
                             return True
                     except Exception:
-                        pass
+                        _om_record_ignored_exception(__name__, 6307)
                 if event.type() == QEvent.Type.MouseButtonRelease and event.button() == Qt.MouseButton.RightButton:
                     self.right_button_guard_active = False
                     try:
                         event.accept()
                     except Exception:
-                        pass
+                        _om_record_ignored_exception(__name__, 6313)
                     return True
             if self.operation_mode == "edit":
                 if (
@@ -6321,7 +6322,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                     try:
                         event.accept()
                     except Exception:
-                        pass
+                        _om_record_ignored_exception(__name__, 6324)
                     return True
                 if event.type() == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
                     point = self.map_point_from_mouse_event(event)
@@ -6341,7 +6342,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                     try:
                         event.accept()
                     except Exception:
-                        pass
+                        _om_record_ignored_exception(__name__, 6344)
                     return True
                 if (
                     event.type() == QEvent.Type.MouseButtonRelease
@@ -6355,7 +6356,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                         try:
                             event.accept()
                         except Exception:
-                            pass
+                            _om_record_ignored_exception(__name__, 6358)
                         return True
                     try:
                         end_pixel = event.position().toPoint()
@@ -6381,7 +6382,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                     try:
                         event.accept()
                     except Exception:
-                        pass
+                        _om_record_ignored_exception(__name__, 6384)
                     return True
                 if event.type() == QEvent.Type.MouseMove:
                     if self.just_finished_direct_overlap_vertex_edit:
@@ -6394,7 +6395,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                             self.update_map_cursor()
                             return super().eventFilter(obj, event)
                     except Exception:
-                        pass
+                        _om_record_ignored_exception(__name__, 6397)
                     if not self.has_direct_overlap_vertex_edit():
                         point = self.map_point_from_mouse_event(event)
                         if point:
@@ -6419,7 +6420,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
             try:
                 return self.map_tool._event_map_point(event, use_snap=use_snap)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 6422)
         return self.map_point_from_mouse_event(event)
 
     def close_current_context_menu(self, keep_menu=None):
@@ -6430,11 +6431,11 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
         try:
             menu.close()
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 6433)
         try:
             menu.deleteLater()
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 6437)
 
     def clear_current_context_menu(self, menu):
         if getattr(self, "current_context_menu", None) is menu:
@@ -6442,7 +6443,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
         try:
             menu.deleteLater()
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 6445)
 
     def show_context_menu(self, global_pos):
         self.close_current_context_menu()
@@ -6451,7 +6452,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
         try:
             menu.aboutToHide.connect(lambda m=menu: self.clear_current_context_menu(m))
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 6454)
         self.populate_context_menu(menu, global_pos)
         menu.exec(global_pos)
         return
@@ -6469,7 +6470,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
         try:
             QgsSettings().setValue(INSPECTION_DELETE_CONFIRM_KEY, bool(enabled))
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 6472)
 
     def confirm_delete_if_needed(self, title, message):
         if not self.delete_confirm_enabled():
@@ -6489,7 +6490,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
         try:
             QgsSettings().setValue(INSPECTION_LAYER_CHANGE_CONFIRM_KEY, bool(enabled))
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 6492)
 
     def confirm_layer_change_if_needed(self, target_layer, total_count):
         if not self.layer_change_confirm_enabled():
@@ -6564,7 +6565,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                 try:
                     settings.setValue(INSPECTION_SHORTCUTS_KEY_PREFIX + key, value)
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 6567)
             shortcuts[key] = str(value or "").strip()
         return shortcuts
     def inspection_angle_snap_degrees(self):
@@ -6587,7 +6588,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
         try:
             QgsSettings().setValue(INSPECTION_ANGLE_SNAP_DEGREES_KEY, degrees)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 6590)
 
     def inspection_angle_snap_basis(self):
         try:
@@ -6604,7 +6605,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
         try:
             QgsSettings().setValue(INSPECTION_ANGLE_SNAP_BASIS_KEY, basis)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 6607)
 
     def save_inspection_shortcuts(self, shortcuts):
         settings = QgsSettings()
@@ -6612,7 +6613,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
             try:
                 settings.setValue(INSPECTION_SHORTCUTS_KEY_PREFIX + key, shortcuts.get(key, default_value) or "")
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 6615)
 
     def open_inspection_shortcut_dialog(self):
         dialog = InspectionShortcutDialog(self, self)
@@ -6639,7 +6640,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                 shortcut.setEnabled(False)
                 shortcut.deleteLater()
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 6642)
         self.inspection_qshortcuts = []
         for key, value in self.inspection_shortcuts().items():
             if key in INSPECTION_HOLD_SHORTCUT_KEYS:
@@ -6816,18 +6817,18 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
             try:
                 layer.triggerRepaint()
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 6819)
         try:
             self.iface.mapCanvas().refresh()
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 6823)
 
     def clear_trash_selection(self):
         for layer in self.trash_layers():
             try:
                 layer.removeSelection()
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 6830)
 
     def start_select(self):
         self.finish_edit_for_mode_switch()
@@ -6974,7 +6975,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                         if geom.distance(point_geom) <= tolerance:
                             return layer, feature
                     except Exception:
-                        pass
+                        _om_record_ignored_exception(__name__, 6977)
         if candidates:
             candidates.sort(key=lambda item: item[0])
             return candidates[0][1], candidates[0][2]
@@ -7015,13 +7016,13 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
             if polygon:
                 rings_list.append(polygon)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 7018)
         try:
             multi = geom.asMultiPolygon()
             if multi:
                 rings_list.extend(multi)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 7024)
         for polygon in rings_list:
             for ring in polygon:
                 if len(ring) < 2:
@@ -7151,7 +7152,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
             try:
                 layer.removeSelection()
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 7154)
         self.clear_selection_highlight()
 
     def restore_feature_move_selection(self, targets):
@@ -7164,7 +7165,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                 layer.selectByIds(ids)
                 restored_targets.append((layer, ids))
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 7167)
         if restored_targets:
             self.feature_move_targets = restored_targets
         self.refresh_selection_highlight()
@@ -7256,12 +7257,12 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                             polygon_candidates.append((layer, feature))
                             continue
                     except Exception:
-                        pass
+                        _om_record_ignored_exception(__name__, 7259)
                     try:
                         if geom.intersects(rect_geom):
                             return layer, feature
                     except Exception:
-                        pass
+                        _om_record_ignored_exception(__name__, 7264)
                 else:
                     try:
                         if geom.distance(point_geom) <= tolerance or geom.intersects(rect_geom):
@@ -7271,7 +7272,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                             if geom.intersects(rect_geom):
                                 return layer, feature
                         except Exception:
-                            pass
+                            _om_record_ignored_exception(__name__, 7274)
         if polygon_candidates:
             return polygon_candidates[0]
         return None, None
@@ -7306,12 +7307,12 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                 if not layer.isValid():
                     continue
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 7309)
             try:
                 if self.layer_geom_type_key(layer) != geom_type:
                     continue
             except Exception:
-                continue
+                _om_record_ignored_exception(__name__, 7314); continue
             candidates.append(layer)
         return candidates
 
@@ -7426,7 +7427,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                 try:
                     self.set_restore_feature_attrs_from_json(new_feature, trash_feature["orig_attrs"], target_layer)
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 7429)
                 target_id = target_layer.id()
                 if target_id not in add_batches:
                     add_batches[target_id] = {"layer": target_layer, "features": [], "trash": []}
@@ -7442,7 +7443,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                 try:
                     self.set_restore_feature_attrs_from_json(new_feature, trash_feature["orig_attrs"], target_layer)
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 7445)
                 target_id = target_layer.id()
                 if target_id not in add_batches:
                     add_batches[target_id] = {"layer": target_layer, "features": [], "trash": []}
@@ -7528,7 +7529,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                 try:
                     layer.selectByIds(list(ids))
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 7531)
             self.refresh_selection_highlight()
         self.refresh_counts()
         elapsed = time.perf_counter() - started
@@ -7641,7 +7642,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
             try:
                 ds = None
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 7644)
         descriptor = {
             "round_no": round_no,
             "code": code,
@@ -7854,7 +7855,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                         if geom.distance(point_geom) <= tolerance:
                             return layer, feature
                     except Exception:
-                        pass
+                        _om_record_ignored_exception(__name__, 7857)
         if candidates:
             candidates.sort(key=lambda item: item[0])
             return candidates[0][1], candidates[0][2]
@@ -7912,7 +7913,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                     band.hide()
                     band.deleteLater()
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 7915)
         self.feature_move_preview_bands = []
 
     def layer_delta_from_map_points(self, layer, start_point, end_point):
@@ -7926,7 +7927,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                 start = transform.transform(start)
                 end = transform.transform(end)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 7929)
         return end.x() - start.x(), end.y() - start.y()
 
     def update_feature_move_preview(self, start_point, end_point):
@@ -7946,7 +7947,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                 try:
                     geom.translate(dx, dy)
                 except Exception:
-                    continue
+                    _om_record_ignored_exception(__name__, 7949); continue
                 band = QgsRubberBand(canvas, layer.geometryType())
                 try:
                     band.setStrokeColor(stroke_color)
@@ -7959,7 +7960,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                 try:
                     band.setToGeometry(geom, layer)
                 except Exception:
-                    continue
+                    _om_record_ignored_exception(__name__, 7962); continue
                 band.show()
                 self.feature_move_preview_bands.append(band)
 
@@ -7994,7 +7995,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                 try:
                     geom.translate(dx, dy)
                 except Exception:
-                    continue
+                    _om_record_ignored_exception(__name__, 7997); continue
                 undo_entries.append((layer, feature.id(), QgsGeometry(feature.geometry())))
                 geometry_changes[feature.id()] = geom
             if not geometry_changes:
@@ -8126,7 +8127,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                         transform = QgsCoordinateTransform(layer.crs(), target_layer.crs(), QgsProject.instance())
                         geom.transform(transform)
                     except Exception:
-                        pass
+                        _om_record_ignored_exception(__name__, 8129)
                 new_feature.setGeometry(geom)
                 values = {
                     "memo": feature["memo"] if feature.fields().indexOf("memo") >= 0 else "",
@@ -8215,7 +8216,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
             try:
                 self.refresh_vector_layer_after_data_change(layer, reload_data=True, mark_edit_refresh=False)
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 8218)
             try:
                 canvas = self.iface.mapCanvas()
                 if hasattr(canvas, "refreshAllLayers"):
@@ -8223,7 +8224,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                 else:
                     canvas.refresh()
             except Exception:
-                pass
+                _om_record_ignored_exception(__name__, 8226)
         refresh_once()
         QTimer.singleShot(80, refresh_once)
 
@@ -8422,13 +8423,13 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                 try:
                     layer.destroyEditCommand()
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 8425)
             for layer in started:
                 try:
                     if layer.isEditable():
                         layer.rollBack()
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 8431)
 
     def collect_merge_features(self, targets, target_layer):
         features = []
@@ -8442,7 +8443,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                     if not geom.isGeosValid():
                         geom = geom.makeValid()
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 8445)
                 if layer.crs().isValid() and target_layer.crs().isValid() and layer.crs() != target_layer.crs():
                     try:
                         transform = QgsCoordinateTransform(layer.crs(), target_layer.crs(), QgsProject.instance())
@@ -8747,7 +8748,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                 try:
                     os.remove(path)
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 8750)
 
     def export_dxf(self, layers, path):
         if self._write_legacy_dxf(layers, path):
@@ -8809,7 +8810,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                 try:
                     driver.DeleteDataSource(path)
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 8812)
         old_encoding = gdal.GetConfigOption("DXF_ENCODING")
         old_hatch = gdal.GetConfigOption("DXF_WRITE_HATCH")
         try:
@@ -8898,7 +8899,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
             with open(path, "w", encoding="cp932", errors="replace", newline="") as f:
                 f.write(text)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 8901)
 
     def _write_legacy_dxf(self, layers, path):
         return self._write_direct_dxf(
@@ -9091,7 +9092,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                     if polygon and len(polygon[0]) >= 3:
                         entities.append(("polyline", polygon[0], True))
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 9094)
         return entities
 
     def _point_from_geometry(self, geometry):
@@ -9271,7 +9272,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                 value = feature[field_name]
                 return "" if value is None else str(value)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 9274)
         return ""
 
     def _dxf_style_text(self, text):
@@ -9335,7 +9336,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                     QgsProject.instance().removeMapLayer(layer.id())
                     removed_any = True
                 except Exception:
-                    pass
+                    _om_record_ignored_exception(__name__, 9338)
             if self.close_project_trash_layers_and_group():
                 removed_any = True
             if removed_any:
@@ -9362,7 +9363,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                         QgsProject.instance().removeMapLayer(layer.id())
                         removed_any = True
                     except Exception:
-                        pass
+                        _om_record_ignored_exception(__name__, 9365)
             if inspection_type == self.active_inspection_type:
                 if self.close_project_trash_layers_and_group():
                     removed_any = True
@@ -9390,6 +9391,6 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
             if self.map_tool and self.iface.mapCanvas().mapTool() == self.map_tool:
                 self.iface.mapCanvas().unsetMapTool(self.map_tool)
         except Exception:
-            pass
+            _om_record_ignored_exception(__name__, 9393)
         self.map_tool = None
 
