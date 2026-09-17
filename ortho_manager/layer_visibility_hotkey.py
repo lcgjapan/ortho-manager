@@ -33,24 +33,15 @@ def setting_bool(value, default=False):
 
 
 def _qt_key_space():
-    try:
-        return Qt.Key.Key_Space
-    except Exception:
-        return Qt.Key_Space
+    return Qt.Key.Key_Space
 
 
 def _qt_no_modifier():
-    try:
-        return Qt.KeyboardModifier.NoModifier
-    except Exception:
-        return Qt.NoModifier
+    return Qt.KeyboardModifier.NoModifier
 
 
 def _qevent_key_press():
-    try:
-        return QEvent.Type.KeyPress
-    except Exception:
-        return QEvent.KeyPress
+    return QEvent.Type.KeyPress
 
 
 class LayerVisibilityHotkey(QObject):

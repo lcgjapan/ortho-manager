@@ -182,10 +182,7 @@ class InspectionEditingMixin:
             try:
                 marker.setIconType(QgsVertexMarker.IconType.ICON_BOX)
             except Exception:
-                try:
-                    marker.setIconType(QgsVertexMarker.ICON_BOX)
-                except Exception:
-                    _om_record_ignored_exception(__name__, 187)
+                _om_record_ignored_exception(__name__, 187)
             try:
                 marker.setZValue(1300)
             except Exception:

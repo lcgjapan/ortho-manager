@@ -991,10 +991,7 @@ class InspectionContextMenuMixin:
         label_text = self.free_group_title(group_name)
         if not self.group_drag_preview_label:
             self.group_drag_preview_label = QLabel()
-            try:
-                self.group_drag_preview_label.setWindowFlags(Qt.WindowType.ToolTip)
-            except Exception:
-                self.group_drag_preview_label.setWindowFlags(Qt.ToolTip)
+            self.group_drag_preview_label.setWindowFlags(Qt.WindowType.ToolTip)
             self.group_drag_preview_label.setStyleSheet(
                 "QLabel{background:#202124;color:white;border:1px solid #4d5156;"
                 "border-radius:3px;padding:4px 8px;font-weight:bold;}"
@@ -1391,10 +1388,7 @@ class InspectionContextMenuMixin:
         label_text = self.context_action_definitions().get(action_key, (action_key, None, ""))[0]
         if not self.action_drag_preview_label:
             self.action_drag_preview_label = QLabel()
-            try:
-                self.action_drag_preview_label.setWindowFlags(Qt.WindowType.ToolTip)
-            except Exception:
-                self.action_drag_preview_label.setWindowFlags(Qt.ToolTip)
+            self.action_drag_preview_label.setWindowFlags(Qt.WindowType.ToolTip)
             self.action_drag_preview_label.setStyleSheet(
                 "QLabel{background:#202124;color:white;border:1px solid #4d5156;"
                 "border-radius:3px;padding:4px 8px;font-weight:bold;}"
@@ -1435,10 +1429,7 @@ class InspectionContextMenuMixin:
         label_text = self.layer_base_name(layer) if layer else source_name
         if not self.drag_preview_label:
             self.drag_preview_label = QLabel()
-            try:
-                self.drag_preview_label.setWindowFlags(Qt.WindowType.ToolTip)
-            except Exception:
-                self.drag_preview_label.setWindowFlags(Qt.ToolTip)
+            self.drag_preview_label.setWindowFlags(Qt.WindowType.ToolTip)
             self.drag_preview_label.setStyleSheet(
                 "QLabel{background:#202124;color:white;border:1px solid #4d5156;"
                 "border-radius:3px;padding:4px 8px;font-weight:bold;}"

@@ -6026,10 +6026,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                         try:
                             marker.setIconType(QgsVertexMarker.IconType.ICON_CIRCLE)
                         except Exception:
-                            try:
-                                marker.setIconType(QgsVertexMarker.ICON_CIRCLE)
-                            except Exception:
-                                _om_record_ignored_exception(__name__, 6031)
+                            _om_record_ignored_exception(__name__, 6031)
                         try:
                             marker.setZValue(1200)
                         except Exception:
@@ -6077,10 +6074,7 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                         try:
                             marker.setIconType(QgsVertexMarker.IconType.ICON_CIRCLE)
                         except Exception:
-                            try:
-                                marker.setIconType(QgsVertexMarker.ICON_CIRCLE)
-                            except Exception:
-                                _om_record_ignored_exception(__name__, 6082)
+                            _om_record_ignored_exception(__name__, 6082)
                         try:
                             marker.setZValue(1100)
                         except Exception:

@@ -347,10 +347,7 @@ class InspectionMapTool(QgsMapTool):
         try:
             marker.setIconType(QgsVertexMarker.IconType.ICON_CIRCLE)
         except Exception:
-            try:
-                marker.setIconType(QgsVertexMarker.ICON_CIRCLE)
-            except Exception:
-                _om_record_ignored_exception(__name__, 352)
+            _om_record_ignored_exception(__name__, 352)
         try:
             marker.setZValue(1200)
         except Exception:
@@ -1381,10 +1378,7 @@ class InspectionMapTool(QgsMapTool):
         try:
             marker.setIconType(QgsVertexMarker.IconType.ICON_CROSS)
         except Exception:
-            try:
-                marker.setIconType(QgsVertexMarker.ICON_CROSS)
-            except Exception:
-                _om_record_ignored_exception(__name__, 1386)
+            _om_record_ignored_exception(__name__, 1386)
         try:
             marker.setZValue(1000)
         except Exception:
@@ -1518,10 +1512,7 @@ class InspectionMapTool(QgsMapTool):
         try:
             marker.setIconType(QgsVertexMarker.IconType.ICON_CROSS)
         except Exception:
-            try:
-                marker.setIconType(QgsVertexMarker.ICON_CROSS)
-            except Exception:
-                _om_record_ignored_exception(__name__, 1523)
+            _om_record_ignored_exception(__name__, 1523)
         try:
             marker.setZValue(1000)
         except Exception:

@@ -66,5 +66,5 @@ def get_bounds_safe(tif_path):
         ds = None
         return {"path": tif_path, "wkt": wkt}
     except Exception as e:
-        QgsMessageLog.logMessage(f"座標抽出失敗 ({os.path.basename(tif_path)}): {e}", "OrthoManager", Qgis.Warning)
+        QgsMessageLog.logMessage(f"座標抽出失敗 ({os.path.basename(tif_path)}): {e}", "OrthoManager", Qgis.MessageLevel.Warning)
         return None
