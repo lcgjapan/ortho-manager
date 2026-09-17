@@ -13,9 +13,9 @@ LANGUAGES = {
 
 TRANSLATIONS = {
     "tab.vrt": {
-        "ja": "📁 VRT管理",
+        "ja": "📁 VRT",
         "en": "📁 VRT",
-        "zh": "📁 VRT管理",
+        "zh": "📁 VRT",
     },
     "tab.inspection": {
         "ja": "🔎 検査",
@@ -23,9 +23,14 @@ TRANSLATIONS = {
         "zh": "🔎 检查",
     },
     "tab.export": {
-        "ja": "📤 書き出し",
+        "ja": "📤 出力",
         "en": "📤 Export",
         "zh": "📤 导出",
+    },
+    "tab.tools": {
+        "ja": "🧰 ツール",
+        "en": "🧰 Tools",
+        "zh": "🧰 工具",
     },
     "tab.settings": {
         "ja": "⚙",
@@ -36,6 +41,556 @@ TRANSLATIONS = {
         "ja": "設定",
         "en": "Settings",
         "zh": "设置",
+    },
+    "tools.title": {
+        "ja": "ツール",
+        "en": "Tools",
+        "zh": "工具",
+    },
+    "tools.elevation_raster.name": {
+        "ja": "標高ラスタ作成",
+        "en": "Elevation Raster",
+        "zh": "高程栅格生成",
+    },
+    "tools.elevation_raster.title": {
+        "ja": "標高ラスタ作成",
+        "en": "Elevation Raster",
+        "zh": "高程栅格生成",
+    },
+    "tools.elevation_raster.note": {
+        "ja": "LAS/LAZから標高ラスタGeoTIFFを作成します。VPC、標高付きベクタ、ブレークライン等は次段階で追加します。",
+        "en": "Create elevation raster GeoTIFFs from LAS/LAZ. VPC, elevation vectors, breaklines, and other inputs will be added later.",
+        "zh": "从 LAS/LAZ 生成高程栅格 GeoTIFF。VPC、带高程矢量、断裂线等会在下一阶段添加。",
+    },
+    "tools.elevation_raster.input_group": {
+        "ja": "入力データ",
+        "en": "Input Data",
+        "zh": "输入数据",
+    },
+    "tools.elevation_raster.input_note": {
+        "ja": "LAS/LAZ、VPC、標高付きベクタを扱う予定です。",
+        "en": "Planned inputs: LAS/LAZ, VPC, and elevation vector data.",
+        "zh": "计划支持 LAS/LAZ、VPC、带高程的矢量数据。",
+    },
+    "tools.elevation_raster.add_files": {
+        "ja": "LAS/LAZ追加",
+        "en": "Add LAS/LAZ",
+        "zh": "添加LAS/LAZ",
+    },
+    "tools.elevation_raster.add_folder": {
+        "ja": "フォルダ追加",
+        "en": "Add Folder",
+        "zh": "添加文件夹",
+    },
+    "tools.elevation_raster.remove_selected": {
+        "ja": "選択削除",
+        "en": "Remove Selected",
+        "zh": "删除所选",
+    },
+    "tools.elevation_raster.clear_inputs": {
+        "ja": "クリア",
+        "en": "Clear",
+        "zh": "清空",
+    },
+    "tools.elevation_raster.show_extent": {
+        "ja": "範囲表示",
+        "en": "Show Extent",
+        "zh": "显示范围",
+    },
+    "tools.elevation_raster.clear_extent": {
+        "ja": "範囲消去",
+        "en": "Clear Extent",
+        "zh": "清除范围",
+    },
+    "tools.elevation_raster.auto_extent": {
+        "ja": "追加・削除時に範囲を自動表示",
+        "en": "Auto show extents after changes",
+        "zh": "添加/删除后自动显示范围",
+    },
+    "tools.elevation_raster.input_count": {
+        "ja": "入力 {count} 件",
+        "en": "{count} input(s)",
+        "zh": "输入 {count} 个",
+    },
+    "tools.elevation_raster.output_group": {
+        "ja": "出力設定",
+        "en": "Output Settings",
+        "zh": "输出设置",
+    },
+    "tools.elevation_raster.output_note": {
+        "ja": "出力名、解像度、標高種別、GeoTIFF保存先を指定できるようにする予定です。",
+        "en": "Planned settings: output name, resolution, elevation type, and GeoTIFF destination.",
+        "zh": "计划支持输出名称、分辨率、高程类型、GeoTIFF保存位置。",
+    },
+    "tools.elevation_raster.output_browse": {
+        "ja": "保存先",
+        "en": "Browse",
+        "zh": "保存位置",
+    },
+    "tools.elevation_raster.layer_name": {
+        "ja": "レイヤ名",
+        "en": "Layer",
+        "zh": "图层名",
+    },
+    "tools.elevation_raster.resolution": {
+        "ja": "解像度",
+        "en": "Resolution",
+        "zh": "分辨率",
+    },
+    "tools.elevation_raster.radius": {
+        "ja": "補間距離",
+        "en": "Interpolation distance",
+        "zh": "插值距离",
+    },
+    "tools.elevation_raster.radius_auto": {
+        "ja": "自動（解像度×2）",
+        "en": "Auto (resolution x2)",
+        "zh": "自动（分辨率×2）",
+    },
+    "tools.elevation_raster.output_type": {
+        "ja": "標高値の算出方法",
+        "en": "Elevation value method",
+        "zh": "高程值计算方式",
+    },
+    "tools.elevation_raster.output_type_tin": {
+        "ja": "点群Z値からTIN",
+        "en": "TIN from point Z values",
+        "zh": "由点群Z值生成TIN",
+    },
+    "tools.elevation_raster.output_type_max": {
+        "ja": "最大値（DSM向け）",
+        "en": "Max",
+        "zh": "最大值",
+    },
+    "tools.elevation_raster.output_type_min": {
+        "ja": "最小値（DEM向け）",
+        "en": "Min",
+        "zh": "最小值",
+    },
+    "tools.elevation_raster.output_type_mean": {
+        "ja": "平均",
+        "en": "Mean",
+        "zh": "平均",
+    },
+    "tools.elevation_raster.tin_edge": {
+        "ja": "補間距離",
+        "en": "Interpolation distance",
+        "zh": "插值距离",
+    },
+    "tools.elevation_raster.tin_edge_tooltip": {
+        "ja": "TINで点同士を結ぶ最大距離です。小さいほど空白が残りやすく、大きいほど穴を埋めますが、離れた図郭同士もつながる可能性があります。",
+        "en": "Maximum distance for connecting points in the TIN. Smaller values leave more blank areas; larger values fill holes but may connect distant tiles.",
+        "zh": "TIN中点与点连接的最大距离。值越小越容易保留空白，值越大越容易填补空洞，但也可能连接相距较远的图幅。",
+    },
+    "tools.elevation_raster.tin_edge_unlimited": {
+        "ja": "距離制限なし（非推奨）",
+        "en": "No distance limit (not recommended)",
+        "zh": "无距离限制（不推荐）",
+    },
+    "tools.elevation_raster.tin_edge_unlimited_tooltip": {
+        "ja": "どれだけ離れていてもTINで結びます。処理が遅くなりやすく、離れた図郭間にも面が作られるため通常は使いません。",
+        "en": "Connects points regardless of distance. This can be slow and may create surfaces between distant tiles, so it is usually not recommended.",
+        "zh": "无论距离多远都会用TIN连接。处理容易变慢，也可能在相距较远的图幅之间生成面，通常不建议使用。",
+    },
+    "tools.elevation_raster.tin_edge_auto": {
+        "ja": "自動（解像度×2）",
+        "en": "Auto (resolution x2)",
+        "zh": "自动（分辨率×2）",
+    },
+    "tools.elevation_raster.tin_edge_auto_tooltip": {
+        "ja": "出力解像度の2倍を使います。0.5mなら1.0mです。通常はこの設定が安全です。",
+        "en": "Uses twice the output resolution. For 0.5 m output, this is 1.0 m. This is the usual safe setting.",
+        "zh": "使用输出分辨率的2倍。0.5m时为1.0m。通常这个设置较安全。",
+    },
+    "tools.elevation_raster.tin_edge_manual": {
+        "ja": "手動",
+        "en": "Manual",
+        "zh": "手动",
+    },
+    "tools.elevation_raster.tin_edge_manual_tooltip": {
+        "ja": "穴や欠測部を埋めたい場合に距離を指定します。離れた図郭同士をつなぎたくない場合は、図郭間の空白より小さい値にしてください。",
+        "en": "Specify a distance when filling holes or missing areas. To avoid connecting separated tiles, use a value smaller than the gap between them.",
+        "zh": "需要填补空洞或缺测区域时指定距离。若不想连接相距较远的图幅，请设为小于图幅间空白的值。",
+    },
+    "tools.elevation_raster.tin_edge_distance": {
+        "ja": "距離",
+        "en": "Distance",
+        "zh": "距离",
+    },
+    "tools.elevation_raster.tin_edge_distance_tooltip": {
+        "ja": "手動時の補間距離です。この距離を超える点同士はTINで結びません。",
+        "en": "Manual interpolation distance. Points farther apart than this distance are not connected in the TIN.",
+        "zh": "手动补间距离。超过该距离的点不会在TIN中连接。",
+    },
+    "tools.elevation_raster.fill_method": {
+        "ja": "空白セル",
+        "en": "Blank cells",
+        "zh": "空白像元",
+    },
+    "tools.elevation_raster.fill_method_none": {
+        "ja": "埋めない",
+        "en": "Do not fill",
+        "zh": "不填补",
+    },
+    "tools.elevation_raster.fill_method_nearest": {
+        "ja": "最近傍で埋める",
+        "en": "Fill with nearest",
+        "zh": "最近邻填补",
+    },
+    "tools.elevation_raster.fill_distance": {
+        "ja": "補間距離",
+        "en": "Fill distance",
+        "zh": "填补距离",
+    },
+    "tools.elevation_raster.fill_distance_auto": {
+        "ja": "自動（解像度×2）",
+        "en": "Auto (resolution x2)",
+        "zh": "自动（分辨率×2）",
+    },
+    "tools.elevation_raster.auto_load": {
+        "ja": "作成後にQGISへ読み込む",
+        "en": "Load into QGIS after creation",
+        "zh": "生成后加载到QGIS",
+    },
+    "tools.elevation_raster.apply_selected_style": {
+        "ja": "選択ラスタを段彩＋陰影表示",
+        "en": "Apply Color Relief + Hillshade",
+        "zh": "所选栅格设为分层设色+阴影",
+    },
+    "tools.elevation_raster.apply_selected_style_tooltip": {
+        "ja": "外部で作成した標高ラスタ用。QGISで選択中のラスタに段彩・陰影・なめらか表示を適用します。GeoTIFF本体のZ値は変更しません。",
+        "en": "For externally created elevation rasters. Applies color relief, hillshade, and smooth display to the selected QGIS raster. GeoTIFF Z values are not changed.",
+        "zh": "用于外部生成的高程栅格。对QGIS中选中的栅格应用分层设色、阴影和平滑显示。不会修改GeoTIFF本体的Z值。",
+    },
+    "tools.elevation_raster.run": {
+        "ja": "作成",
+        "en": "Create",
+        "zh": "生成",
+    },
+    "tools.elevation_raster.cancel": {
+        "ja": "中止",
+        "en": "Cancel",
+        "zh": "中止",
+    },
+    "tools.elevation_raster.run_disabled": {
+        "ja": "次段階で追加",
+        "en": "Coming Next",
+        "zh": "下一阶段添加",
+    },
+    "tools.elevation_raster.dialog_add_files": {
+        "ja": "LAS/LAZを選択",
+        "en": "Select LAS/LAZ",
+        "zh": "选择LAS/LAZ",
+    },
+    "tools.elevation_raster.dialog_add_folder": {
+        "ja": "LAS/LAZフォルダを選択",
+        "en": "Select LAS/LAZ Folder",
+        "zh": "选择LAS/LAZ文件夹",
+    },
+    "tools.elevation_raster.dialog_output": {
+        "ja": "出力GeoTIFFを指定",
+        "en": "Select Output GeoTIFF",
+        "zh": "指定输出GeoTIFF",
+    },
+    "tools.elevation_raster.default_output_name": {
+        "ja": "標高ラスタ.tif",
+        "en": "elevation_raster.tif",
+        "zh": "高程栅格.tif",
+    },
+    "tools.elevation_raster.las_filter": {
+        "ja": "点群 (*.las *.laz)",
+        "en": "Point cloud (*.las *.laz)",
+        "zh": "点云 (*.las *.laz)",
+    },
+    "tools.elevation_raster.tif_filter": {
+        "ja": "GeoTIFF (*.tif *.tiff)",
+        "en": "GeoTIFF (*.tif *.tiff)",
+        "zh": "GeoTIFF (*.tif *.tiff)",
+    },
+    "tools.elevation_raster.warning_title": {
+        "ja": "標高ラスタ作成",
+        "en": "Elevation Raster",
+        "zh": "高程栅格生成",
+    },
+    "tools.elevation_raster.error_no_input": {
+        "ja": "入力LAS/LAZを追加してください。",
+        "en": "Add input LAS/LAZ files.",
+        "zh": "请添加输入LAS/LAZ。",
+    },
+    "tools.elevation_raster.error_no_output": {
+        "ja": "出力GeoTIFFの保存先を指定してください。",
+        "en": "Select an output GeoTIFF path.",
+        "zh": "请指定输出GeoTIFF保存位置。",
+    },
+    "tools.elevation_raster.error_output_dir": {
+        "ja": "出力先フォルダが見つかりません。",
+        "en": "Output folder was not found.",
+        "zh": "找不到输出文件夹。",
+    },
+    "tools.elevation_raster.error_load_failed": {
+        "ja": "作成したGeoTIFFをQGISへ読み込めませんでした。",
+        "en": "Created GeoTIFF could not be loaded into QGIS.",
+        "zh": "生成的GeoTIFF无法加载到QGIS。",
+    },
+    "tools.elevation_raster.error_no_selected_raster": {
+        "ja": "QGISで表示設定を適用するラスタレイヤを選択してください。",
+        "en": "Select a raster layer in QGIS before applying the display style.",
+        "zh": "请先在QGIS中选择要应用显示设置的栅格图层。",
+    },
+    "tools.elevation_raster.error_style_apply_failed": {
+        "ja": "表示設定を適用できませんでした。\n{error}",
+        "en": "Could not apply the display style.\n{error}",
+        "zh": "无法应用显示设置。\n{error}",
+    },
+    "tools.elevation_raster.extent_crs_title": {
+        "ja": "入力範囲の座標系を選択",
+        "en": "Select CRS for Input Extents",
+        "zh": "选择输入范围坐标系",
+    },
+    "tools.elevation_raster.extent_layer_name": {
+        "ja": "標高ラスタ入力範囲",
+        "en": "Elevation Raster Input Extents",
+        "zh": "高程栅格输入范围",
+    },
+    "tools.elevation_raster.error_extent_failed": {
+        "ja": "LAS/LAZの範囲を読み取れませんでした。",
+        "en": "Could not read LAS/LAZ extents.",
+        "zh": "无法读取LAS/LAZ范围。",
+    },
+    "tools.elevation_raster.extent_done": {
+        "ja": "範囲表示 {count} 件",
+        "en": "Displayed {count} extent(s)",
+        "zh": "已显示 {count} 个范围",
+    },
+    "tools.elevation_raster.extent_skipped": {
+        "ja": "読取失敗 {count} 件",
+        "en": "{count} skipped",
+        "zh": "{count} 个读取失败",
+    },
+    "tools.elevation_raster.status_running": {
+        "ja": "作成中...",
+        "en": "Creating...",
+        "zh": "生成中...",
+    },
+    "tools.elevation_raster.status_canceling": {
+        "ja": "中止中...",
+        "en": "Canceling...",
+        "zh": "正在中止...",
+    },
+    "tools.elevation_raster.status_canceled": {
+        "ja": "中止しました",
+        "en": "Canceled",
+        "zh": "已中止",
+    },
+    "tools.elevation_raster.status_done": {
+        "ja": "完了 {seconds:.1f}秒",
+        "en": "Done {seconds:.1f}s",
+        "zh": "完成 {seconds:.1f}秒",
+    },
+    "tools.elevation_raster.status_done_quality": {
+        "ja": "完了 {seconds:.1f}秒 / NoData {nodata_percent:.1f}% / Z {min_z:.3f}〜{max_z:.3f}",
+        "en": "Done {seconds:.1f}s / NoData {nodata_percent:.1f}% / Z {min_z:.3f}-{max_z:.3f}",
+        "zh": "完成 {seconds:.1f}秒 / NoData {nodata_percent:.1f}% / Z {min_z:.3f}〜{max_z:.3f}",
+    },
+    "tools.elevation_raster.status_done_quality_no_valid": {
+        "ja": "完了 {seconds:.1f}秒 / 有効セルなし",
+        "en": "Done {seconds:.1f}s / no valid cells",
+        "zh": "完成 {seconds:.1f}秒 / 没有有效像元",
+    },
+    "tools.elevation_raster.status_failed": {
+        "ja": "作成失敗",
+        "en": "Failed",
+        "zh": "生成失败",
+    },
+    "tools.elevation_raster.status_style_applied": {
+        "ja": "段彩＋陰影表示: {name}",
+        "en": "Color relief + hillshade: {name}",
+        "zh": "分层设色+阴影: {name}",
+    },
+    "tools.rrim.name": {
+        "ja": "RRIM作成",
+        "en": "RRIM",
+        "zh": "RRIM生成",
+    },
+    "tools.rrim.title": {
+        "ja": "RRIM作成",
+        "en": "RRIM",
+        "zh": "RRIM生成",
+    },
+    "tools.rrim.note": {
+        "ja": "標高ラスタGeoTIFFから赤色立体図（Red Relief Image Map / RRIM）を作成します。",
+        "en": "Create a Red Relief Image Map (RRIM) GeoTIFF from an elevation raster.",
+        "zh": "从高程栅格GeoTIFF生成红色立体图（Red Relief Image Map / RRIM）。",
+    },
+    "tools.rrim.input_group": {
+        "ja": "入力ラスタ",
+        "en": "Input Raster",
+        "zh": "输入栅格",
+    },
+    "tools.rrim.input_note": {
+        "ja": "標高ラスタGeoTIFFを指定してください。",
+        "en": "Select an elevation raster GeoTIFF.",
+        "zh": "请选择高程栅格GeoTIFF。",
+    },
+    "tools.rrim.output_group": {
+        "ja": "出力設定",
+        "en": "Output Settings",
+        "zh": "输出设置",
+    },
+    "tools.rrim.output_note": {
+        "ja": "RRIM GeoTIFFの保存先と表現を指定します。",
+        "en": "Set the output RRIM GeoTIFF path and expression.",
+        "zh": "指定RRIM GeoTIFF保存位置和表现方式。",
+    },
+    "tools.rrim.input_browse": {
+        "ja": "入力",
+        "en": "Input",
+        "zh": "输入",
+    },
+    "tools.rrim.current_layer": {
+        "ja": "選択レイヤ",
+        "en": "Current Layer",
+        "zh": "当前图层",
+    },
+    "tools.rrim.output_browse": {
+        "ja": "保存先",
+        "en": "Save To",
+        "zh": "保存到",
+    },
+    "tools.rrim.preset_label": {
+        "ja": "表現",
+        "en": "Expression",
+        "zh": "表现",
+    },
+    "tools.rrim.preset_standard": {
+        "ja": "標準",
+        "en": "Standard",
+        "zh": "标准",
+    },
+    "tools.rrim.preset_strong": {
+        "ja": "強め",
+        "en": "Strong",
+        "zh": "较强",
+    },
+    "tools.rrim.preset_weak": {
+        "ja": "弱め",
+        "en": "Weak",
+        "zh": "较弱",
+    },
+    "tools.rrim.load_to_qgis": {
+        "ja": "作成後にQGISへ読み込む",
+        "en": "Load into QGIS after creation",
+        "zh": "生成后加载到QGIS",
+    },
+    "tools.rrim.run": {
+        "ja": "作成",
+        "en": "Create",
+        "zh": "生成",
+    },
+    "tools.rrim.cancel": {
+        "ja": "中止",
+        "en": "Cancel",
+        "zh": "中止",
+    },
+    "tools.rrim.status_ready": {
+        "ja": "準備完了",
+        "en": "Ready",
+        "zh": "准备完成",
+    },
+    "tools.rrim.status_running": {
+        "ja": "作成中...",
+        "en": "Creating...",
+        "zh": "生成中...",
+    },
+    "tools.rrim.status_canceling": {
+        "ja": "中止中...",
+        "en": "Canceling...",
+        "zh": "正在中止...",
+    },
+    "tools.rrim.status_done": {
+        "ja": "完了 {seconds:.1f}秒",
+        "en": "Done {seconds:.1f}s",
+        "zh": "完成 {seconds:.1f}秒",
+    },
+    "tools.rrim.status_failed": {
+        "ja": "作成失敗",
+        "en": "Failed",
+        "zh": "生成失败",
+    },
+    "tools.rrim.warning_title": {
+        "ja": "警告",
+        "en": "Warning",
+        "zh": "警告",
+    },
+    "tools.rrim.overwrite_title": {
+        "ja": "上書き確認",
+        "en": "Overwrite",
+        "zh": "覆盖确认",
+    },
+    "tools.rrim.overwrite_message": {
+        "ja": "既存ファイルを上書きしますか？\n{path}",
+        "en": "Overwrite the existing file?\n{path}",
+        "zh": "是否覆盖已有文件？\n{path}",
+    },
+    "tools.rrim.input_dialog_title": {
+        "ja": "標高ラスタを選択",
+        "en": "Select Elevation Raster",
+        "zh": "选择高程栅格",
+    },
+    "tools.rrim.output_dialog_title": {
+        "ja": "RRIM保存先を選択",
+        "en": "Select RRIM Output",
+        "zh": "选择RRIM保存位置",
+    },
+    "tools.rrim.input_filter": {
+        "ja": "GeoTIFF (*.tif *.tiff);;すべてのファイル (*.*)",
+        "en": "GeoTIFF (*.tif *.tiff);;All Files (*.*)",
+        "zh": "GeoTIFF (*.tif *.tiff);;所有文件 (*.*)",
+    },
+    "tools.rrim.output_filter": {
+        "ja": "GeoTIFF (*.tif *.tiff)",
+        "en": "GeoTIFF (*.tif *.tiff)",
+        "zh": "GeoTIFF (*.tif *.tiff)",
+    },
+    "tools.rrim.error_no_current_raster": {
+        "ja": "現在選択中のラスタレイヤがありません。",
+        "en": "No raster layer is currently selected.",
+        "zh": "当前没有选择栅格图层。",
+    },
+    "tools.rrim.error_current_raster_path": {
+        "ja": "選択レイヤの元ファイルを確認できません。",
+        "en": "The selected layer source file could not be found.",
+        "zh": "无法确认所选图层的源文件。",
+    },
+    "tools.rrim.error_input_required": {
+        "ja": "入力ラスタを指定してください。",
+        "en": "Select an input raster.",
+        "zh": "请选择输入栅格。",
+    },
+    "tools.rrim.error_input_missing": {
+        "ja": "入力ラスタが見つかりません。",
+        "en": "Input raster was not found.",
+        "zh": "找不到输入栅格。",
+    },
+    "tools.rrim.error_output_required": {
+        "ja": "保存先を指定してください。",
+        "en": "Select an output path.",
+        "zh": "请指定保存位置。",
+    },
+    "tools.rrim.error_output_dir_missing": {
+        "ja": "保存先フォルダが見つかりません。",
+        "en": "Output folder was not found.",
+        "zh": "找不到保存文件夹。",
+    },
+    "tools.rrim.error_same_path": {
+        "ja": "入力ラスタと同じファイルには保存できません。",
+        "en": "Output cannot be the same file as input.",
+        "zh": "不能保存到与输入栅格相同的文件。",
+    },
+    "tools.rrim.error_load_failed": {
+        "ja": "作成したRRIMをQGISへ読み込めませんでした。",
+        "en": "The created RRIM could not be loaded into QGIS.",
+        "zh": "生成的RRIM无法加载到QGIS。",
     },
     "settings.title": {
         "ja": "共通設定",
@@ -96,6 +651,66 @@ TRANSLATIONS = {
         "ja": "ログ開始位置を記録しました",
         "en": "Log start marked",
         "zh": "已记录日志开始位置",
+    },
+    "settings.xyz_group": {
+        "ja": "XYZ表示",
+        "en": "XYZ Display",
+        "zh": "XYZ显示",
+    },
+    "settings.xyz_checkbox": {
+        "ja": "下部ステータスバーにZを表示",
+        "en": "Show Z in the bottom status bar",
+        "zh": "在底部状态栏显示Z",
+    },
+    "settings.tooltip.xyz_checkbox": {
+        "ja": "マウス位置のラスタZとZ付きベクタZを表示します",
+        "en": "Show raster Z and 3D vector Z at the mouse position.",
+        "zh": "显示鼠标位置的栅格Z和三维矢量Z。",
+    },
+    "settings.xyz_note": {
+        "ja": "DSM/DEMラスタは Z(R)、Z付きベクタは Z(V) として表示します。LAS点群の直接Z取得は今後の拡張候補です。",
+        "en": "DSM/DEM rasters are shown as Z(R), and 3D vectors as Z(V). Direct LAS point cloud Z is planned for a later enhancement.",
+        "zh": "DSM/DEM栅格显示为 Z(R)，带Z的矢量显示为 Z(V)。LAS点云的直接Z读取作为后续扩展。",
+    },
+    "settings.status.xyz_on": {
+        "ja": "XYZ表示 ON",
+        "en": "XYZ display ON",
+        "zh": "XYZ显示 ON",
+    },
+    "settings.status.xyz_off": {
+        "ja": "XYZ表示 OFF",
+        "en": "XYZ display OFF",
+        "zh": "XYZ显示 OFF",
+    },
+    "settings.hotkey_group": {
+        "ja": "操作補助",
+        "en": "Operation Assist",
+        "zh": "操作辅助",
+    },
+    "settings.space_layer_checkbox": {
+        "ja": "マップ上でもSpaceで選択レイヤ表示切替",
+        "en": "Use Space on the map to toggle selected layer visibility",
+        "zh": "在地图上也用Space切换所选图层显示",
+    },
+    "settings.tooltip.space_layer_checkbox": {
+        "ja": "マップ操作中にSpaceキーで、レイヤパネルで選択中のレイヤまたはグループの表示ON/OFFを切り替えます",
+        "en": "While the map has focus, Space toggles visibility for the selected layer or group in the layer panel.",
+        "zh": "地图获得焦点时，按Space切换图层面板中所选图层或组的显示ON/OFF。",
+    },
+    "settings.space_layer_note": {
+        "ja": "OFFにすると、QGIS標準のSpace操作に戻します。文字入力中や属性表では反応しません。",
+        "en": "Turn this off to restore the standard QGIS Space behavior. It does not react while typing or in attribute tables.",
+        "zh": "关闭后恢复QGIS标准Space操作。文字输入中和属性表中不会触发。",
+    },
+    "settings.status.space_layer_on": {
+        "ja": "Space表示切替 ON",
+        "en": "Space visibility toggle ON",
+        "zh": "Space显示切换 ON",
+    },
+    "settings.status.space_layer_off": {
+        "ja": "Space表示切替 OFF",
+        "en": "Space visibility toggle OFF",
+        "zh": "Space显示切换 OFF",
     },
     "status.language_changed": {
         "ja": "表示言語を変更しました",
@@ -802,6 +1417,21 @@ TRANSLATIONS = {
         "en": "Scale",
         "zh": "显示比例",
     },
+    "vrt.group.scale.with_target": {
+        "ja": "{base}（対象: {target}）",
+        "en": "{base} (Target: {target})",
+        "zh": "{base}（对象：{target}）",
+    },
+    "vrt.scale.target.vrt": {
+        "ja": "VRT",
+        "en": "VRT",
+        "zh": "VRT",
+    },
+    "vrt.scale.target.vpc": {
+        "ja": "VPC",
+        "en": "VPC",
+        "zh": "VPC",
+    },
     "vrt.btn.new": {
         "ja": "新規",
         "en": "New",
@@ -828,9 +1458,9 @@ TRANSLATIONS = {
         "zh": "整理",
     },
     "vrt.btn.file_manager": {
-        "ja": "ファイル管理",
-        "en": "Files",
-        "zh": "文件",
+        "ja": "ファイル一覧",
+        "en": "File List",
+        "zh": "文件列表",
     },
     "vrt.label.file_count": {
         "ja": "ファイル数：{count}ファイル",
@@ -891,6 +1521,131 @@ TRANSLATIONS = {
         "ja": "⚡ VRT生成・更新",
         "en": "⚡ Build/Update",
         "zh": "⚡ 生成/更新",
+    },
+    "vpc.group": {
+        "ja": "点群VPC",
+        "en": "Point Cloud VPC",
+        "zh": "点云VPC",
+    },
+    "vpc.btn.new": {
+        "ja": "新規",
+        "en": "New",
+        "zh": "新建",
+    },
+    "vpc.btn.rename": {
+        "ja": "名前変更",
+        "en": "Rename",
+        "zh": "改名",
+    },
+    "vpc.btn.load": {
+        "ja": "VPC読込",
+        "en": "Load",
+        "zh": "读取",
+    },
+    "vpc.btn.delete": {
+        "ja": "削除",
+        "en": "Del",
+        "zh": "删除",
+    },
+    "vpc.btn.organize": {
+        "ja": "レイヤ整理",
+        "en": "Arrange",
+        "zh": "整理",
+    },
+    "vpc.btn.refresh_cache": {
+        "ja": "キャッシュ更新",
+        "en": "Refresh",
+        "zh": "刷新缓存",
+    },
+    "vpc.btn.update": {
+        "ja": "VPC更新",
+        "en": "Update VPC",
+        "zh": "更新VPC",
+    },
+    "vpc.btn.update.tooltip": {
+        "ja": "VPCを再作成します。変更されたLAS/LAZのCOPCだけを更新します。\nQGIS内部キャッシュの影響で点群表示が乱れる場合は、QGISを再起動してください。",
+        "en": "Rebuild the VPC and update COPC only for changed LAS/LAZ files.\nIf point-cloud display is disrupted by the QGIS internal cache, restart QGIS.",
+        "zh": "重新创建VPC，仅更新已变更LAS/LAZ对应的COPC。\n如因QGIS内部缓存导致点云显示异常，请重启QGIS。",
+    },
+    "vpc.btn.source_list": {
+        "ja": "点群一覧",
+        "en": "Sources",
+        "zh": "点云列表",
+    },
+    "vpc.btn.build": {
+        "ja": "⚡ VPC作成・読込",
+        "en": "⚡ Build/Load VPC",
+        "zh": "⚡ 生成/读取VPC",
+    },
+    "vpc.label.file_count": {
+        "ja": "点群数：{count}ファイル",
+        "en": "Point clouds: {count}",
+        "zh": "点云数：{count}",
+    },
+    "vpc.window.title": {
+        "ja": "点群ファイル一覧",
+        "en": "Point Cloud Sources",
+        "zh": "点云文件列表",
+    },
+    "vpc.label.vpc_path": {
+        "ja": "VPC:",
+        "en": "VPC:",
+        "zh": "VPC:",
+    },
+    "vpc.placeholder.vpc_path": {
+        "ja": "VPCファイルの保存先",
+        "en": "VPC output path",
+        "zh": "VPC保存位置",
+    },
+    "vpc.placeholder.search": {
+        "ja": "検索",
+        "en": "Search",
+        "zh": "搜索",
+    },
+    "vpc.checkbox.subfolders": {
+        "ja": "サブフォルダも対象",
+        "en": "Include subfolders",
+        "zh": "包含子文件夹",
+    },
+    "vpc.btn.add_folder": {
+        "ja": "フォルダ追加",
+        "en": "Add Folder",
+        "zh": "添加文件夹",
+    },
+    "vpc.btn.add_files": {
+        "ja": "ファイル追加",
+        "en": "Add Files",
+        "zh": "添加文件",
+    },
+    "vpc.btn.map_remove": {
+        "ja": "マップから削除",
+        "en": "Map Remove",
+        "zh": "从地图删除",
+    },
+    "vpc.btn.remove": {
+        "ja": "選択削除",
+        "en": "Remove",
+        "zh": "删除所选",
+    },
+    "vpc.btn.clear": {
+        "ja": "全削除",
+        "en": "Clear",
+        "zh": "全部删除",
+    },
+    "vpc.label.scale": {
+        "ja": "VPC縮尺",
+        "en": "VPC Scale",
+        "zh": "VPC比例",
+    },
+    "vpc.btn.scale_apply": {
+        "ja": "適用",
+        "en": "Apply",
+        "zh": "应用",
+    },
+    "vpc.btn.scale_all": {
+        "ja": "全表示",
+        "en": "All",
+        "zh": "全显示",
     },
     "vrt.tooltip.view_cache.on": {
         "ja": "ビューキャッシュをONにします",

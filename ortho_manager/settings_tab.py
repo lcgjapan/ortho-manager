@@ -2,11 +2,13 @@ import time
 
 from qgis.PyQt.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QGroupBox, QComboBox, QPushButton,
-    QSizePolicy
+    QSizePolicy, QCheckBox
 )
-from qgis.core import QgsMessageLog, Qgis
+from qgis.core import QgsMessageLog, Qgis, QgsSettings
 
 from .i18n import LANGUAGES, current_language, set_current_language, tr
+from .layer_visibility_hotkey import SPACE_LAYER_VISIBILITY_ENABLED_KEY, setting_bool as space_setting_bool
+from .xyz_status_tool import XYZ_STATUS_ENABLED_KEY, setting_bool
 
 
 class SettingsTabWidget(QWidget):
@@ -61,6 +63,32 @@ class SettingsTabWidget(QWidget):
         log_layout.addStretch(1)
         layout.addWidget(self.log_group)
 
+        self.xyz_group = QGroupBox()
+        xyz_layout = QVBoxLayout(self.xyz_group)
+        xyz_layout.setContentsMargins(8, 8, 8, 8)
+        xyz_layout.setSpacing(6)
+        self.xyz_checkbox = QCheckBox()
+        self.xyz_checkbox.stateChanged.connect(self._on_xyz_changed)
+        xyz_layout.addWidget(self.xyz_checkbox)
+        self.xyz_note = QLabel()
+        self.xyz_note.setWordWrap(True)
+        self.xyz_note.setStyleSheet("color:#555; font-size:11px;")
+        xyz_layout.addWidget(self.xyz_note)
+        layout.addWidget(self.xyz_group)
+
+        self.hotkey_group = QGroupBox()
+        hotkey_layout = QVBoxLayout(self.hotkey_group)
+        hotkey_layout.setContentsMargins(8, 8, 8, 8)
+        hotkey_layout.setSpacing(6)
+        self.space_layer_checkbox = QCheckBox()
+        self.space_layer_checkbox.stateChanged.connect(self._on_space_layer_changed)
+        hotkey_layout.addWidget(self.space_layer_checkbox)
+        self.space_layer_note = QLabel()
+        self.space_layer_note.setWordWrap(True)
+        self.space_layer_note.setStyleSheet("color:#555; font-size:11px;")
+        hotkey_layout.addWidget(self.space_layer_note)
+        layout.addWidget(self.hotkey_group)
+
         self.future_group = QGroupBox()
         future_layout = QVBoxLayout(self.future_group)
         future_layout.setContentsMargins(8, 8, 8, 8)
@@ -112,6 +140,38 @@ class SettingsTabWidget(QWidget):
         if hasattr(self.dock, "set_status"):
             self.dock.set_status(tr("settings.status.log_start"))
 
+    def _on_xyz_changed(self, *_args):
+        enabled = self.xyz_checkbox.isChecked()
+        QgsSettings().setValue(XYZ_STATUS_ENABLED_KEY, enabled)
+        tool = getattr(self.dock, "xyz_status_tool", None)
+        if tool is not None:
+            tool.set_enabled(enabled)
+        if hasattr(self.dock, "set_status"):
+            key = "settings.status.xyz_on" if enabled else "settings.status.xyz_off"
+            self.dock.set_status(tr(key))
+
+    def _on_space_layer_changed(self, *_args):
+        enabled = self.space_layer_checkbox.isChecked()
+        QgsSettings().setValue(SPACE_LAYER_VISIBILITY_ENABLED_KEY, enabled)
+        tool = getattr(self.dock, "layer_visibility_hotkey", None)
+        if tool is not None:
+            tool.set_enabled(enabled)
+        if hasattr(self.dock, "set_status"):
+            key = "settings.status.space_layer_on" if enabled else "settings.status.space_layer_off"
+            self.dock.set_status(tr(key))
+
+    def _sync_xyz_checkbox(self):
+        enabled = setting_bool(QgsSettings().value(XYZ_STATUS_ENABLED_KEY, True), True)
+        self.xyz_checkbox.blockSignals(True)
+        self.xyz_checkbox.setChecked(enabled)
+        self.xyz_checkbox.blockSignals(False)
+
+    def _sync_space_layer_checkbox(self):
+        enabled = space_setting_bool(QgsSettings().value(SPACE_LAYER_VISIBILITY_ENABLED_KEY, True), True)
+        self.space_layer_checkbox.blockSignals(True)
+        self.space_layer_checkbox.setChecked(enabled)
+        self.space_layer_checkbox.blockSignals(False)
+
     def refresh_texts(self):
         language = current_language()
         self.title_label.setText(tr("settings.title", language))
@@ -121,8 +181,18 @@ class SettingsTabWidget(QWidget):
         self.log_group.setTitle(tr("settings.log_group", language))
         self.btn_log_start.setText(tr("settings.btn.log_start", language))
         self.btn_log_start.setToolTip(tr("settings.tooltip.log_start", language))
+        self.xyz_group.setTitle(tr("settings.xyz_group", language))
+        self.xyz_checkbox.setText(tr("settings.xyz_checkbox", language))
+        self.xyz_checkbox.setToolTip(tr("settings.tooltip.xyz_checkbox", language))
+        self.xyz_note.setText(tr("settings.xyz_note", language))
+        self.hotkey_group.setTitle(tr("settings.hotkey_group", language))
+        self.space_layer_checkbox.setText(tr("settings.space_layer_checkbox", language))
+        self.space_layer_checkbox.setToolTip(tr("settings.tooltip.space_layer_checkbox", language))
+        self.space_layer_note.setText(tr("settings.space_layer_note", language))
         self.future_group.setTitle(tr("settings.future_group", language))
         self.future_note.setText(tr("settings.future_note", language))
         self.rating_group.setTitle(tr("settings.rating_group", language))
         self.rating_note.setText(tr("settings.rating_note", language))
         self._set_combo_language(language)
+        self._sync_xyz_checkbox()
+        self._sync_space_layer_checkbox()

@@ -6,6 +6,8 @@ from qgis.PyQt.QtCore import Qt
 from qgis.core import QgsProject, QgsMessageLog, Qgis
 from .ortho_manager_dockwidget import OrthoManagerDockWidget
 from .layer_lock import LOCK_PROPERTY, SELECT_LOCK_PROPERTY
+from .layer_visibility_hotkey import LayerVisibilityHotkey
+from .xyz_status_tool import XyzStatusTool
 
 
 class OrthoManager:
@@ -13,6 +15,8 @@ class OrthoManager:
         self.iface = iface
         self.action = None
         self.dockwidget = None
+        self.xyz_status_tool = None
+        self.layer_visibility_hotkey = None
 
     def initGui(self):
         icon_path = os.path.join(os.path.dirname(__file__), "icon.png")
@@ -21,7 +25,15 @@ class OrthoManager:
         self.iface.addToolBarIcon(self.action)
         self.iface.addPluginToRasterMenu("&OrthoManager", self.action)
 
+        self.xyz_status_tool = XyzStatusTool(self.iface)
+        self.xyz_status_tool.install()
+        self.layer_visibility_hotkey = LayerVisibilityHotkey(self.iface)
+        self.layer_visibility_hotkey.install()
+
         self.dockwidget = OrthoManagerDockWidget(self.iface)
+        self.dockwidget.xyz_status_tool = self.xyz_status_tool
+        self.dockwidget.layer_visibility_hotkey = self.layer_visibility_hotkey
+        self.layer_visibility_hotkey.dock = self.dockwidget
         self.iface.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.dockwidget)
         self.dockwidget.hide()
 
@@ -108,6 +120,18 @@ class OrthoManager:
             pass
         self.iface.removePluginRasterMenu("&OrthoManager", self.action)
         self.iface.removeToolBarIcon(self.action)
+        if self.xyz_status_tool:
+            try:
+                self.xyz_status_tool.cleanup()
+            except Exception:
+                pass
+            self.xyz_status_tool = None
+        if self.layer_visibility_hotkey:
+            try:
+                self.layer_visibility_hotkey.cleanup()
+            except Exception:
+                pass
+            self.layer_visibility_hotkey = None
         if self.dockwidget:
             try:
                 self.dockwidget.cleanup_before_unload()

@@ -323,8 +323,17 @@ class InspectionLayerTreeCopyMixin:
         return True
 
     def log_feature_clipboard(self, message, level=Qgis.MessageLevel.Info):
+        text = str(message)
+        if level == Qgis.MessageLevel.Info:
+            quiet_prefixes = (
+                "APP_FILTER_INSTALLED",
+                "SHORTCUTS_INSTALLED",
+                "INSTALL_LAYER_TREE_COPY_MENU",
+            )
+            if text.startswith(quiet_prefixes) or "BLOCKED_INSPECTION_OFF" in text:
+                return
         QgsMessageLog.logMessage(
-            "INSPECTION_FEATURE_CLIPBOARD " + str(message),
+            "INSPECTION_FEATURE_CLIPBOARD " + text,
             "OrthoManager",
             level,
         )

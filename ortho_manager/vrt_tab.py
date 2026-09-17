@@ -2,7 +2,7 @@ import os
 import json
 import time
 from qgis.PyQt.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QListWidget, QListWidgetItem,
+    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QPushButton, QListWidget, QListWidgetItem,
     QLabel, QFileDialog, QMessageBox, QGroupBox, QLineEdit, QProgressBar,
     QAbstractItemView, QComboBox, QApplication, QInputDialog, QSizePolicy,
     QCheckBox
@@ -18,6 +18,7 @@ from qgis.core import (
 from .utils import DEFAULT_MIN_SCALE, SUPPORTED_RASTER_FILTER, is_supported_raster_path
 from .tasks import BuildVrtAndGpkgTask, ExternalVrtEngineTask, find_external_vrt_engine_path
 from .i18n import current_language, tr, tr_text
+from .point_cloud_vpc_manager import PointCloudVpcManager
 
 try:
     from osgeo import ogr
@@ -188,25 +189,37 @@ class VrtTabWidget(QWidget):
         self.previous_map_tool = None  # マップから削除ボタンを押す前のツールを記憶する変数
         self.tif_sort_mode = "added"
         self.tif_list_window = None
+        self.vpc_manager = None
         self.include_subfolders = False
         self._build_ui()
 
     def _btn_style(self, color):
-        return f"QPushButton{{background:{color};color:white;border:none;border-radius:4px;padding:5px;font-size:11px;}}QPushButton:hover{{background:{color}CC;}}"
+        return (
+            "QPushButton{background:#f7f7f7;color:#222;border:1px solid #b8b8b8;"
+            "border-radius:3px;padding:4px 6px;font-size:11px;}"
+            "QPushButton:hover{background:#eeeeee;}"
+            "QPushButton:pressed{background:#dddddd;}"
+            "QPushButton:disabled{color:#999;background:#f2f2f2;border-color:#d0d0d0;}"
+        )
 
     def _btn_style_big(self, color):
-        return f"QPushButton{{background:{color};color:white;border:none;border-radius:5px;padding:7px;font-size:12px;font-weight:bold;}}QPushButton:hover{{background:{color}CC;}}"
+        return (
+            "QPushButton{background:#f7f7f7;color:#222;border:1px solid #b8b8b8;"
+            "border-radius:3px;padding:6px 8px;font-size:12px;font-weight:bold;}"
+            "QPushButton:hover{background:#eeeeee;}"
+            "QPushButton:pressed{background:#dddddd;}"
+        )
 
     def _scale_btn_style(self, is_active):
         if is_active:
-            return "QPushButton{background:#27ae60;color:white;border:none;border-radius:3px;font-size:10px;font-weight:bold;padding:2px;}QPushButton:hover{background:#2ecc71;}"
+            return "QPushButton{background:#d9d9d9;color:#111;border:1px solid #888;border-radius:3px;font-size:10px;font-weight:bold;padding:2px;}QPushButton:hover{background:#d0d0d0;}"
         else:
-            return "QPushButton{background:#ecf0f1;color:#2c3e50;border:1px solid #bdc3c7;border-radius:3px;font-size:10px;padding:2px;}QPushButton:hover{background:#bdc3c7;}"
+            return "QPushButton{background:#f7f7f7;color:#222;border:1px solid #b8b8b8;border-radius:3px;font-size:10px;padding:2px;}QPushButton:hover{background:#eeeeee;}"
 
     def _view_cache_btn_style(self, is_active):
         if is_active:
-            return "QPushButton{background:#16a085;color:white;border:none;border-radius:3px;font-size:10px;font-weight:bold;padding:2px;}QPushButton:hover{background:#1abc9c;}"
-        return "QPushButton{background:#f7f9fa;color:#2c3e50;border:1px solid #95a5a6;border-radius:3px;font-size:10px;padding:2px;}QPushButton:hover{background:#dfe6e9;}"
+            return "QPushButton{background:#d9d9d9;color:#111;border:1px solid #888;border-radius:3px;font-size:10px;font-weight:bold;padding:2px;}QPushButton:hover{background:#d0d0d0;}"
+        return "QPushButton{background:#f7f7f7;color:#222;border:1px solid #b8b8b8;border-radius:3px;font-size:10px;padding:2px;}QPushButton:hover{background:#eeeeee;}"
 
     def update_view_cache_button(self, enabled):
         if not hasattr(self, "btn_view_cache"):
@@ -234,8 +247,8 @@ class VrtTabWidget(QWidget):
         self._focus_map_canvas_after_toggle()
     def _custom_cache_btn_style(self, is_active):
         if is_active:
-            return "QPushButton{background:#8e44ad;color:white;border:none;border-radius:3px;font-size:10px;font-weight:bold;padding:2px;}QPushButton:hover{background:#9b59b6;}"
-        return "QPushButton{background:#f7f9fa;color:#2c3e50;border:1px solid #95a5a6;border-radius:3px;font-size:10px;padding:2px;}QPushButton:hover{background:#dfe6e9;}"
+            return "QPushButton{background:#d9d9d9;color:#111;border:1px solid #888;border-radius:3px;font-size:10px;font-weight:bold;padding:2px;}QPushButton:hover{background:#d0d0d0;}"
+        return "QPushButton{background:#f7f7f7;color:#222;border:1px solid #b8b8b8;border-radius:3px;font-size:10px;padding:2px;}QPushButton:hover{background:#eeeeee;}"
 
     def update_custom_cache_button(self, enabled):
         if not hasattr(self, "btn_custom_cache"):
@@ -254,8 +267,8 @@ class VrtTabWidget(QWidget):
 
     def _screen_shield_btn_style(self, is_active):
         if is_active:
-            return "QPushButton{background:#16a085;color:white;border:none;border-radius:3px;font-size:10px;font-weight:bold;padding:2px;}QPushButton:hover{background:#1abc9c;}"
-        return "QPushButton{background:#f7f9fa;color:#2c3e50;border:1px solid #95a5a6;border-radius:3px;font-size:10px;padding:2px;}QPushButton:hover{background:#dfe6e9;}"
+            return "QPushButton{background:#d9d9d9;color:#111;border:1px solid #888;border-radius:3px;font-size:10px;font-weight:bold;padding:2px;}QPushButton:hover{background:#d0d0d0;}"
+        return "QPushButton{background:#f7f7f7;color:#222;border:1px solid #b8b8b8;border-radius:3px;font-size:10px;padding:2px;}QPushButton:hover{background:#eeeeee;}"
 
     def update_screen_shield_button(self, enabled):
         if not hasattr(self, "btn_screen_shield"):
@@ -326,17 +339,18 @@ class VrtTabWidget(QWidget):
         except Exception:
             pass
         self.vrt_combo.currentIndexChanged.connect(self._switch_vrt)
-        combo_row.addWidget(self.vrt_combo)
+        self.vrt_combo.activated.connect(self._activate_vrt_combo)
+        combo_row.addWidget(self.vrt_combo, 0, Qt.AlignmentFlag.AlignLeft)
         grp_vrt_layout.addLayout(combo_row)
 
         vrt_btn_row = QHBoxLayout()
         vrt_btn_row.setSpacing(4)
         self.btn_new = QPushButton()
-        self.btn_new.setFixedWidth(52)
+        self.btn_new.setFixedWidth(48)
         self.btn_new.clicked.connect(self._new_vrt)
         self.btn_new.setStyleSheet(self._btn_style("#27ae60"))
         self.btn_rename = QPushButton()
-        self.btn_rename.setFixedWidth(70)
+        self.btn_rename.setFixedWidth(66)
         self.btn_rename.clicked.connect(self._rename_vrt)
         self.btn_rename.setStyleSheet(self._btn_style("#2980b9"))
         self.btn_rename.setEnabled(False)
@@ -345,7 +359,7 @@ class VrtTabWidget(QWidget):
         self.btn_load.clicked.connect(self._load_existing_vrt)
         self.btn_load.setStyleSheet(self._btn_style("#8e44ad"))
         self.btn_del = QPushButton()
-        self.btn_del.setFixedWidth(50)
+        self.btn_del.setFixedWidth(46)
         self.btn_del.clicked.connect(self._delete_vrt)
         self.btn_del.setStyleSheet(self._btn_style("#e74c3c"))
         self.btn_organize = QPushButton()
@@ -365,22 +379,25 @@ class VrtTabWidget(QWidget):
         vrt_btn_row2.addStretch()
         grp_vrt_layout.addLayout(vrt_btn_row2)
 
-        layout.addWidget(self.grp_vrt)
-
-        # 2. ファイル管理グループ
-        self.grp_file = QGroupBox()
-        grp_file_layout = QHBoxLayout(self.grp_file)
-        grp_file_layout.setContentsMargins(6, 6, 6, 6)
+        file_row = QHBoxLayout()
+        file_row.setSpacing(4)
         self.count_label = QLabel()
         self.count_label.setStyleSheet("font-weight:bold;")
         self.btn_show_tif_list = QPushButton()
         self.btn_show_tif_list.setFixedWidth(86)
         self.btn_show_tif_list.clicked.connect(self._open_tif_list_window)
         self.btn_show_tif_list.setStyleSheet(self._btn_style("#34495e"))
-        grp_file_layout.addWidget(self.count_label)
-        grp_file_layout.addStretch()
-        grp_file_layout.addWidget(self.btn_show_tif_list)
-        layout.addWidget(self.grp_file)
+        file_row.addWidget(self.count_label)
+        file_row.addSpacing(52)
+        file_row.addWidget(self.btn_show_tif_list)
+        file_row.addStretch()
+        grp_vrt_layout.addLayout(file_row)
+
+        layout.addWidget(self.grp_vrt)
+
+        # 2.5. 点群VPC管理グループ
+        self.vpc_manager = PointCloudVpcManager(self)
+        self.vpc_manager.build_ui(layout)
 
         # 3. 表示縮尺設定グループ
         self.grp_scale = QGroupBox()
@@ -388,25 +405,20 @@ class VrtTabWidget(QWidget):
         grp_scale_layout.setContentsMargins(4, 4, 4, 4)
         PRESET_SCALES = [500, 1000, 2500, 5000, 10000, 25000, 50000, 100000]
 
-        scale_row1 = QHBoxLayout()
-        for val in PRESET_SCALES[:4]:
+        scale_grid = QGridLayout()
+        scale_grid.setHorizontalSpacing(4)
+        scale_grid.setVerticalSpacing(4)
+        for index, val in enumerate(PRESET_SCALES):
             btn = QPushButton(f"1:{val:,}")
+            btn.setFixedWidth(80)
             btn.setFixedHeight(24)
+            btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
             btn.setStyleSheet(self._scale_btn_style(False))
             btn.clicked.connect(lambda checked, v=val: self._apply_scale_preset(v))
             self.scale_btns[val] = btn
-            scale_row1.addWidget(btn)
-        grp_scale_layout.addLayout(scale_row1)
-
-        scale_row2 = QHBoxLayout()
-        for val in PRESET_SCALES[4:]:
-            btn = QPushButton(f"1:{val:,}")
-            btn.setFixedHeight(24)
-            btn.setStyleSheet(self._scale_btn_style(False))
-            btn.clicked.connect(lambda checked, v=val: self._apply_scale_preset(v))
-            self.scale_btns[val] = btn
-            scale_row2.addWidget(btn)
-        grp_scale_layout.addLayout(scale_row2)
+            scale_grid.addWidget(btn, index // 3, index % 3)
+        scale_grid.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        grp_scale_layout.addLayout(scale_grid)
 
         manual_row = QHBoxLayout()
         manual_row.setSpacing(2)
@@ -424,56 +436,60 @@ class VrtTabWidget(QWidget):
         self.btn_manual_apply.clicked.connect(self._apply_scale_manual)
         manual_row.addWidget(self.scale_manual_edit)
         manual_row.addWidget(self.btn_manual_apply)
-        self.btn_all = QPushButton()
-        self.btn_all.setFixedWidth(78)
-        self.btn_all.setFixedHeight(24)
-        self.btn_all.setStyleSheet(self._btn_style("#e67e22"))
-        self.btn_all.clicked.connect(self._apply_scale_all)
-        self.scale_btns[0] = self.btn_all
-        manual_row.addWidget(self.btn_all)
         manual_row.addStretch()
         grp_scale_layout.addLayout(manual_row)
 
-        cache_row = QHBoxLayout()
-        cache_row.setSpacing(6)
+        tools_grid = QGridLayout()
+        tools_grid.setHorizontalSpacing(4)
+        tools_grid.setVerticalSpacing(4)
+        tools_grid.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        self.btn_all = QPushButton()
+        self.btn_all.setFixedWidth(78)
+        self.btn_all.setFixedHeight(24)
+        self.btn_all.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self.btn_all.setStyleSheet(self._btn_style("#e67e22"))
+        self.btn_all.clicked.connect(self._apply_scale_all)
+        self.scale_btns[0] = self.btn_all
+        tools_grid.addWidget(self.btn_all, 0, 0)
         self.btn_view_cache = QPushButton()
         self.btn_view_cache.setCheckable(True)
         self.btn_view_cache.setFixedWidth(78)
         self.btn_view_cache.setFixedHeight(24)
+        self.btn_view_cache.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.btn_view_cache.clicked.connect(self._toggle_view_cache)
-        cache_row.addWidget(self.btn_view_cache)
+        tools_grid.addWidget(self.btn_view_cache, 0, 1)
         self.btn_custom_cache = QPushButton()
         self.btn_custom_cache.setCheckable(True)
         self.btn_custom_cache.setFixedWidth(78)
         self.btn_custom_cache.setFixedHeight(24)
+        self.btn_custom_cache.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.btn_custom_cache.clicked.connect(self._toggle_custom_cache)
-        cache_row.addWidget(self.btn_custom_cache)
+        tools_grid.addWidget(self.btn_custom_cache, 0, 2)
+
         self.btn_screen_shield = QPushButton()
         self.btn_screen_shield.setCheckable(True)
         self.btn_screen_shield.setFixedWidth(78)
         self.btn_screen_shield.setFixedHeight(24)
+        self.btn_screen_shield.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.btn_screen_shield.clicked.connect(self._toggle_screen_shield)
-        cache_row.addWidget(self.btn_screen_shield)
-        cache_row.addStretch()
-        grp_scale_layout.addLayout(cache_row)
+        tools_grid.addWidget(self.btn_screen_shield, 1, 0)
 
-        mouse_shield_row = QHBoxLayout()
-        mouse_shield_row.setSpacing(6)
         self.btn_mouse_shield = QPushButton()
         self.btn_mouse_shield.setCheckable(True)
         self.btn_mouse_shield.setFixedWidth(78)
         self.btn_mouse_shield.setFixedHeight(24)
+        self.btn_mouse_shield.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.btn_mouse_shield.clicked.connect(self._toggle_mouse_shield)
-        mouse_shield_row.addWidget(self.btn_mouse_shield)
+        tools_grid.addWidget(self.btn_mouse_shield, 1, 1)
         self.cmb_mouse_shield_scale = QComboBox()
         self.cmb_mouse_shield_scale.setFixedWidth(58)
         self.cmb_mouse_shield_scale.setFixedHeight(24)
+        self.cmb_mouse_shield_scale.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         for scale in (1, 2, 3, 4, 5, 6):
             self.cmb_mouse_shield_scale.addItem(f"{scale}x", scale)
         self.cmb_mouse_shield_scale.currentIndexChanged.connect(self._change_mouse_shield_scale)
-        mouse_shield_row.addWidget(self.cmb_mouse_shield_scale)
-        mouse_shield_row.addStretch()
-        grp_scale_layout.addLayout(mouse_shield_row)
+        tools_grid.addWidget(self.cmb_mouse_shield_scale, 1, 2)
+        grp_scale_layout.addLayout(tools_grid)
 
         self.update_view_cache_button(getattr(self.main_ui, "view_cache_enabled", False))
         self.update_custom_cache_button(getattr(self.main_ui, "custom_cache_enabled", False))
@@ -502,8 +518,7 @@ class VrtTabWidget(QWidget):
     # --- UI更新・同期メソッド ---
     def refresh_texts(self):
         self.grp_vrt.setTitle(tr("vrt.group.vrt"))
-        self.grp_file.setTitle(tr("vrt.group.files"))
-        self.grp_scale.setTitle(tr("vrt.group.scale"))
+        self.update_scale_group_title()
         self.btn_new.setText(tr("vrt.btn.new"))
         self.btn_rename.setText(tr("vrt.btn.rename"))
         self.btn_load.setText(tr("vrt.btn.load"))
@@ -528,6 +543,25 @@ class VrtTabWidget(QWidget):
         )
         if self.tif_list_window is not None:
             self.tif_list_window.refresh_texts()
+        if self.vpc_manager is not None:
+            self.vpc_manager.refresh_texts()
+
+    def update_scale_group_title(self):
+        if not hasattr(self, "grp_scale"):
+            return
+        mode = getattr(self.main_ui, "scale_target_mode", "vrt")
+        if mode == "vpc" and getattr(self.main_ui, "current_vpc_name", ""):
+            target = tr("vrt.scale.target.vpc")
+        else:
+            target = tr("vrt.scale.target.vrt")
+        self.grp_scale.setTitle(tr("vrt.group.scale.with_target").format(base=tr("vrt.group.scale"), target=target))
+
+    def set_scale_target_mode(self, mode):
+        if mode == "vpc" and getattr(self.main_ui, "current_vpc_name", ""):
+            self.main_ui.scale_target_mode = "vpc"
+        else:
+            self.main_ui.scale_target_mode = "vrt"
+        self.sync_scale_highlight_from_current_target()
 
     def populate_vrt_combo(self):
         self.vrt_combo.blockSignals(True)
@@ -591,7 +625,13 @@ class VrtTabWidget(QWidget):
         else:
             self.vrt_combo.setCurrentText(name)
 
+    def _activate_vrt_combo(self, index):
+        self.set_scale_target_mode("vrt")
+        self._update_vrt_combo_tooltip()
+        self._refresh_vrt_action_buttons()
+
     def _open_tif_list_window(self):
+        self.set_scale_target_mode("vrt")
         if self.tif_list_window is None:
             try:
                 parent = self.main_ui.iface.mainWindow()
@@ -653,6 +693,7 @@ class VrtTabWidget(QWidget):
             self.tif_list_window.update_path_display()
 
     def update_scale_btn_highlight(self, active_scale):
+        self.update_scale_group_title()
         preset_scales = [v for v in self.scale_btns.keys() if v != 0]
         matched = active_scale in preset_scales
         for val, btn in self.scale_btns.items():
@@ -677,8 +718,24 @@ class VrtTabWidget(QWidget):
         else:
             self.update_scale_btn_highlight(0)
 
+    def sync_scale_highlight_from_current_target(self):
+        self.update_scale_group_title()
+        if getattr(self.main_ui, "scale_target_mode", "vrt") == "vpc" and self.main_ui.current_vpc_name:
+            entry = self.main_ui.vpc_registry.get(self.main_ui.current_vpc_name, {})
+            if isinstance(entry, dict) and str(entry.get("scale_mode", "") or "") == "all":
+                self.update_scale_btn_highlight(0)
+                return
+            try:
+                scale = int(entry.get("scale", 500) or 500) if isinstance(entry, dict) else 500
+            except Exception:
+                scale = 500
+            self.update_scale_btn_highlight(scale)
+            return
+        self.sync_scale_highlight_from_current_vrt()
+
     def _activate_overlay_and_select_tool(self):
         """オーバーレイレイヤをアクティブにし、QGISの選択ツールをオンにする"""
+        self.set_scale_target_mode("vrt")
         name = self.main_ui.current_vrt_name
         if not name: 
             QMessageBox.warning(self, tr_text("警告"), tr_text("VRTが選択されていません。"))
@@ -751,10 +808,12 @@ class VrtTabWidget(QWidget):
     def _switch_vrt(self, index):
         name = self.current_vrt_combo_name()
         if not name or name == self.main_ui.current_vrt_name:
+            self.set_scale_target_mode("vrt")
             self.vrt_combo.setToolTip(name)
             self._refresh_vrt_action_buttons()
             return
         self.main_ui.current_vrt_name = name
+        self.set_scale_target_mode("vrt")
         self.reload_tif_listwidget()
         self.update_path_display()
         vrt_layer = self.main_ui._get_vrt_layer(name)
@@ -787,6 +846,7 @@ class VrtTabWidget(QWidget):
         }
         self._add_vrt_combo_item(name)
         self.main_ui.current_vrt_name = name
+        self.set_scale_target_mode("vrt")
         self.set_current_vrt_name(name)
         self._update_vrt_combo_tooltip()
         self.reload_tif_listwidget()
@@ -885,6 +945,7 @@ class VrtTabWidget(QWidget):
             self._add_vrt_combo_item(name)
 
         self.main_ui.current_vrt_name = name
+        self.set_scale_target_mode("vrt")
         self.set_current_vrt_name(name)
         self._update_vrt_combo_tooltip()
         self.reload_tif_listwidget()
@@ -913,6 +974,7 @@ class VrtTabWidget(QWidget):
         )
 
     def _add_from_folder(self):
+        self.set_scale_target_mode("vrt")
         if not self.main_ui.current_vrt_name: return
         folder = QFileDialog.getExistingDirectory(self, "フォルダを選択", self._raster_add_default_dir())
         if not folder: return
@@ -965,6 +1027,7 @@ class VrtTabWidget(QWidget):
         self._build_after_tif_add_if_needed(added)
 
     def _add_files(self):
+        self.set_scale_target_mode("vrt")
         if not self.main_ui.current_vrt_name: return
         files, _ = QFileDialog.getOpenFileNames(self, "画像ファイルを選択", self._raster_add_default_dir(), SUPPORTED_RASTER_FILTER)
         added, skipped_same_path, skipped_same_name = 0, 0, 0
@@ -996,6 +1059,7 @@ class VrtTabWidget(QWidget):
         self._build_after_tif_add_if_needed(added)
 
     def _remove_selected(self):
+        self.set_scale_target_mode("vrt")
         name = self.main_ui.current_vrt_name
         if not name: return
 
@@ -1073,6 +1137,7 @@ class VrtTabWidget(QWidget):
             except:
                 pass
 
+        self.main_ui._reset_map_display_caches("vrt_remove_sources", schedule_prefetch=True)
         self.main_ui._set_status(tr_text(f"🗑 {len(to_remove_paths)} ファイルをVRTから削除しました"))
 
     def _clear_list(self):
@@ -1091,6 +1156,7 @@ class VrtTabWidget(QWidget):
                 return
             self.main_ui.vrt_registry[name]["tif_list"] = []
             self.reload_tif_listwidget()
+            self.main_ui._reset_map_display_caches("vrt_clear_sources", schedule_prefetch=True)
             self.main_ui._set_status(tr_text("🗑 リストをクリアし、VRTの中身を空にしました"))
 
     # --- 縮尺設定 ---
@@ -1173,6 +1239,7 @@ class VrtTabWidget(QWidget):
             return False
 
     def _organize_vrt_layers(self):
+        self.set_scale_target_mode("vrt")
         name = self.main_ui.current_vrt_name
         if not name:
             QMessageBox.warning(self, tr_text("警告"), tr_text("VRTが選択されていません。"))
@@ -1211,6 +1278,11 @@ class VrtTabWidget(QWidget):
         self.main_ui.iface.mapCanvas().refresh()
         self.main_ui._set_status(tr_text(f"✅ レイヤ整理: {self.main_ui.strip_vrt_display_prefix(name)} (戻し{moved}件 / 外出し{removed_extra}件)"))
     def _apply_scale_preset(self, scale_value):
+        if getattr(self.main_ui, "scale_target_mode", "vrt") == "vpc" and self.main_ui.current_vpc_name:
+            if self.main_ui.apply_vpc_scale(self.main_ui.current_vpc_name, scale_value):
+                self.update_scale_btn_highlight(scale_value)
+            return
+        self.set_scale_target_mode("vrt")
         name = self.main_ui.current_vrt_name
         if not name: return
         vrt_layer = self.main_ui._get_vrt_layer(name)
@@ -1234,6 +1306,11 @@ class VrtTabWidget(QWidget):
         self._apply_scale_preset(val)
 
     def _apply_scale_all(self):
+        if getattr(self.main_ui, "scale_target_mode", "vrt") == "vpc" and self.main_ui.current_vpc_name:
+            if self.main_ui.apply_vpc_scale(self.main_ui.current_vpc_name, 0):
+                self.update_scale_btn_highlight(0)
+            return
+        self.set_scale_target_mode("vrt")
         name = self.main_ui.current_vrt_name
         vrt_layer = self.main_ui._get_vrt_layer(name)
         overlay_layer = self.main_ui._get_overlay_layer(name)
