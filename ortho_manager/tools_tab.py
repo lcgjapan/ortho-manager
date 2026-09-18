@@ -6,6 +6,7 @@ from qgis.PyQt.QtWidgets import (
 from .i18n import tr
 from .tools.elevation_raster_tool import ElevationRasterToolWidget
 from .tools.rrim_tool import RrimToolWidget
+from .tools.web_maps_tool import WebMapsToolWidget
 
 
 class ToolsTabWidget(QWidget):
@@ -43,6 +44,8 @@ class ToolsTabWidget(QWidget):
         self._add_tool("tools.elevation_raster.name", self.elevation_raster_tool)
         self.rrim_tool = RrimToolWidget(self.dock)
         self._add_tool("tools.rrim.name", self.rrim_tool)
+        self.web_maps_tool = WebMapsToolWidget(self.dock)
+        self._add_tool("tools.web_maps.name", self.web_maps_tool)
 
         self.tool_combo.currentIndexChanged.connect(self.stack.setCurrentIndex)
         self.tool_combo.setCurrentIndex(0)

@@ -3,7 +3,7 @@ name=OrthoManager
 qgisMinimumVersion=3.40
 qgisMaximumVersion=4.99
 description=Orthophoto inspection tool with VRT management, inspection right-click menu, and ZXCV drawing shortcuts
-version=5.110
+version=5.111
 author=劉春光
 email=pochitools.office@gmail.com
 about=QGIS plugin for orthophoto inspection, VRT management, inspection vector editing, vector import, and orthophoto export workflows. When Inspection ON is enabled, a dedicated right-click menu provides fast access to pan, select, draw, edit, move, delete, restore, layer, and group operations. During vector creation, helper shortcuts are available: Z copies a parallel direction, X sets a reference point for alignment, C copies an edge length, and V copies an angle.
@@ -15,7 +15,7 @@ category=Raster
 icon=icon.png
 experimental=False
 deprecated=False
-changelog=v5.110: Fix 13 Qt6 enum compatibility findings; retain inspection marker, Space toggle, drag preview and warning behavior. Version 5.109: Security-scan maintenance release. Records recoverable exceptions at opt-in DEBUG level while preserving fallback behavior. Rejects XML DTD/entity declarations across encodings, validates local GIS process arguments, and marks work-directory hashes as non-security uses without changing their values. Retains 5.108 VPC/COPC, elevation raster and experimental red-relief workflows.<br><br>バージョン5.109: 公式検査対応。回復可能な例外の診断記録、文字コードに依存しないXML外部参照対策、外部GIS処理の引数確認を追加。作業用ハッシュ値と既存の処理分岐は維持。5.108のVPC/COPC・標高ラスタ・赤色立体図試験機能を継続。
+changelog=v5.111: Add GSI/OpenStreetMap background layers, Google Maps integration, optional same-tab Chrome extension, and configurable QGIS keyboard shortcut.
 
 
 

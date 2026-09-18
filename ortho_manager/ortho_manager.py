@@ -18,6 +18,7 @@ class OrthoManager:
         self.dockwidget = None
         self.xyz_status_tool = None
         self.layer_visibility_hotkey = None
+        self.google_maps_action = None
 
     def initGui(self):
         icon_path = os.path.join(os.path.dirname(__file__), "icon.png")
@@ -37,6 +38,17 @@ class OrthoManager:
         self.layer_visibility_hotkey.dock = self.dockwidget
         self.iface.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.dockwidget)
         self.dockwidget.hide()
+
+        self.google_maps_action = QAction(
+            "OrthoManager：現在の表示をGoogleマップで開く",
+            self.iface.mainWindow(),
+        )
+        self.google_maps_action.setObjectName("OrthoManagerOpenCurrentViewInGoogleMaps")
+        self.google_maps_action.triggered.connect(
+            self.dockwidget.tools_tab.web_maps_tool.open_google_maps
+        )
+        self.iface.registerMainWindowAction(self.google_maps_action, "")
+        self.iface.mainWindow().addAction(self.google_maps_action)
 
         QgsProject.instance().readProject.connect(self._on_project_read)
         QgsProject.instance().writeProject.connect(self._on_project_write)
@@ -121,6 +133,11 @@ class OrthoManager:
             _om_record_ignored_exception(__name__, 120)
         self.iface.removePluginRasterMenu("&OrthoManager", self.action)
         self.iface.removeToolBarIcon(self.action)
+        if self.google_maps_action:
+            self.iface.mainWindow().removeAction(self.google_maps_action)
+            self.iface.unregisterMainWindowAction(self.google_maps_action)
+            self.google_maps_action.deleteLater()
+            self.google_maps_action = None
         if self.xyz_status_tool:
             try:
                 self.xyz_status_tool.cleanup()
