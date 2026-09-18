@@ -3,7 +3,7 @@ name=OrthoManager
 qgisMinimumVersion=3.40
 qgisMaximumVersion=4.99
 description=Orthophoto inspection tool with VRT management, inspection right-click menu, and ZXCV drawing shortcuts
-version=5.111
+version=5.112
 author=劉春光
 email=pochitools.office@gmail.com
 about=QGIS plugin for orthophoto inspection, VRT management, inspection vector editing, vector import, and orthophoto export workflows. When Inspection ON is enabled, a dedicated right-click menu provides fast access to pan, select, draw, edit, move, delete, restore, layer, and group operations. During vector creation, helper shortcuts are available: Z copies a parallel direction, X sets a reference point for alignment, C copies an edge length, and V copies an angle.
@@ -15,7 +15,7 @@ category=Raster
 icon=icon.png
 experimental=False
 deprecated=False
-changelog=v5.111: Add GSI/OpenStreetMap background layers, Google Maps integration, optional same-tab Chrome extension, and configurable QGIS keyboard shortcut.
+changelog=v5.112: In Inspection Select mode, Esc now clears selected features while keeping Select mode active. Selected inspection polygons, including imported polygons, are consistently shown with a translucent yellow fill. Polygon Select mode cancels an in-progress polygon first, then clears selected features when idle.
 
 
 

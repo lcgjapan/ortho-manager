@@ -6042,8 +6042,14 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
         canvas = self.iface.mapCanvas()
         yellow = QColor("#ffd400")
         yellow.setAlpha(255)
+        yellow_fill = QColor(yellow)
+        yellow_fill.setAlpha(70)
         for layer in self.selectable_inspection_layers():
-            if layer.geometryType() not in (Qgis.GeometryType.Line, Qgis.GeometryType.Point):
+            if layer.geometryType() not in (
+                Qgis.GeometryType.Polygon,
+                Qgis.GeometryType.Line,
+                Qgis.GeometryType.Point,
+            ):
                 continue
             ids = list(layer.selectedFeatureIds())
             if not ids:
@@ -6053,14 +6059,22 @@ class InspectionTabWidget(InspectionLayerTreeCopyMixin, InspectionEditingMixin, 
                 geom = feature.geometry()
                 if not geom or geom.isEmpty():
                     continue
-                if layer.geometryType() == Qgis.GeometryType.Line:
-                    band = QgsRubberBand(canvas, Qgis.GeometryType.Line)
+                if layer.geometryType() in (Qgis.GeometryType.Polygon, Qgis.GeometryType.Line):
+                    band = QgsRubberBand(canvas, layer.geometryType())
                     band.setStrokeColor(yellow)
-                    band.setWidth(5)
+                    if layer.geometryType() == Qgis.GeometryType.Polygon:
+                        band.setFillColor(yellow_fill)
+                        band.setWidth(3)
+                    else:
+                        band.setWidth(5)
                     try:
                         band.setToGeometry(geom, layer)
                     except Exception:
                         _om_record_ignored_exception(__name__, 6065); continue
+                    try:
+                        band.setZValue(1100)
+                    except Exception:
+                        _om_record_ignored_exception(__name__, 6069)
                     band.show()
                     self.selection_highlight_items.append(band)
                 else:

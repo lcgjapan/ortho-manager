@@ -1845,8 +1845,12 @@ class InspectionMapTool(QgsMapTool):
             return
         if self.tab.operation_mode in ("select_polygon", "layer_change_select_polygon"):
             if key == Qt.Key.Key_Escape:
-                self._clear_select_polygon()
-                self.tab.set_status(tr_text("多角選をキャンセルしました"))
+                if self.select_polygon_points:
+                    self._clear_select_polygon()
+                    self.tab.set_status(tr_text("多角選をキャンセルしました"))
+                else:
+                    self.tab.clear_inspection_selection()
+                    self.tab.set_status(tr_text("選択解除"))
                 event.accept()
                 return
             if key == Qt.Key.Key_Backspace:
@@ -1864,6 +1868,12 @@ class InspectionMapTool(QgsMapTool):
                         self._clear_select_polygon()
                     event.accept()
                     return
+        if self.tab.operation_mode == "select" and key == Qt.Key.Key_Escape:
+            self._clear_select_band()
+            self.tab.clear_inspection_selection()
+            self.tab.set_status(tr_text("選択解除"))
+            event.accept()
+            return
         if self.tab.operation_mode == "create":
             if key == Qt.Key.Key_Alt and self._fixed_angle_90_enabled():
                 try:
